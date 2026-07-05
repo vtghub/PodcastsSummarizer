@@ -10,7 +10,6 @@ Set SUPABASE_DB_URL in .env:
 
 import json
 import re
-import socket
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -42,18 +41,8 @@ class SupabaseStorageProvider(StorageProvider):
         slash = hostinfo.rfind('/')
         host_port, dbname = hostinfo[:slash], hostinfo[slash + 1:]
         host, _, port = host_port.rpartition(':')
-        # Prefer IPv4: GitHub Actions runners sometimes resolve Supabase direct-connect
-        # hostnames to an IPv6 address that the runner network cannot reach.
-        resolved_host = host
-        try:
-            ipv4_results = socket.getaddrinfo(host, None, socket.AF_INET)
-            if ipv4_results:
-                resolved_host = ipv4_results[0][4][0]
-        except (socket.gaierror, IndexError):
-            pass  # keep original hostname if IPv4 resolution fails
-
         return dict(
-            host=resolved_host,
+            host=host,
             port=int(port) if port else 5432,
             dbname=dbname,
             user=user,
