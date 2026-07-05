@@ -11,6 +11,7 @@ Set SUPABASE_DB_URL in .env:
 import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from urllib.parse import urlparse, unquote
 
 import psycopg2
 import psycopg2.extras
@@ -26,9 +27,25 @@ class SupabaseStorageProvider(StorageProvider):
     def __init__(self, db_url: str = SUPABASE_DB_URL):
         self.db_url = db_url
 
+    def _connect_kwargs(self) -> dict:
+        # psycopg2 strips the project-ref suffix from usernames like
+        # "postgres.mygigptehwsmhqaoydla" when parsing a DSN URL, causing
+        # auth failures against Supabase's Transaction pooler. Parse manually
+        # and pass each component as a keyword argument instead.
+        p = urlparse(self.db_url)
+        return dict(
+            host=p.hostname,
+            port=p.port or 5432,
+            dbname=(p.path or "/postgres").lstrip("/"),
+            user=unquote(p.username or ""),
+            password=unquote(p.password or ""),
+            cursor_factory=psycopg2.extras.RealDictCursor,
+            sslmode="require",
+        )
+
     @contextmanager
     def _conn(self):
-        conn = psycopg2.connect(self.db_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        conn = psycopg2.connect(**self._connect_kwargs())
         try:
             yield conn
             conn.commit()
