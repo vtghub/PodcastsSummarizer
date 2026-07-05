@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Volume2, VolumeX, Palette, Check, UserCircle } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Volume2, VolumeX, Palette, Check, UserCircle, LogOut, User } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES, type ThemeKey } from "@/contexts/ThemeContext";
@@ -16,20 +16,28 @@ export default function NavBar({
 }) {
   const { enabled, toggle } = useTTS();
   const { theme, setTheme } = useTheme();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const [pickerOpen, setPickerOpen]   = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const pickerRef  = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
 
-  // Close picker on outside click
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
-      }
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false);
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
     }
-    if (pickerOpen) document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
-  }, [pickerOpen]);
+  }, []);
+
+  async function handleSignOut() {
+    setUserMenuOpen(false);
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/");
+    router.refresh();
+  }
 
   const navLink = (href: string, label: string) => {
     const active = pathname === href || (href !== "/" && pathname.startsWith(href));
@@ -43,6 +51,8 @@ export default function NavBar({
       </Link>
     );
   };
+
+  const shortName = displayName || (userEmail ? userEmail.split("@")[0] : "");
 
   return (
     <nav
@@ -60,24 +70,58 @@ export default function NavBar({
         <div className="flex items-center gap-3">
           {navLink("/", "Dashboard")}
           {navLink("/podcasts", "My Podcasts")}
-          {userEmail && (
-            <Link
-              href="/profile"
-              title="Your profile"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border"
-              style={{
-                background: "var(--bg-elevated)",
-                borderColor: "var(--bdr)",
-                color: "var(--txt-3)",
-              }}
-            >
-              <UserCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              <span className="hidden sm:inline max-w-[120px] truncate">
-                {displayName || userEmail.split("@")[0]}
-              </span>
-            </Link>
-          )}
-          {!userEmail && (
+
+          {/* User menu */}
+          {userEmail ? (
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setUserMenuOpen((v) => !v)}
+                title="Account menu"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border"
+                style={{
+                  background: userMenuOpen ? "var(--bg-elevated)" : "var(--bg-elevated)",
+                  borderColor: userMenuOpen ? "var(--bdr-hov)" : "var(--bdr)",
+                  color: "var(--txt-3)",
+                }}
+              >
+                <UserCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="hidden sm:inline max-w-[120px] truncate">{shortName}</span>
+              </button>
+
+              {userMenuOpen && (
+                <div
+                  className="absolute right-0 top-full mt-2 w-48 rounded-xl shadow-2xl border p-1.5 z-50"
+                  style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
+                >
+                  <div className="px-3 py-2 mb-1 border-b" style={{ borderColor: "var(--bdr)" }}>
+                    <p className="text-xs font-medium truncate" style={{ color: "var(--txt-2)" }}>{shortName}</p>
+                    <p className="text-xs truncate mt-0.5" style={{ color: "var(--txt-4)" }}>{userEmail}</p>
+                  </div>
+                  <Link
+                    href="/profile"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                    style={{ color: "var(--txt-2)" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >
+                    <User className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                    Profile
+                  </Link>
+                  <button
+                    onClick={handleSignOut}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors text-left"
+                    style={{ color: "var(--txt-2)" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >
+                    <LogOut className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
             <Link
               href="/login"
               className="text-sm transition-colors hover:opacity-80"
@@ -160,15 +204,11 @@ function ThemeOption({
       onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "var(--bg-surface-hov)"; }}
       onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
     >
-      {/* Swatch */}
       <span
         className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center border"
         style={{ background: meta.bg, borderColor: meta.accent + "60" }}
       >
-        <span
-          className="w-3 h-3 rounded-full"
-          style={{ background: meta.accent }}
-        />
+        <span className="w-3 h-3 rounded-full" style={{ background: meta.accent }} />
       </span>
       <span className="text-sm font-medium flex-1">{meta.name}</span>
       {active && <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "var(--acc)" }} />}

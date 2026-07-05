@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2,
-  Lock, LogOut, Bell, BellOff,
+  Lock, Bell, BellOff,
 } from "lucide-react";
 import { getDomainColor } from "@/lib/domain-colors";
 import type { Source } from "@/lib/db";
@@ -40,12 +40,6 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
   const [localSubs, setLocalSubs] = useState<Set<string>>(new Set(subscribedIds));
 
   const refresh = () => startTransition(() => router.refresh());
-
-  async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/");
-    router.refresh();
-  }
 
   async function handleSubscribe(source: Source) {
     if (!isAuthed) { router.push("/login?from=/podcasts"); return; }
@@ -156,17 +150,6 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
             >
               <Plus className="w-4 h-4" />
               Add to Catalog
-            </button>
-          )}
-          {isAuthed && (
-            <button
-              onClick={handleLogout}
-              title="Sign out"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors border"
-              style={{ borderColor: "var(--bdr)", color: "var(--txt-3)", background: "var(--bg-elevated)" }}
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sign out</span>
             </button>
           )}
         </div>

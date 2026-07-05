@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getUser } from "@/lib/auth";
 import { getSupabaseClient } from "@/lib/supabase";
 import ProfileForm from "@/components/ProfileForm";
+import SignOutButton from "@/components/SignOutButton";
 
 export default async function ProfilePage() {
   const user = await getUser();
@@ -16,8 +17,13 @@ export default async function ProfilePage() {
 
   return (
     <div className="max-w-lg mx-auto">
-      <h1 className="text-2xl font-bold mb-1" style={{ color: "var(--txt-1)" }}>Profile</h1>
-      <p className="text-sm mb-8" style={{ color: "var(--txt-3)" }}>{user.email}</p>
+      <div className="flex items-start justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-2xl font-bold mb-1" style={{ color: "var(--txt-1)" }}>Profile</h1>
+          <p className="text-sm" style={{ color: "var(--txt-3)" }}>{user.email}</p>
+        </div>
+        <SignOutButton />
+      </div>
       <ProfileForm
         initialDisplayName={profile?.display_name ?? ""}
         initialDigestEnabled={profile?.digest_enabled ?? true}
