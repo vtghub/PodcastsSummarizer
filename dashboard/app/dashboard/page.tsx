@@ -27,7 +27,6 @@ export default async function DashboardPage({ searchParams }: Props) {
     dbError = true;
   }
 
-  // Group by domain
   const byDomain = insights.reduce<Record<string, Insight[]>>((acc, ins) => {
     (acc[ins.domain] ??= []).push(ins);
     return acc;
@@ -43,13 +42,10 @@ export default async function DashboardPage({ searchParams }: Props) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Daily Insights</h1>
-          <p className="text-slate-400 text-sm mt-1">{formattedDate}</p>
+          <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>Daily Insights</h1>
+          <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>{formattedDate}</p>
         </div>
-        <DateNav
-          selectedDate={selectedDate}
-          availableDates={availableDates}
-        />
+        <DateNav selectedDate={selectedDate} availableDates={availableDates} />
       </div>
 
       {/* Domain summary chips */}
@@ -61,7 +57,7 @@ export default async function DashboardPage({ searchParams }: Props) {
               <a
                 key={domain}
                 href={`#${encodeURIComponent(domain)}`}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${color.bg} ${color.text} ${color.border} hover:opacity-80 transition-opacity`}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border hover:opacity-80 transition-opacity ${color.bg} ${color.text} ${color.border}`}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${color.dot}`} />
                 {domain}
@@ -93,16 +89,14 @@ export default async function DashboardPage({ searchParams }: Props) {
             const color = getDomainColor(domain);
             return (
               <section key={domain} id={encodeURIComponent(domain)}>
-                {/* Domain heading */}
                 <div className="flex items-center gap-3 mb-5">
                   <span className={`w-2.5 h-2.5 rounded-full ${color.dot}`} />
-                  <h2 className={`text-sm font-bold uppercase tracking-widest ${color.text}`}>
-                    {domain}
-                  </h2>
-                  <div className="flex-1 h-px bg-slate-800" />
-                  <span className="text-xs text-slate-500">{list.length} episode{list.length > 1 ? "s" : ""}</span>
+                  <h2 className={`text-sm font-bold uppercase tracking-widest ${color.text}`}>{domain}</h2>
+                  <div className="flex-1 h-px" style={{ background: "var(--bdr)" }} />
+                  <span className="text-xs" style={{ color: "var(--txt-4)" }}>
+                    {list.length} episode{list.length > 1 ? "s" : ""}
+                  </span>
                 </div>
-
                 <div className="grid gap-5 lg:grid-cols-2">
                   {list.map((insight) => (
                     <InsightCard key={insight.id} insight={insight} domainColor={color} />
