@@ -7,21 +7,13 @@ export async function middleware(req: NextRequest) {
   const cookieVal = req.cookies.get(SESSION_COOKIE)?.value;
   const authed = await isValidSession(cookieVal);
 
-  if (!authed) {
-    // API routes → 401 JSON
-    if (pathname.startsWith("/api/sources")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    // Pages → redirect to login with return path
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("from", pathname);
-    return NextResponse.redirect(url);
+  if (!authed && pathname.startsWith("/api/sources")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/podcasts/:path*", "/api/sources/:path*"],
+  matcher: ["/api/sources/:path*"],
 };
