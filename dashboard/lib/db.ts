@@ -5,7 +5,13 @@
  *
  * All exports have the same signature regardless of backend.
  * Only imported in Server Components and API routes.
+ *
+ * Read queries (getInsightsByDate, getAvailableDates) are wrapped in
+ * unstable_cache so Supabase is only hit once per hour in production.
+ * Past-date insights never change; today's revalidate on 1-hour TTL.
  */
+
+import { unstable_cache } from "next/cache";
 
 // ─── Shared types ──────────────────────────────────────────────────────────
 
@@ -193,8 +199,22 @@ export async function setSourceEnabledAsync(id: string, enabled: boolean): Promi
   setSourceEnabled(id, enabled);
 }
 
+// ─── Cached Supabase reads (1-hour TTL) ───────────────────────────────────
+
+const _cachedGetInsightsByDate = unstable_cache(
+  sbGetInsightsByDate,
+  ["insights-by-date"],
+  { revalidate: 3600, tags: ["insights"] },
+);
+
+const _cachedGetAvailableDates = unstable_cache(
+  sbGetAvailableDates,
+  ["available-dates"],
+  { revalidate: 3600, tags: ["insights"] },
+);
+
 export async function getInsightsByDate(date: string): Promise<Insight[]> {
-  if (useSupabase()) return sbGetInsightsByDate(date);
+  if (useSupabase()) return _cachedGetInsightsByDate(date);
   const db = getSqliteDb();
   const rows = db.prepare(`
     SELECT i.*, s.name AS source_name, e.title AS episode_title
@@ -208,7 +228,7 @@ export async function getInsightsByDate(date: string): Promise<Insight[]> {
 }
 
 export async function getAvailableDates(): Promise<string[]> {
-  if (useSupabase()) return sbGetAvailableDates();
+  if (useSupabase()) return _cachedGetAvailableDates();
   const db = getSqliteDb();
   const rows = db.prepare(
     "SELECT DISTINCT date FROM insights ORDER BY date DESC"
