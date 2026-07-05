@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, FormEvent } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Suspense } from "react";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? "/podcasts";
 
@@ -26,7 +25,7 @@ function LoginForm() {
         body: JSON.stringify({ passcode }),
       });
       if (res.ok) {
-        router.push(from);
+        window.location.href = from;
       } else {
         const data = await res.json();
         setError(data.error ?? "Invalid passcode");
