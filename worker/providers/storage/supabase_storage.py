@@ -40,7 +40,6 @@ class SupabaseStorageProvider(StorageProvider):
             user=unquote(p.username or ""),
             password=unquote(p.password or ""),
             cursor_factory=psycopg2.extras.RealDictCursor,
-            sslmode="require",
         )
 
     @contextmanager
