@@ -96,7 +96,7 @@ async function sbAddSource(fields: {
 }): Promise<void> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
-  const { error } = await sb.from("sources").insert({ ...fields, enabled: true });
+  const { error } = await sb.from("sources").insert({ ...fields, enabled: true } as never);
   if (error) throw error;
 }
 
