@@ -31,9 +31,9 @@ Transcript:
 {transcript}
 """
 
-# Groq's context window is 128k tokens; cap at ~60k chars to stay within
-# free-tier rate limits (14,400 req/day, 6,000 tokens/min on free plan).
-_MAX_TRANSCRIPT_CHARS = 60_000
+# llama-3.1-8b-instant free tier: 131,072 TPM. Cap at ~32k chars (~8k tokens)
+# so prompt + transcript stays well under the per-minute limit across all sources.
+_MAX_TRANSCRIPT_CHARS = 32_000
 
 
 class GroqLLMProvider(LLMProvider):
