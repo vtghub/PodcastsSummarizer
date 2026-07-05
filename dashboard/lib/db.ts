@@ -24,6 +24,8 @@ export interface Source {
   enabled: boolean | number;
   deleted?: boolean | number;
   created_at: string;
+  user_id?: string | null;
+  is_public?: boolean;
 }
 
 export interface Insight {
@@ -97,12 +99,100 @@ async function sbGetSources(): Promise<Source[]> {
   return data as Source[];
 }
 
+async function sbGetPublicSources(): Promise<Source[]> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { data, error } = await sb
+    .from("sources")
+    .select("*")
+    .eq("is_public", true)
+    .eq("deleted", false)
+    .order("domain").order("name");
+  if (error) throw error;
+  return data as Source[];
+}
+
+async function sbGetUserSubscriptions(userId: string): Promise<string[]> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { data, error } = await sb
+    .from("user_subscriptions")
+    .select("source_id")
+    .eq("user_id", userId)
+    .eq("enabled", true);
+  if (error) throw error;
+  return (data ?? []).map((r: { source_id: string }) => r.source_id);
+}
+
+async function sbSubscribe(userId: string, sourceId: string): Promise<void> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { error } = await sb
+    .from("user_subscriptions")
+    .upsert({ user_id: userId, source_id: sourceId, enabled: true }, { onConflict: "user_id,source_id" });
+  if (error) throw error;
+}
+
+async function sbUnsubscribe(userId: string, sourceId: string): Promise<void> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { error } = await sb
+    .from("user_subscriptions")
+    .delete()
+    .eq("user_id", userId)
+    .eq("source_id", sourceId);
+  if (error) throw error;
+}
+
+async function sbGetInsightsByDateForUser(date: string, userId: string): Promise<Insight[]> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { data: subs } = await sb
+    .from("user_subscriptions")
+    .select("source_id")
+    .eq("user_id", userId)
+    .eq("enabled", true);
+  const sourceIds = (subs ?? []).map((r: { source_id: string }) => r.source_id);
+  if (sourceIds.length === 0) return [];
+  const { data, error } = await sb
+    .from("insights")
+    .select("*, sources(name), episodes(title)")
+    .eq("date", date)
+    .in("source_id", sourceIds)
+    .order("domain").order("created_at");
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    ...r,
+    source_name:   (r.sources as { name: string } | null)?.name,
+    episode_title: (r.episodes as { title: string } | null)?.title,
+  })) as Insight[];
+}
+
+async function sbGetAvailableDatesForUser(userId: string): Promise<string[]> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { data: subs } = await sb
+    .from("user_subscriptions")
+    .select("source_id")
+    .eq("user_id", userId)
+    .eq("enabled", true);
+  const sourceIds = (subs ?? []).map((r: { source_id: string }) => r.source_id);
+  if (sourceIds.length === 0) return [];
+  const { data, error } = await sb
+    .from("insights")
+    .select("date")
+    .in("source_id", sourceIds)
+    .order("date", { ascending: false });
+  if (error) throw error;
+  return [...new Set((data ?? []).map((r: { date: string }) => r.date))];
+}
+
 async function sbAddSource(fields: {
   id: string; name: string; url: string; source_type: string; domain: string;
 }): Promise<void> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
-  const { error } = await sb.from("sources").insert({ ...fields, enabled: true });
+  const { error } = await sb.from("sources").insert({ ...fields, enabled: true, is_public: true });
   if (error) throw error;
 }
 
@@ -213,8 +303,11 @@ const _cachedGetAvailableDates = unstable_cache(
   { revalidate: 3600, tags: ["insights"] },
 );
 
-export async function getInsightsByDate(date: string): Promise<Insight[]> {
-  if (useSupabase()) return _cachedGetInsightsByDate(date);
+export async function getInsightsByDate(date: string, userId?: string | null): Promise<Insight[]> {
+  if (useSupabase()) {
+    if (userId) return sbGetInsightsByDateForUser(date, userId);
+    return _cachedGetInsightsByDate(date);
+  }
   const db = getSqliteDb();
   const rows = db.prepare(`
     SELECT i.*, s.name AS source_name, e.title AS episode_title
@@ -227,13 +320,34 @@ export async function getInsightsByDate(date: string): Promise<Insight[]> {
   return rows.map(parseSqliteInsight);
 }
 
-export async function getAvailableDates(): Promise<string[]> {
-  if (useSupabase()) return _cachedGetAvailableDates();
+export async function getAvailableDates(userId?: string | null): Promise<string[]> {
+  if (useSupabase()) {
+    if (userId) return sbGetAvailableDatesForUser(userId);
+    return _cachedGetAvailableDates();
+  }
   const db = getSqliteDb();
   const rows = db.prepare(
     "SELECT DISTINCT date FROM insights ORDER BY date DESC"
   ).all() as { date: string }[];
   return rows.map((r) => r.date);
+}
+
+export async function getPublicSourcesAsync(): Promise<Source[]> {
+  if (useSupabase()) return sbGetPublicSources();
+  return getSourcesAsync(); // SQLite: all sources are "public"
+}
+
+export async function getUserSubscriptions(userId: string): Promise<string[]> {
+  if (useSupabase()) return sbGetUserSubscriptions(userId);
+  return []; // SQLite local dev: no subscription concept
+}
+
+export async function subscribeToSource(userId: string, sourceId: string): Promise<void> {
+  if (useSupabase()) return sbSubscribe(userId, sourceId);
+}
+
+export async function unsubscribeFromSource(userId: string, sourceId: string): Promise<void> {
+  if (useSupabase()) return sbUnsubscribe(userId, sourceId);
 }
 
 export async function getRecentInsights(limit = 20): Promise<Insight[]> {
