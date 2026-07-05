@@ -1,4 +1,4 @@
-// Hand-generated from supabase/schema.sql — matches the output of `supabase gen types typescript`
+// Hand-maintained — reflects supabase/schema.sql + supabase/migrations/002_multi_user.sql
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -14,6 +14,8 @@ export interface Database {
           domain: string;
           enabled: boolean;
           deleted: boolean;
+          user_id: string | null;
+          is_public: boolean;
           created_at: string;
         };
         Insert: {
@@ -24,6 +26,8 @@ export interface Database {
           domain: string;
           enabled?: boolean;
           deleted?: boolean;
+          user_id?: string | null;
+          is_public?: boolean;
           created_at?: string;
         };
         Update: {
@@ -34,6 +38,8 @@ export interface Database {
           domain?: string;
           enabled?: boolean;
           deleted?: boolean;
+          user_id?: string | null;
+          is_public?: boolean;
           created_at?: string;
         };
         Relationships: [];
@@ -133,6 +139,54 @@ export interface Database {
           key_quotes?: Json;
           action_items?: Json;
           tags?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      user_profiles: {
+        Row: {
+          user_id: string;
+          display_name: string | null;
+          is_admin: boolean;
+          digest_enabled: boolean;
+          digest_hour: number;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          display_name?: string | null;
+          is_admin?: boolean;
+          digest_enabled?: boolean;
+          digest_hour?: number;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          display_name?: string | null;
+          is_admin?: boolean;
+          digest_enabled?: boolean;
+          digest_hour?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      user_subscriptions: {
+        Row: {
+          user_id: string;
+          source_id: string;
+          enabled: boolean;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          source_id: string;
+          enabled?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          source_id?: string;
+          enabled?: boolean;
           created_at?: string;
         };
         Relationships: [];

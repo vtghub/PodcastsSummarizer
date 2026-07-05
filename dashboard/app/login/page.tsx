@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Lock, Eye, EyeOff, Loader2 } from "lucide-react";
-import { Suspense } from "react";
+import Link from "next/link";
+import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 
 function LoginForm() {
   const searchParams = useSearchParams();
   const from = searchParams.get("from") ?? "/podcasts";
 
-  const [passcode, setPasscode] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,13 +23,14 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ passcode }),
+        body: JSON.stringify({ email, password }),
       });
       if (res.ok) {
+        // Full navigation so the middleware sees the new session cookie
         window.location.href = from;
       } else {
         const data = await res.json();
-        setError(data.error ?? "Invalid passcode");
+        setError(data.error ?? "Invalid email or password");
       }
     } catch {
       setError("Something went wrong. Try again.");
@@ -38,8 +40,10 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4"
-         style={{ background: "var(--bg-page)" }}>
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ background: "var(--bg-page)" }}
+    >
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -48,62 +52,104 @@ function LoginForm() {
             Podcast Insights
           </h1>
           <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>
-            Enter your passcode to manage podcasts
+            Sign in to manage your podcasts
           </p>
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl border p-6 shadow-sm"
-             style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)" }}>
-          <div className="flex items-center gap-2 mb-5">
-            <Lock className="w-4 h-4" style={{ color: "var(--acc)" }} />
-            <h2 className="text-sm font-semibold" style={{ color: "var(--txt-2)" }}>
-              Restricted access
-            </h2>
-          </div>
-
+        <div
+          className="rounded-2xl border p-6 shadow-sm"
+          style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)" }}
+        >
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="relative">
-              <input
-                type={show ? "text" : "password"}
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                placeholder="Enter passcode"
-                required
-                autoFocus
-                className="input pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShow((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2"
-                style={{ color: "var(--txt-4)" }}
-              >
-                {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+            {/* Email */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
+                Email
+              </label>
+              <div className="relative">
+                <Mail
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+                  style={{ color: "var(--txt-4)" }}
+                />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  required
+                  autoFocus
+                  className="input pl-9"
+                />
+              </div>
+            </div>
+
+            {/* Password */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
+                Password
+              </label>
+              <div className="relative">
+                <Lock
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+                  style={{ color: "var(--txt-4)" }}
+                />
+                <input
+                  type={show ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Your password"
+                  required
+                  className="input pl-9 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShow((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2"
+                  style={{ color: "var(--txt-4)" }}
+                >
+                  {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             {error && (
-              <p className="text-sm px-3 py-2 rounded-lg"
-                 style={{ color: "#F87171", background: "rgba(127,29,29,0.25)", border: "1px solid rgba(185,28,28,0.3)" }}>
+              <p
+                className="text-sm px-3 py-2 rounded-lg"
+                style={{
+                  color: "#F87171",
+                  background: "rgba(127,29,29,0.25)",
+                  border: "1px solid rgba(185,28,28,0.3)",
+                }}
+              >
                 {error}
               </p>
             )}
 
             <button
               type="submit"
-              disabled={loading || !passcode}
+              disabled={loading || !email || !password}
               className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50 text-white"
               style={{ background: "var(--acc)" }}
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {loading ? "Verifying…" : "Access My Podcasts"}
+              {loading ? "Signing in…" : "Sign In"}
             </button>
           </form>
         </div>
 
-        <p className="text-center text-xs mt-4" style={{ color: "var(--txt-4)" }}>
-          The main dashboard is publicly accessible.
+        <p className="text-center text-sm mt-5" style={{ color: "var(--txt-4)" }}>
+          Don&apos;t have an account?{" "}
+          <Link
+            href="/register"
+            className="font-medium hover:underline"
+            style={{ color: "var(--acc)" }}
+          >
+            Create one
+          </Link>
+        </p>
+        <p className="text-center text-xs mt-3" style={{ color: "var(--txt-4)" }}>
+          The insights dashboard is publicly accessible.
         </p>
       </div>
     </div>

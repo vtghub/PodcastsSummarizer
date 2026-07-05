@@ -1,0 +1,194 @@
+"use client";
+
+import { useState, FormEvent } from "react";
+import Link from "next/link";
+import { User, Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
+
+export default function RegisterPage() {
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, displayName }),
+      });
+      if (res.ok) {
+        setDone(true);
+      } else {
+        const data = await res.json();
+        setError(data.error ?? "Registration failed. Try again.");
+      }
+    } catch {
+      setError("Something went wrong. Try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{ background: "var(--bg-page)" }}
+    >
+      <div className="w-full max-w-sm">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="text-4xl mb-3">🎙</div>
+          <h1 className="text-xl font-bold" style={{ color: "var(--txt-1)" }}>
+            Podcast Insights
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>
+            Create your account
+          </p>
+        </div>
+
+        {/* Card */}
+        <div
+          className="rounded-2xl border p-6 shadow-sm"
+          style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)" }}
+        >
+          {done ? (
+            <div className="text-center py-4 space-y-3">
+              <div className="text-3xl">✉️</div>
+              <p className="text-sm font-medium" style={{ color: "var(--txt-1)" }}>
+                Check your inbox
+              </p>
+              <p className="text-sm" style={{ color: "var(--txt-3)" }}>
+                We sent a confirmation link to <strong>{email}</strong>.
+                Click it to activate your account, then sign in.
+              </p>
+              <Link
+                href="/login"
+                className="inline-block mt-2 text-sm font-medium hover:underline"
+                style={{ color: "var(--acc)" }}
+              >
+                Go to sign in →
+              </Link>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Display name */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
+                  Display name <span style={{ color: "var(--txt-4)" }}>(optional)</span>
+                </label>
+                <div className="relative">
+                  <User
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+                    style={{ color: "var(--txt-4)" }}
+                  />
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Your name"
+                    autoFocus
+                    className="input pl-9"
+                  />
+                </div>
+              </div>
+
+              {/* Email */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+                    style={{ color: "var(--txt-4)" }}
+                  />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    className="input pl-9"
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
+                  Password <span style={{ color: "var(--txt-4)" }}>(min 8 characters)</span>
+                </label>
+                <div className="relative">
+                  <Lock
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+                    style={{ color: "var(--txt-4)" }}
+                  />
+                  <input
+                    type={show ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="At least 8 characters"
+                    required
+                    minLength={8}
+                    className="input pl-9 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShow((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                    style={{ color: "var(--txt-4)" }}
+                  >
+                    {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {error && (
+                <p
+                  className="text-sm px-3 py-2 rounded-lg"
+                  style={{
+                    color: "#F87171",
+                    background: "rgba(127,29,29,0.25)",
+                    border: "1px solid rgba(185,28,28,0.3)",
+                  }}
+                >
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || !email || !password}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50 text-white"
+                style={{ background: "var(--acc)" }}
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {loading ? "Creating account…" : "Create Account"}
+              </button>
+            </form>
+          )}
+        </div>
+
+        {!done && (
+          <p className="text-center text-sm mt-5" style={{ color: "var(--txt-4)" }}>
+            Already have an account?{" "}
+            <Link
+              href="/login"
+              className="font-medium hover:underline"
+              style={{ color: "var(--acc)" }}
+            >
+              Sign in
+            </Link>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}

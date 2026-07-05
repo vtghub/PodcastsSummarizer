@@ -1,11 +1,10 @@
-import { cookies } from "next/headers";
 import { getSourcesAsync, type Source } from "@/lib/db";
-import { SESSION_COOKIE, isValidSession } from "@/lib/auth";
+import { getUser } from "@/lib/auth";
 import PodcastManager from "@/components/PodcastManager";
 
 export default async function PodcastsPage() {
-  const cookieStore = await cookies();
-  const isAuthed = await isValidSession(cookieStore.get(SESSION_COOKIE)?.value);
+  const user = await getUser();
+  const isAuthed = Boolean(user);
 
   let sources: Source[] = [];
   let dbError = false;
