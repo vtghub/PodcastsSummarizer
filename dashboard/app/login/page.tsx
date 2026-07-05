@@ -67,11 +67,8 @@ function LoginForm() {
               <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
                 Email
               </label>
-              <div className="relative">
-                <Mail
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-                  style={{ color: "var(--txt-4)" }}
-                />
+              <div className="input flex items-center gap-2.5" style={{ padding: "0 0.75rem" }}>
+                <Mail className="w-4 h-4 shrink-0" style={{ color: "var(--txt-4)" }} />
                 <input
                   type="email"
                   value={email}
@@ -79,7 +76,8 @@ function LoginForm() {
                   placeholder="you@example.com"
                   required
                   autoFocus
-                  className="input pl-9"
+                  className="flex-1 bg-transparent outline-none py-2 text-sm"
+                  style={{ color: "var(--txt-1)" }}
                 />
               </div>
             </div>
@@ -89,23 +87,21 @@ function LoginForm() {
               <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
                 Password
               </label>
-              <div className="relative">
-                <Lock
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-                  style={{ color: "var(--txt-4)" }}
-                />
+              <div className="input flex items-center gap-2.5" style={{ padding: "0 0.75rem" }}>
+                <Lock className="w-4 h-4 shrink-0" style={{ color: "var(--txt-4)" }} />
                 <input
                   type={show ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Your password"
                   required
-                  className="input pl-9 pr-10"
+                  className="flex-1 bg-transparent outline-none py-2 text-sm"
+                  style={{ color: "var(--txt-1)" }}
                 />
                 <button
                   type="button"
                   onClick={() => setShow((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2"
+                  className="shrink-0"
                   style={{ color: "var(--txt-4)" }}
                 >
                   {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
