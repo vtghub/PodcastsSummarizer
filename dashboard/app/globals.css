@@ -1,30 +1,42 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Theme variables are injected via ThemeContext.tsx (JS) at runtime.
+   CSS vars below are used by all components via style={{ ... }} or Tailwind arbitrary values. */
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-page, #FAF9F6);
+  color: var(--txt-1, #1C1917);
+  font-family: var(--font-geist-sans, Arial, Helvetica, sans-serif);
+  transition: background 0.2s ease, color 0.15s ease;
 }
 
 .input {
-  @apply w-full rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors;
+  width: 100%;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  background: var(--bg-input, #F5F2EE);
+  border: 1px solid var(--bdr, #E2DDD6);
+  color: var(--txt-1, #1C1917);
+}
+
+.input::placeholder {
+  color: var(--txt-4, #A8A29E);
+}
+
+.input:focus {
+  border-color: var(--acc, #C2410C);
+  box-shadow: 0 0 0 1px var(--acc, #C2410C);
+}
+
+select option {
+  background: var(--bg-elevated, #F0EDE8);
+  color: var(--txt-1, #1C1917);
 }
