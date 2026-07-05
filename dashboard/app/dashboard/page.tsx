@@ -88,7 +88,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           {Object.entries(byDomain).map(([domain, list]) => {
             const color = getDomainColor(domain);
             return (
-              <section key={domain} id={encodeURIComponent(domain)}>
+              <section key={domain} id={encodeURIComponent(domain)} className="scroll-mt-20">
                 <div className="flex items-center gap-3 mb-5">
                   <span className={`w-2.5 h-2.5 rounded-full ${color.dot}`} />
                   <h2 className={`text-sm font-bold uppercase tracking-widest ${color.text}`}>{domain}</h2>
