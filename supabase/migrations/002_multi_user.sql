@@ -44,33 +44,43 @@ ALTER TABLE episodes           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transcripts        ENABLE ROW LEVEL SECURITY;
 
 -- user_profiles: each user can only see and edit their own row
-CREATE POLICY IF NOT EXISTS "profiles_self_select" ON user_profiles
+DROP POLICY IF EXISTS "profiles_self_select" ON user_profiles;
+CREATE POLICY "profiles_self_select" ON user_profiles
   FOR SELECT USING (user_id = auth.uid());
-CREATE POLICY IF NOT EXISTS "profiles_self_update" ON user_profiles
+DROP POLICY IF EXISTS "profiles_self_update" ON user_profiles;
+CREATE POLICY "profiles_self_update" ON user_profiles
   FOR UPDATE USING (user_id = auth.uid());
 
 -- user_subscriptions: each user can only see and edit their own rows
-CREATE POLICY IF NOT EXISTS "subscriptions_self_select" ON user_subscriptions
+DROP POLICY IF EXISTS "subscriptions_self_select" ON user_subscriptions;
+CREATE POLICY "subscriptions_self_select" ON user_subscriptions
   FOR SELECT USING (user_id = auth.uid());
-CREATE POLICY IF NOT EXISTS "subscriptions_self_insert" ON user_subscriptions
+DROP POLICY IF EXISTS "subscriptions_self_insert" ON user_subscriptions;
+CREATE POLICY "subscriptions_self_insert" ON user_subscriptions
   FOR INSERT WITH CHECK (user_id = auth.uid());
-CREATE POLICY IF NOT EXISTS "subscriptions_self_update" ON user_subscriptions
+DROP POLICY IF EXISTS "subscriptions_self_update" ON user_subscriptions;
+CREATE POLICY "subscriptions_self_update" ON user_subscriptions
   FOR UPDATE USING (user_id = auth.uid());
-CREATE POLICY IF NOT EXISTS "subscriptions_self_delete" ON user_subscriptions
+DROP POLICY IF EXISTS "subscriptions_self_delete" ON user_subscriptions;
+CREATE POLICY "subscriptions_self_delete" ON user_subscriptions
   FOR DELETE USING (user_id = auth.uid());
 
 -- sources: public catalog visible to all; private feeds visible only to owner
 -- Service role (pipeline, admin API) bypasses RLS entirely.
-CREATE POLICY IF NOT EXISTS "sources_read" ON sources
+DROP POLICY IF EXISTS "sources_read" ON sources;
+CREATE POLICY "sources_read" ON sources
   FOR SELECT USING (is_public = TRUE OR user_id = auth.uid());
 
 -- insights / episodes / transcripts: readable by all authenticated users
 -- The service role writes them; anon read is fine for the public dashboard preview.
-CREATE POLICY IF NOT EXISTS "insights_read_all" ON insights
+DROP POLICY IF EXISTS "insights_read_all" ON insights;
+CREATE POLICY "insights_read_all" ON insights
   FOR SELECT USING (TRUE);
-CREATE POLICY IF NOT EXISTS "episodes_read_all" ON episodes
+DROP POLICY IF EXISTS "episodes_read_all" ON episodes;
+CREATE POLICY "episodes_read_all" ON episodes
   FOR SELECT USING (TRUE);
-CREATE POLICY IF NOT EXISTS "transcripts_read_all" ON transcripts
+DROP POLICY IF EXISTS "transcripts_read_all" ON transcripts;
+CREATE POLICY "transcripts_read_all" ON transcripts
   FOR SELECT USING (TRUE);
 
 -- ── 6. After running this migration ─────────────────────────────────────────
