@@ -2,12 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Volume2, VolumeX, Palette, Check } from "lucide-react";
+import { Volume2, VolumeX, Palette, Check, UserCircle } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES, type ThemeKey } from "@/contexts/ThemeContext";
 
-export default function NavBar() {
+export default function NavBar({
+  userEmail,
+  displayName,
+}: {
+  userEmail?: string | null;
+  displayName?: string | null;
+}) {
   const { enabled, toggle } = useTTS();
   const { theme, setTheme } = useTheme();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -54,6 +60,32 @@ export default function NavBar() {
         <div className="flex items-center gap-3">
           {navLink("/", "Dashboard")}
           {navLink("/podcasts", "My Podcasts")}
+          {userEmail && (
+            <Link
+              href="/profile"
+              title="Your profile"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border"
+              style={{
+                background: "var(--bg-elevated)",
+                borderColor: "var(--bdr)",
+                color: "var(--txt-3)",
+              }}
+            >
+              <UserCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="hidden sm:inline max-w-[120px] truncate">
+                {displayName || userEmail.split("@")[0]}
+              </span>
+            </Link>
+          )}
+          {!userEmail && (
+            <Link
+              href="/login"
+              className="text-sm transition-colors hover:opacity-80"
+              style={{ color: "var(--txt-3)" }}
+            >
+              Sign in
+            </Link>
+          )}
 
           {/* TTS toggle */}
           <button
