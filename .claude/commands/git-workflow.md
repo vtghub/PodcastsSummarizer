@@ -43,6 +43,18 @@ Then open a PR targeting **`develop`** (not `main`).
    git checkout develop && git pull origin develop
    ```
 
+## Enforcement rule (applies to ALL change requests, not just /git-workflow)
+
+**Every change — no matter how small — must follow this exact sequence:**
+
+1. `feature/*` branch (from `develop`)
+2. Commit changes to the feature branch
+3. Push and open a PR targeting `develop`
+4. Merge the PR into `develop`
+5. Merge `develop` into `main`
+
+**Never commit directly to `develop` or `main`.** No exceptions for docs, hotfixes, or "small" changes.
+
 ## How to use this skill
 
 When invoked as `/git-workflow [action]`, determine intent from `$ARGUMENTS`
