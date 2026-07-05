@@ -40,7 +40,7 @@ The `/podcasts` page and all `/api/sources` endpoints require a valid session co
 
 Themes are defined as JavaScript objects in `contexts/ThemeContext.tsx` and applied via `document.documentElement.style.setProperty()` at runtime. This avoids a Tailwind 4 + Turbopack limitation where custom `:root` blocks in CSS files are stripped from the output bundle.
 
-Five built-in themes: **Anthropic Light**, **Midnight**, **Aurora**, **Dusk**, **Forest**.
+Five built-in themes: **Light**, **Midnight**, **Aurora**, **Dusk**, **Forest**.
 
 ## Development
 

@@ -12,7 +12,7 @@ export interface ThemeMeta {
 }
 
 export const THEMES: ThemeMeta[] = [
-  { key: "anthropic-light", name: "Anthropic Light", bg: "#FAF9F6", accent: "#C2410C" },
+  { key: "anthropic-light", name: "Light",           bg: "#FAF9F6", accent: "#C2410C" },
   { key: "midnight",        name: "Midnight",        bg: "#0A0D14", accent: "#6366F1" },
   { key: "aurora",          name: "Aurora",          bg: "#020B18", accent: "#06B6D4" },
   { key: "dusk",            name: "Dusk",            bg: "#0D0816", accent: "#A855F7" },
