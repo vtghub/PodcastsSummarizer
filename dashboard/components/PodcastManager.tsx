@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2 } from "lucide-react";
+import { Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2, Lock } from "lucide-react";
 import { getDomainColor } from "@/lib/domain-colors";
 import type { Source } from "@/lib/db";
 
@@ -19,7 +19,7 @@ const DOMAINS = [
 type FormState = { name: string; url: string; source_type: "rss" | "youtube"; domain: string };
 const EMPTY_FORM: FormState = { name: "", url: "", source_type: "rss", domain: "Technology & AI" };
 
-export default function PodcastManager({ sources }: { sources: Source[] }) {
+export default function PodcastManager({ sources, isAuthed }: { sources: Source[]; isAuthed: boolean }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [showAdd, setShowAdd] = useState(false);
@@ -84,7 +84,7 @@ export default function PodcastManager({ sources }: { sources: Source[] }) {
   return (
     <>
       {/* Header */}
-      <div className="mb-8 flex items-start justify-between gap-4">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>My Podcasts</h1>
           <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>
@@ -94,33 +94,54 @@ export default function PodcastManager({ sources }: { sources: Source[] }) {
             {isPending && <span className="ml-2" style={{ color: "var(--txt-4)" }}>refreshing…</span>}
           </p>
         </div>
-        <button
-          onClick={() => { setShowAdd(true); setError(""); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0 text-white"
-          style={{ background: "var(--acc)" }}
-        >
-          <Plus className="w-4 h-4" />
-          Add Podcast
-        </button>
+        {isAuthed && (
+          <button
+            onClick={() => { setShowAdd(true); setError(""); }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0 text-white"
+            style={{ background: "var(--acc)" }}
+          >
+            <Plus className="w-4 h-4" />
+            Add Podcast
+          </button>
+        )}
       </div>
+
+      {/* Read-only notice */}
+      {!isAuthed && (
+        <div
+          className="flex items-center gap-2 mb-6 px-4 py-3 rounded-lg border text-sm"
+          style={{ background: "var(--bg-elevated)", borderColor: "var(--bdr)", color: "var(--txt-3)" }}
+        >
+          <Lock className="w-4 h-4 flex-shrink-0" style={{ color: "var(--acc)" }} />
+          <span>
+            Viewing in read-only mode.{" "}
+            <a href="/login?from=/podcasts" style={{ color: "var(--acc)" }} className="font-medium hover:underline">
+              Sign in
+            </a>{" "}
+            to add, enable, or delete podcasts.
+          </span>
+        </div>
+      )}
 
       {/* Source grid */}
       {sources.length === 0 ? (
         <div className="flex flex-col items-center py-20 text-center">
           <span className="text-5xl mb-4">🎙</span>
           <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--txt-1)" }}>No podcasts yet</h2>
-          <p className="text-sm max-w-sm" style={{ color: "var(--txt-3)" }}>
-            Click <strong>Add Podcast</strong> to add your first RSS or YouTube source.
-          </p>
+          {isAuthed && (
+            <p className="text-sm max-w-sm" style={{ color: "var(--txt-3)" }}>
+              Click <strong>Add Podcast</strong> to add your first RSS or YouTube source.
+            </p>
+          )}
         </div>
       ) : (
         <div className="space-y-10">
           {enabled.length > 0 && (
-            <Section title="Active" sources={enabled} actionId={actionId}
+            <Section title="Active" sources={enabled} actionId={actionId} isAuthed={isAuthed}
               onToggle={handleToggle} onDelete={handleDelete} />
           )}
           {disabled.length > 0 && (
-            <Section title="Disabled" sources={disabled} actionId={actionId} muted
+            <Section title="Disabled" sources={disabled} actionId={actionId} muted isAuthed={isAuthed}
               onToggle={handleToggle} onDelete={handleDelete} />
           )}
         </div>
@@ -220,8 +241,8 @@ export default function PodcastManager({ sources }: { sources: Source[] }) {
   );
 }
 
-function Section({ title, sources, muted = false, actionId, onToggle, onDelete }: {
-  title: string; sources: Source[]; muted?: boolean;
+function Section({ title, sources, muted = false, actionId, isAuthed, onToggle, onDelete }: {
+  title: string; sources: Source[]; muted?: boolean; isAuthed: boolean;
   actionId: string | null; onToggle: (s: Source) => void; onDelete: (s: Source) => void;
 }) {
   return (
@@ -229,7 +250,7 @@ function Section({ title, sources, muted = false, actionId, onToggle, onDelete }
       <h2 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "var(--txt-4)" }}>{title}</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sources.map((s) => (
-          <SourceCard key={s.id} source={s} muted={muted}
+          <SourceCard key={s.id} source={s} muted={muted} isAuthed={isAuthed}
             busy={actionId === s.id} onToggle={() => onToggle(s)} onDelete={() => onDelete(s)} />
         ))}
       </div>
@@ -237,8 +258,8 @@ function Section({ title, sources, muted = false, actionId, onToggle, onDelete }
   );
 }
 
-function SourceCard({ source, muted, busy, onToggle, onDelete }: {
-  source: Source; muted: boolean; busy: boolean; onToggle: () => void; onDelete: () => void;
+function SourceCard({ source, muted, busy, isAuthed, onToggle, onDelete }: {
+  source: Source; muted: boolean; busy: boolean; isAuthed: boolean; onToggle: () => void; onDelete: () => void;
 }) {
   const color = getDomainColor(source.domain);
   const isYT  = source.source_type === "youtube";
@@ -247,7 +268,7 @@ function SourceCard({ source, muted, busy, onToggle, onDelete }: {
     <div
       className="rounded-xl border p-5 flex flex-col gap-3 relative transition-colors"
       style={{
-        background: muted ? "var(--bg-surface)" : "var(--bg-surface)",
+        background: "var(--bg-surface)",
         borderColor: "var(--bdr)",
         opacity: muted ? 0.65 : 1,
       }}
@@ -286,27 +307,29 @@ function SourceCard({ source, muted, busy, onToggle, onDelete }: {
         <span className="text-xs" style={{ color: muted ? "var(--txt-4)" : "#34D399" }}>
           {muted ? "disabled" : "active"}
         </span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={onToggle}
-            title={source.enabled ? "Disable" : "Enable"}
-            className="p-1.5 rounded-md transition-colors"
-            style={{ color: "var(--txt-4)" }}
-          >
-            {source.enabled
-              ? <PowerOff className="w-3.5 h-3.5" />
-              : <Power    className="w-3.5 h-3.5" style={{ color: "#34D399" }} />
-            }
-          </button>
-          <button
-            onClick={onDelete}
-            title="Delete"
-            className="p-1.5 rounded-md transition-colors"
-            style={{ color: "var(--txt-4)" }}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        {isAuthed && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onToggle}
+              title={source.enabled ? "Disable" : "Enable"}
+              className="p-1.5 rounded-md transition-colors"
+              style={{ color: "var(--txt-4)" }}
+            >
+              {source.enabled
+                ? <PowerOff className="w-3.5 h-3.5" />
+                : <Power    className="w-3.5 h-3.5" style={{ color: "#34D399" }} />
+              }
+            </button>
+            <button
+              onClick={onDelete}
+              title="Delete"
+              className="p-1.5 rounded-md transition-colors"
+              style={{ color: "var(--txt-4)" }}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
