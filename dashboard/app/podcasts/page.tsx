@@ -1,8 +1,8 @@
-import { getSourcesAsync } from "@/lib/db";
+import { getSourcesAsync, type Source } from "@/lib/db";
 import PodcastManager from "@/components/PodcastManager";
 
 export default async function PodcastsPage() {
-  let sources = [];
+  let sources: Source[] = [];
   let dbError = false;
 
   try {
