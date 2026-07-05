@@ -57,6 +57,20 @@ export async function getUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
+/** Returns display_name from user_profiles, or null. */
+export async function getDisplayName(): Promise<string | null> {
+  const user = await getUser();
+  if (!user) return null;
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { data } = await sb
+    .from("user_profiles")
+    .select("display_name")
+    .eq("user_id", user.id)
+    .single();
+  return data?.display_name ?? null;
+}
+
 /**
  * Returns true if the signed-in user has is_admin = true in user_profiles.
  * Uses the service-role client so it bypasses RLS — safe for server-side checks.
