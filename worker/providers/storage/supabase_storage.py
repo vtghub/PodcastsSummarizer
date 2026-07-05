@@ -9,6 +9,7 @@ Set SUPABASE_DB_URL in .env:
 """
 
 import json
+import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -26,9 +27,32 @@ class SupabaseStorageProvider(StorageProvider):
     def __init__(self, db_url: str = SUPABASE_DB_URL):
         self.db_url = db_url
 
+    def _connect_kwargs(self) -> dict:
+        # urlparse misinterprets brackets in passwords like "[PodcastsSummarizer]"
+        # as IPv6 literals, returning a wrong hostname. Parse the URL with
+        # string ops instead so special characters in the password are safe.
+        url = self.db_url
+        # strip scheme  (postgresql:// or postgres://)
+        rest = re.sub(r'^postgres(?:ql)?(?:\+\w+)?://', '', url)
+        last_at = rest.rfind('@')
+        userinfo, hostinfo = rest[:last_at], rest[last_at + 1:]
+        first_colon = userinfo.index(':')
+        user, password = userinfo[:first_colon], userinfo[first_colon + 1:]
+        slash = hostinfo.rfind('/')
+        host_port, dbname = hostinfo[:slash], hostinfo[slash + 1:]
+        host, _, port = host_port.rpartition(':')
+        return dict(
+            host=host,
+            port=int(port) if port else 5432,
+            dbname=dbname,
+            user=user,
+            password=password,
+            cursor_factory=psycopg2.extras.RealDictCursor,
+        )
+
     @contextmanager
     def _conn(self):
-        conn = psycopg2.connect(self.db_url, cursor_factory=psycopg2.extras.RealDictCursor)
+        conn = psycopg2.connect(**self._connect_kwargs())
         try:
             yield conn
             conn.commit()
