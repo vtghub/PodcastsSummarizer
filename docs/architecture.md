@@ -3,7 +3,7 @@
 ```mermaid
 graph TB
     subgraph CI["⚙️ GitHub Actions — daily_pipeline.yml"]
-        CRON["🕖 Cron: 07:00 UTC daily\n+ workflow_dispatch"]
+        CRON["🕖 Cron: 7 PM EST daily (midnight UTC)\n+ workflow_dispatch"]
     end
 
     subgraph PIPELINE["🐍 Python Worker Pipeline"]
@@ -22,9 +22,8 @@ graph TB
     end
 
     subgraph DASH["🖥️ Next.js 15 Dashboard — Vercel"]
-        MW["Edge Middleware\nauth cookie guard"]
-        PUB["Public Pages\n/ · /dashboard"]
-        PROT["Protected Page\n/podcasts"]
+        MW["Edge Middleware\nguards /api/sources only"]
+        PUB["Public Pages\n/ · /dashboard · /podcasts"]
         API["API Routes\n/api/sources  /api/auth"]
         UI["Client Components\nTheme · TTS · Domain Tabs · Cards"]
     end
@@ -47,29 +46,27 @@ graph TB
     %% Dashboard flow
     USER -->|"HTTP request"| MW
     MW -->|"public route"| PUB
-    MW -->|"cookie valid"| PROT
-    MW -->|"no cookie → redirect"| LOGIN
-    LOGIN -->|"POST passcode"| API
-    API -->|"set cookie"| USER
-    PROT --> API
+    MW -->|"no cookie → 401"| API
+    MW -->|"cookie valid"| API
+    LOGIN -->|"POST passcode → set cookie"| API
     API --> DB
     PUB --> DB
     PUB --> UI
-    PROT --> UI
+    PUB -->|"isAuthed=true → full UI\nisAuthed=false → read-only"| UI
 ```
 
 ## Layer Summary
 
 | Layer | Technology | Role |
 |---|---|---|
-| **Scheduler** | GitHub Actions (cron) | Triggers pipeline daily at 07:00 UTC |
+| **Scheduler** | GitHub Actions (cron) | Triggers pipeline daily at 7 PM EST (midnight UTC) |
 | **Source** | Python — RSS / yt-dlp | Fetches episode metadata and audio |
 | **Transcription** | OpenAI Whisper (local) | Converts audio to text when no caption is available |
 | **LLM** | Gemini / Groq / Ollama | Extracts summary, key points, quotes, and action items |
 | **Storage** | Supabase (prod) / SQLite (dev) | Persists episodes, transcripts, and insights |
 | **Email** | Gmail SMTP / Resend | Delivers optional daily digest |
 | **Dashboard** | Next.js 15 on Vercel | Displays insights; manages podcast sources |
-| **Auth** | Edge Middleware + HTTP-only cookie | Passcode-gates the My Podcasts page |
+| **Auth** | Edge Middleware + HTTP-only cookie | Guards `/api/sources`; `/podcasts` is public (read-only for guests) |
 
 ## Provider Switching
 

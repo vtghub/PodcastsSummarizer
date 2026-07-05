@@ -12,6 +12,7 @@ sequenceDiagram
     participant LLM as LLM (Gemini / Groq)
 
     GHA->>P: run_pipeline(since=yesterday)
+    Note over GHA: Fires at 7 PM EST (midnight UTC) daily
     P->>S: get_sources(enabled_only=True)
     S-->>P: [sources]
 
@@ -69,64 +70,92 @@ sequenceDiagram
 
 ---
 
-## 3. Auth-Gated Request — `/podcasts`
+## 3. My Podcasts Page — Public with Auth-Aware UI
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
     participant MW as Edge Middleware
-    participant LP as /login page
-    participant LA as POST /api/auth/login
-    participant PP as /podcasts page
-    participant SA as /api/sources
+    participant SC as Server Component (podcasts/page.tsx)
+    participant DB as Supabase
+    participant PM as PodcastManager (client)
 
     B->>MW: GET /podcasts
+    MW->>MW: public route → pass through (no redirect)
+    MW->>SC: render page (server-side)
+    SC->>SC: isValidSession(cookie) → isAuthed true/false
+    SC->>DB: getSourcesAsync()
+    DB-->>SC: sources[]
+    SC-->>B: HTML with isAuthed prop
 
-    alt no valid session cookie
-        MW-->>B: 302 → /login?from=/podcasts
-        B->>LP: render login form
-
-        B->>LA: POST { passcode }
-        LA->>LA: SHA-256(passcode) == SHA-256(ADMIN_SECRET)?
-
-        alt wrong passcode
-            LA-->>B: 401 { error: "Invalid passcode" }
-        else correct passcode
-            LA-->>B: 200 + Set-Cookie: admin_session (httpOnly, SameSite=strict, 30d)
-            B->>MW: GET /podcasts  (cookie present)
-            MW->>MW: isValidSession → true
-            MW->>PP: pass through
-        end
-    else valid cookie
-        MW->>PP: pass through
+    alt isAuthed = false (guest)
+        B->>PM: render read-only mode
+        Note over PM: List visible · No Add/toggle/delete buttons<br/>"Sign in to manage" banner shown<br/>No Sign Out in navbar
+    else isAuthed = true (signed in)
+        B->>PM: render full management UI
+        Note over PM: Add Podcast button · Enable/disable · Delete<br/>Sign Out shown in navbar
     end
-
-    PP-->>B: My Podcasts page (PodcastManager)
-    B->>SA: GET /api/sources
-    SA-->>B: sources[]
-    B->>SA: POST /api/sources  (add)
-    SA-->>B: new source
-    B->>SA: PUT /api/sources/[id]  (update)
-    SA-->>B: updated source
-    B->>SA: DELETE /api/sources/[id]
-    SA-->>B: 204 No Content
 ```
 
 ---
 
-## 4. Logout Flow
+## 4. Login Flow
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant LP as /login page
+    participant LA as POST /api/auth/login
+    participant MW as Edge Middleware
+
+    B->>LP: navigate to /login?from=/podcasts
+    B->>LA: POST { passcode }
+    LA->>LA: SHA-256(passcode) == SHA-256(ADMIN_SECRET)?
+
+    alt wrong passcode
+        LA-->>B: 401 { error: "Invalid passcode" }
+    else correct passcode
+        LA-->>B: 200 + Set-Cookie: admin_session (httpOnly, SameSite=strict, 30d)
+        Note over B: window.location.href = "/podcasts"<br/>(full navigation — ensures middleware sees cookie)
+        B->>MW: GET /podcasts (cookie present)
+        MW->>MW: public route → pass through
+        B->>B: /podcasts renders in full management mode
+    end
+```
+
+---
+
+## 5. Logout Flow
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
     participant LA as POST /api/auth/logout
-    participant MW as Edge Middleware
 
     B->>LA: POST /api/auth/logout
     LA-->>B: 200 + Set-Cookie: admin_session="" (maxAge=0)
     Note over B: Cookie cleared in browser
-    B->>B: router.push("/")
-    B->>MW: GET /  (no cookie)
-    MW->>MW: public route → pass through
-    MW-->>B: Home page
+    B->>B: router.push("/") → Home page
+    Note over B: /podcasts now shows read-only mode
+```
+
+---
+
+## 6. API Source Mutation — Auth Guard
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant MW as Edge Middleware
+    participant API as /api/sources
+
+    B->>MW: POST/PUT/DELETE /api/sources/[id]
+
+    alt no valid session cookie
+        MW-->>B: 401 { error: "Unauthorized" }
+    else valid cookie
+        MW->>API: pass through
+        API->>API: perform mutation (add / update / delete)
+        API-->>B: 200 / 204
+    end
 ```
