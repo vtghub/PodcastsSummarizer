@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -20,6 +21,12 @@ export default function DateNav({ selectedDate, availableDates }: Props) {
 
   const navigate = (date: string) => router.push(`/dashboard?date=${date}`);
   const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => { if (e.target.value) navigate(e.target.value); };
+
+  // Prefetch adjacent dates so navigation is instant
+  useEffect(() => {
+    if (prevDate) router.prefetch(`/dashboard?date=${prevDate}`);
+    if (nextDate) router.prefetch(`/dashboard?date=${nextDate}`);
+  }, [prevDate, nextDate, router]);
 
   const navBtn = (onClick: () => void, disabled: boolean, title: string, icon: React.ReactNode) => (
     <button

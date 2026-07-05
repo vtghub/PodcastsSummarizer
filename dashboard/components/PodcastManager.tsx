@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2, Lock } from "lucide-react";
+import { Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2, Lock, LogOut } from "lucide-react";
 import { getDomainColor } from "@/lib/domain-colors";
 import type { Source } from "@/lib/db";
 
@@ -29,6 +29,12 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
   const [actionId, setActionId] = useState<string | null>(null);
 
   const refresh = () => startTransition(() => router.refresh());
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/");
+    router.refresh();
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -95,14 +101,25 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
           </p>
         </div>
         {isAuthed && (
-          <button
-            onClick={() => { setShowAdd(true); setError(""); }}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0 text-white"
-            style={{ background: "var(--acc)" }}
-          >
-            <Plus className="w-4 h-4" />
-            Add Podcast
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => { setShowAdd(true); setError(""); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-white"
+              style={{ background: "var(--acc)" }}
+            >
+              <Plus className="w-4 h-4" />
+              Add Podcast
+            </button>
+            <button
+              onClick={handleLogout}
+              title="Sign out"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors border"
+              style={{ borderColor: "var(--bdr)", color: "var(--txt-3)", background: "var(--bg-elevated)" }}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sign out</span>
+            </button>
+          </div>
         )}
       </div>
 

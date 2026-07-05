@@ -11,26 +11,7 @@ from groq import Groq
 
 from worker.core.interfaces import Episode, Insight, LLMProvider, Transcript
 from worker.config.settings import GROQ_API_KEY, GROQ_MODEL
-
-_EXTRACTION_PROMPT = """
-You are an expert podcast analyst. Extract structured insights from the transcript below.
-
-Return ONLY valid JSON matching this exact schema — no markdown, no commentary:
-{{
-  "summary": "<2-3 sentence overview of the episode>",
-  "key_points": ["<insight 1>", "<insight 2>", ..., "<insight 5-7>"],
-  "key_quotes": ["<memorable direct quote 1>", "<memorable direct quote 2>", "<memorable direct quote 3>"],
-  "action_items": ["<actionable takeaway 1>", "<actionable takeaway 2>", "<actionable takeaway 3>"],
-  "tags": ["<tag1>", "<tag2>", "<tag3>"]
-}}
-
-Episode title: {title}
-Domain: {domain}
-Description: {description}
-
-Transcript:
-{transcript}
-"""
+from worker.providers.llm.prompts import EXTRACTION_PROMPT
 
 # Groq free tier: 6,000 TPM. Prompt overhead ~1,500 tokens, cap transcript
 # at ~16k chars (~4,000 tokens) to keep total request under 6,000 tokens.
@@ -50,7 +31,7 @@ class GroqLLMProvider(LLMProvider):
         if len(transcript.text) > _MAX_TRANSCRIPT_CHARS:
             truncated += "\n[transcript truncated for length]"
 
-        prompt = textwrap.dedent(_EXTRACTION_PROMPT).format(
+        prompt = textwrap.dedent(EXTRACTION_PROMPT).format(
             title=episode.title,
             domain=domain,
             description=episode.description[:500],
