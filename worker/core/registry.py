@@ -25,6 +25,9 @@ def get_llm_provider() -> LLMProvider:
         case "gemini":
             from worker.providers.llm.gemini_llm import GeminiLLMProvider
             return GeminiLLMProvider()
+        case "groq":
+            from worker.providers.llm.groq_llm import GroqLLMProvider
+            return GroqLLMProvider()
         case "ollama":
             from worker.providers.llm.ollama_llm import OllamaLLMProvider
             return OllamaLLMProvider()

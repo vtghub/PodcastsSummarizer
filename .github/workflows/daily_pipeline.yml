@@ -35,12 +35,13 @@ jobs:
       - name: Run pipeline
         env:
           STORAGE_PROVIDER: supabase
-          LLM_PROVIDER: gemini
+          LLM_PROVIDER: ${{ secrets.GROQ_API_KEY != '' && 'groq' || 'gemini' }}
           TRANSCRIPTION_PROVIDER: local_whisper
           EMAIL_PROVIDER: console
           WHISPER_MODEL: tiny
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           DIGEST_RECIPIENT: ${{ secrets.DIGEST_RECIPIENT }}
           SINCE_DAYS: ${{ github.event.inputs.since_days || '1' }}
           PYTHONUTF8: "1"

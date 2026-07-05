@@ -18,7 +18,7 @@ TRANSCRIPTION_PROVIDER = os.getenv("TRANSCRIPTION_PROVIDER", "local_whisper")
 # options: "local_whisper" | "openai_whisper_api" | "groq_whisper"
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
-# options: "gemini" | "ollama" | "openai" | "anthropic"
+# options: "gemini" | "groq" | "ollama" | "openai" | "anthropic"
 
 STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "sqlite")
 # options: "sqlite" | "supabase" | "postgres"
@@ -49,6 +49,12 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 # ---------------------------------------------------------------------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+# ---------------------------------------------------------------------------
+# Groq (free-tier fallback — 14,400 req/day, Llama 3.3 70B)
+# ---------------------------------------------------------------------------
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # ---------------------------------------------------------------------------
 # Ollama (local LLM alternative)
