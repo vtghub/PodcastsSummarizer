@@ -26,7 +26,7 @@ export default function PodcastManager({ sources }: { sources: Source[] }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [actionId, setActionId] = useState<string | null>(null); // id of card being mutated
+  const [actionId, setActionId] = useState<string | null>(null);
 
   const refresh = () => startTransition(() => router.refresh());
 
@@ -86,17 +86,18 @@ export default function PodcastManager({ sources }: { sources: Source[] }) {
       {/* Header */}
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">My Podcasts</h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>My Podcasts</h1>
+          <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>
             {sources.length} source{sources.length !== 1 ? "s" : ""}
             &nbsp;·&nbsp;
             {enabled.length} active
-            {isPending && <span className="ml-2 text-slate-500">refreshing…</span>}
+            {isPending && <span className="ml-2" style={{ color: "var(--txt-4)" }}>refreshing…</span>}
           </p>
         </div>
         <button
           onClick={() => { setShowAdd(true); setError(""); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors flex-shrink-0"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0 text-white"
+          style={{ background: "var(--acc)" }}
         >
           <Plus className="w-4 h-4" />
           Add Podcast
@@ -107,8 +108,8 @@ export default function PodcastManager({ sources }: { sources: Source[] }) {
       {sources.length === 0 ? (
         <div className="flex flex-col items-center py-20 text-center">
           <span className="text-5xl mb-4">🎙</span>
-          <h2 className="text-lg font-semibold text-slate-200 mb-2">No podcasts yet</h2>
-          <p className="text-slate-400 text-sm max-w-sm">
+          <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--txt-1)" }}>No podcasts yet</h2>
+          <p className="text-sm max-w-sm" style={{ color: "var(--txt-3)" }}>
             Click <strong>Add Podcast</strong> to add your first RSS or YouTube source.
           </p>
         </div>
@@ -128,10 +129,17 @@ export default function PodcastManager({ sources }: { sources: Source[] }) {
       {/* Add dialog */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#0d1117] shadow-2xl p-6">
+          <div
+            className="w-full max-w-md rounded-2xl border shadow-2xl p-6"
+            style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
+          >
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold text-slate-100">Add Podcast</h2>
-              <button onClick={() => setShowAdd(false)} className="text-slate-500 hover:text-slate-300 transition-colors">
+              <h2 className="text-lg font-semibold" style={{ color: "var(--txt-1)" }}>Add Podcast</h2>
+              <button
+                onClick={() => setShowAdd(false)}
+                className="transition-colors"
+                style={{ color: "var(--txt-4)" }}
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -182,21 +190,23 @@ export default function PodcastManager({ sources }: { sources: Source[] }) {
               </div>
 
               {error && (
-                <p className="text-sm text-red-400 rounded-lg bg-red-950/40 border border-red-800 px-3 py-2">{error}</p>
+                <p className="text-sm rounded-lg px-3 py-2" style={{ color: "#F87171", background: "rgba(127,29,29,0.3)", border: "1px solid rgba(185,28,28,0.4)" }}>{error}</p>
               )}
 
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"
                   onClick={() => setShowAdd(false)}
-                  className="flex-1 px-4 py-2 rounded-lg border border-slate-700 text-slate-300 text-sm hover:bg-slate-800 transition-colors"
+                  className="flex-1 px-4 py-2 rounded-lg text-sm transition-colors border"
+                  style={{ borderColor: "var(--bdr)", color: "var(--txt-2)" }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 text-white"
+                  style={{ background: "var(--acc)" }}
                 >
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   {saving ? "Adding…" : "Add Podcast"}
@@ -210,49 +220,44 @@ export default function PodcastManager({ sources }: { sources: Source[] }) {
   );
 }
 
-function Section({
-  title, sources, muted = false, actionId, onToggle, onDelete,
-}: {
-  title: string;
-  sources: Source[];
-  muted?: boolean;
-  actionId: string | null;
-  onToggle: (s: Source) => void;
-  onDelete: (s: Source) => void;
+function Section({ title, sources, muted = false, actionId, onToggle, onDelete }: {
+  title: string; sources: Source[]; muted?: boolean;
+  actionId: string | null; onToggle: (s: Source) => void; onDelete: (s: Source) => void;
 }) {
   return (
     <section>
-      <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">{title}</h2>
+      <h2 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "var(--txt-4)" }}>{title}</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sources.map((s) => (
           <SourceCard key={s.id} source={s} muted={muted}
-            busy={actionId === s.id}
-            onToggle={() => onToggle(s)}
-            onDelete={() => onDelete(s)}
-          />
+            busy={actionId === s.id} onToggle={() => onToggle(s)} onDelete={() => onDelete(s)} />
         ))}
       </div>
     </section>
   );
 }
 
-function SourceCard({
-  source, muted, busy, onToggle, onDelete,
-}: {
-  source: Source;
-  muted: boolean;
-  busy: boolean;
-  onToggle: () => void;
-  onDelete: () => void;
+function SourceCard({ source, muted, busy, onToggle, onDelete }: {
+  source: Source; muted: boolean; busy: boolean; onToggle: () => void; onDelete: () => void;
 }) {
   const color = getDomainColor(source.domain);
   const isYT  = source.source_type === "youtube";
 
   return (
-    <div className={`rounded-xl border ${muted ? "border-slate-800 bg-slate-900/40 opacity-70" : "border-slate-800 bg-slate-900"} p-5 flex flex-col gap-3 relative`}>
+    <div
+      className="rounded-xl border p-5 flex flex-col gap-3 relative transition-colors"
+      style={{
+        background: muted ? "var(--bg-surface)" : "var(--bg-surface)",
+        borderColor: "var(--bdr)",
+        opacity: muted ? 0.65 : 1,
+      }}
+    >
       {busy && (
-        <div className="absolute inset-0 rounded-xl bg-slate-900/60 flex items-center justify-center">
-          <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+        <div
+          className="absolute inset-0 rounded-xl flex items-center justify-center"
+          style={{ background: "var(--bg-quote)" }}
+        >
+          <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-3)" }} />
         </div>
       )}
 
@@ -263,7 +268,7 @@ function SourceCard({
             ? <Video className="w-4 h-4 flex-shrink-0 text-red-400" />
             : <Rss   className="w-4 h-4 flex-shrink-0 text-orange-400" />
           }
-          <span className="font-semibold text-slate-200 text-sm truncate">{source.name}</span>
+          <span className="font-semibold text-sm truncate" style={{ color: "var(--txt-2)" }}>{source.name}</span>
         </div>
         <span className={`flex-shrink-0 flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${color.bg} ${color.text} ${color.border}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${color.dot}`} />
@@ -272,30 +277,32 @@ function SourceCard({
       </div>
 
       {/* URL */}
-      <p className="text-xs text-slate-500 font-mono truncate" title={source.url}>
+      <p className="text-xs font-mono truncate" style={{ color: "var(--txt-4)" }} title={source.url}>
         {source.url}
       </p>
 
-      {/* Footer actions */}
+      {/* Footer */}
       <div className="flex items-center justify-between mt-auto pt-1">
-        <span className={`text-xs ${muted ? "text-slate-600" : "text-emerald-400"}`}>
+        <span className="text-xs" style={{ color: muted ? "var(--txt-4)" : "#34D399" }}>
           {muted ? "disabled" : "active"}
         </span>
         <div className="flex items-center gap-1">
           <button
             onClick={onToggle}
             title={source.enabled ? "Disable" : "Enable"}
-            className="p-1.5 rounded-md text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-md transition-colors"
+            style={{ color: "var(--txt-4)" }}
           >
             {source.enabled
               ? <PowerOff className="w-3.5 h-3.5" />
-              : <Power    className="w-3.5 h-3.5 text-emerald-500" />
+              : <Power    className="w-3.5 h-3.5" style={{ color: "#34D399" }} />
             }
           </button>
           <button
             onClick={onDelete}
             title="Delete"
-            className="p-1.5 rounded-md text-slate-500 hover:text-red-400 hover:bg-red-950/30 transition-colors"
+            className="p-1.5 rounded-md transition-colors"
+            style={{ color: "var(--txt-4)" }}
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -308,7 +315,7 @@ function SourceCard({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-medium text-slate-400">{label}</label>
+      <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>{label}</label>
       {children}
     </div>
   );
