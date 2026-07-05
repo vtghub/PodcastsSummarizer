@@ -16,7 +16,8 @@ const DOMAINS = [
   "Other",
 ];
 
-const EMPTY_FORM = { name: "", url: "", source_type: "rss" as const, domain: "Technology & AI" };
+type FormState = { name: string; url: string; source_type: "rss" | "youtube"; domain: string };
+const EMPTY_FORM: FormState = { name: "", url: "", source_type: "rss", domain: "Technology & AI" };
 
 export default function PodcastManager({ sources }: { sources: Source[] }) {
   const router = useRouter();
