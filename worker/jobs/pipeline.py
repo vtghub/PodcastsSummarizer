@@ -192,7 +192,7 @@ def run_pipeline(
 
     # ── Phase 3: digest email ────────────────────────────────────────────────
     if send_email and not dry_run and stats["insights"] > 0:
-        _send_digest(storage, date_str)
+        _send_per_user_digests(storage, date_str)
 
     print(f"\n[Pipeline] Done — {stats}")
     if errors:
@@ -214,8 +214,53 @@ def _get_source_provider(source: PodcastSource):
     return RSSSourceProvider()
 
 
-def _send_digest(storage, date_str: str):
+def _send_per_user_digests(storage, date_str: str):
+    """Fan out personalised digest emails to every user with digest_enabled=TRUE."""
     email = get_email_provider()
+
+    try:
+        users = storage.get_users_with_digest_enabled()
+    except Exception as e:
+        print(f"[Email] Could not load digest users: {e}")
+        traceback.print_exc()
+        return
+
+    if not users:
+        # Fallback for local SQLite dev: send the old single-recipient digest
+        _send_single_digest(storage, date_str, email)
+        return
+
+    print(f"[Email] Sending digests to {len(users)} user(s)")
+    for user in users:
+        try:
+            source_ids = storage.get_user_subscribed_source_ids(user.user_id)
+            if not source_ids:
+                print(f"[Email] {user.email} — no subscriptions, skipping")
+                continue
+
+            insights = storage.get_insights_by_date_and_sources(date_str, source_ids)
+            if not insights:
+                print(f"[Email] {user.email} — no insights for subscribed sources, skipping")
+                continue
+
+            by_domain: dict[str, list] = defaultdict(list)
+            for ins in insights:
+                by_domain[ins.domain].append(ins)
+
+            ok = email.send_digest(user.email, date_str, dict(by_domain))
+            status = "sent" if ok else "failed"
+            print(f"[Email] {user.email} — {len(insights)} insight(s) — {status}")
+        except Exception as e:
+            print(f"[Email] {user.email} — error: {e}")
+            traceback.print_exc()
+
+
+def _send_single_digest(storage, date_str: str, email):
+    """Legacy single-recipient digest for local SQLite dev mode."""
+    if not DIGEST_RECIPIENT:
+        print("[Email] DIGEST_RECIPIENT not set — skipping.")
+        return
+
     insights = storage.get_insights_by_date(date_str)
     if not insights:
         print("[Email] No insights for today — skipping.")

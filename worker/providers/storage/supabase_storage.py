@@ -17,7 +17,7 @@ import psycopg2
 import psycopg2.extras
 
 from worker.core.interfaces import (
-    Episode, Insight, PodcastSource, StorageProvider, Transcript,
+    Episode, Insight, PodcastSource, StorageProvider, Transcript, UserDigestProfile,
 )
 from worker.config.settings import SUPABASE_DB_URL
 
@@ -194,6 +194,50 @@ class SupabaseStorageProvider(StorageProvider):
             with conn.cursor() as cur:
                 cur.execute("SELECT DISTINCT date FROM insights ORDER BY date DESC")
                 return [r["date"] for r in cur.fetchall()]
+
+    # ------------------------------------------------------------------
+    # Per-user digest helpers
+    # ------------------------------------------------------------------
+    def get_users_with_digest_enabled(self) -> list[UserDigestProfile]:
+        """
+        Returns all users who have digest_enabled=TRUE in user_profiles,
+        joined with their email from auth.users via the Supabase service-role REST API.
+        Uses psycopg2 directly — auth.users is in the auth schema, accessible via
+        the Supabase DB connection with service-role credentials.
+        """
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        p.user_id,
+                        p.display_name,
+                        p.digest_hour,
+                        u.email
+                    FROM user_profiles p
+                    JOIN auth.users u ON u.id = p.user_id
+                    WHERE p.digest_enabled = TRUE
+                      AND u.email IS NOT NULL
+                      AND u.email_confirmed_at IS NOT NULL
+                """)
+                rows = cur.fetchall()
+        return [
+            UserDigestProfile(
+                user_id=str(r["user_id"]),
+                email=r["email"],
+                display_name=r["display_name"] or r["email"].split("@")[0],
+                digest_hour=r["digest_hour"],
+            )
+            for r in rows
+        ]
+
+    def get_user_subscribed_source_ids(self, user_id: str) -> list[str]:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT source_id FROM user_subscriptions
+                    WHERE user_id = %s AND enabled = TRUE
+                """, (user_id,))
+                return [r["source_id"] for r in cur.fetchall()]
 
     # ------------------------------------------------------------------
     # Row → dataclass helpers

@@ -45,6 +45,14 @@ class Transcript:
 
 
 @dataclass
+class UserDigestProfile:
+    user_id: str
+    email: str
+    display_name: str
+    digest_hour: int = 19  # UTC hour to send digest
+
+
+@dataclass
 class Insight:
     id: str
     episode_id: str
@@ -142,6 +150,22 @@ class StorageProvider(ABC):
 
     @abstractmethod
     def get_available_dates(self) -> list[str]: ...
+
+    def get_users_with_digest_enabled(self) -> list["UserDigestProfile"]:
+        """Return users who want a digest today. Default: empty list (local dev)."""
+        return []
+
+    def get_user_subscribed_source_ids(self, user_id: str) -> list[str]:
+        """Return source IDs the user is subscribed to. Default: empty list."""
+        return []
+
+    def get_insights_by_date_and_sources(self, date: str, source_ids: list[str]) -> list[Insight]:
+        """Return insights for a specific date filtered to the given source IDs."""
+        all_insights = self.get_insights_by_date(date)
+        if not source_ids:
+            return []
+        source_set = set(source_ids)
+        return [i for i in all_insights if i.source_id in source_set]
 
 
 class EmailProvider(ABC):
