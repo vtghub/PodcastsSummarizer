@@ -6,167 +6,28 @@ Automatically extracts daily insights from podcasts and surfaces them via an ema
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          GitHub Actions (CI/CD)                          │
-│   Schedule: 07:00 UTC daily  │  workflow_dispatch (manual trigger)      │
-└─────────────────────────────────┬───────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Python Worker Pipeline                           │
-│                                                                          │
-│   Sources (RSS / YouTube)                                                │
-│        │                                                                 │
-│        ▼                                                                 │
-│   Fetch Episodes  ──► Text transcript?  ──yes──► transcript_text        │
-│        │                    │no                                          │
-│        │                    ▼                                            │
-│        │           Download Audio  ──► Whisper (local STT)              │
-│        │                    │                                            │
-│        └────────────────────┘                                            │
-│                             │                                            │
-│                             ▼                                            │
-│                    LLM Insight Extraction                                │
-│                  (Gemini / Groq / Ollama)                                │
-│                             │                                            │
-│                             ▼                                            │
-│                    Save to Storage                                       │
-│                  (SQLite  /  Supabase)                                   │
-│                             │                                            │
-│                             ▼                                            │
-│                    Email Digest  (optional)                              │
-│                 (Gmail SMTP / Resend / console)                          │
-└─────────────────────────────────────────────────────────────────────────┘
-                                  │
-                    (Supabase stores insights)
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     Next.js Dashboard  (Vercel)                          │
-│                                                                          │
-│   Public pages                                                           │
-│   ├── /              →  Home / landing                                   │
-│   └── /dashboard    →  Daily Insights (grouped by domain)               │
-│                                                                          │
-│   Protected pages  (passcode auth, HTTP-only cookie)                    │
-│   └── /podcasts     →  Manage podcast sources (add / pause / delete)    │
-│                                                                          │
-│   API routes                                                             │
-│   ├── GET  /api/sources          →  list sources        [auth required]  │
-│   ├── POST /api/sources          →  add source          [auth required]  │
-│   ├── PUT  /api/sources/[id]     →  update source       [auth required]  │
-│   ├── DELETE /api/sources/[id]   →  delete source       [auth required]  │
-│   ├── POST /api/auth/login       →  verify passcode, set cookie          │
-│   └── POST /api/auth/logout      →  clear session cookie                 │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+→ See **[docs/architecture.md](docs/architecture.md)** for the full Mermaid diagram.
+
+| Layer | Technology | Role |
+|---|---|---|
+| **Scheduler** | GitHub Actions (cron) | Triggers pipeline daily at 07:00 UTC |
+| **Source** | Python — RSS / yt-dlp | Fetches episode metadata and audio |
+| **Transcription** | OpenAI Whisper (local) | Converts audio to text when no caption available |
+| **LLM** | Gemini / Groq / Ollama | Extracts summary, key points, quotes, action items |
+| **Storage** | Supabase (prod) / SQLite (dev) | Persists episodes, transcripts, and insights |
+| **Email** | Gmail SMTP / Resend | Delivers optional daily digest |
+| **Dashboard** | Next.js 15 on Vercel | Displays insights; manages podcast sources |
+| **Auth** | Edge Middleware + HTTP-only cookie | Passcode-gates the My Podcasts page |
 
 ---
 
 ## Request Workflow
 
-### Pipeline (GitHub Actions → Supabase)
-
-```
-GitHub Actions (07:00 UTC)
-        │
-        ▼
-run_pipeline(since=yesterday)
-        │
-        ├─► storage.get_sources(enabled_only=True)
-        │
-        └─► for each source:
-                │
-                ├─► fetch_latest_episodes(since)
-                │
-                └─► for each episode:
-                        │
-                        ├─► storage.episode_exists?  ──yes──► skip
-                        │
-                        ├─► storage.save_episode()
-                        │
-                        ├─► source_provider.fetch_transcript_text()
-                        │       │ (RSS caption / YouTube transcript)
-                        │       └── None? ──► download_audio()
-                        │                        └──► Whisper.transcribe()
-                        │
-                        ├─► storage.save_transcript()
-                        │
-                        ├─► llm.extract_insights(episode, transcript, domain)
-                        │       └── Returns: summary, key_points, key_quotes,
-                        │                   action_items, tags
-                        │
-                        └─► storage.save_insight()
-                              storage.mark_episode_done()
-```
-
-### Dashboard — Unauthenticated Page Request (`/dashboard`)
-
-```
-Browser  ──GET /dashboard──►  Next.js (Vercel Edge)
-                                    │
-                                    ▼ (middleware: no match, pass through)
-                               Server Component
-                                    │
-                                    ▼
-                          db.getInsightsByDate(today)
-                          (Supabase / SQLite read)
-                                    │
-                                    ▼
-                          DomainInsightView (client)
-                          ├── Domain tab selector
-                          └── InsightCard grid
-                                    │
-                                    ▼
-                              Browser renders
-                         (theme from localStorage,
-                          TTS via Web Speech API)
-```
-
-### Dashboard — Protected Page Request (`/podcasts`)
-
-```
-Browser  ──GET /podcasts──►  Next.js Middleware (Edge)
-                                    │
-                             cookie present?
-                            /              \
-                          no               yes
-                          │                │
-                          ▼                ▼ isValidSession(SHA-256 check)
-                   redirect to          pass ──► /podcasts server page
-                   /login?from=/podcasts        └──► PodcastManager (client)
-                                                        ├── GET /api/sources
-                                                        ├── POST /api/sources
-                                                        ├── PUT /api/sources/[id]
-                                                        └── DELETE /api/sources/[id]
-```
-
-### Auth Flow (Login / Logout)
-
-```
-Login:
-  Browser ──POST /api/auth/login { passcode }──► Route Handler
-                                                       │
-                                               passcode === ADMIN_SECRET?
-                                              /                         \
-                                            no                          yes
-                                            │                            │
-                                     401 { error }          Set-Cookie: admin_session
-                                                             = SHA256(ADMIN_SECRET)
-                                                             httpOnly, SameSite=strict
-                                                             maxAge=30 days
-                                                                         │
-                                                              redirect → /podcasts
-
-Logout:
-  Browser ──POST /api/auth/logout──► Route Handler
-                                           │
-                                   Set-Cookie: admin_session=""
-                                   maxAge=0  (clears cookie)
-                                           │
-                                   redirect → /
-```
+→ See **[docs/request-workflow.md](docs/request-workflow.md)** for full sequence diagrams covering:
+- Pipeline (GitHub Actions → Supabase)
+- Public dashboard request (`/dashboard`)
+- Auth-gated request (`/podcasts`)
+- Logout flow
 
 ---
 
