@@ -2,7 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2, Lock, LogOut } from "lucide-react";
+import {
+  Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2,
+  Lock, LogOut, Bell, BellOff,
+} from "lucide-react";
 import { getDomainColor } from "@/lib/domain-colors";
 import type { Source } from "@/lib/db";
 
@@ -19,7 +22,14 @@ const DOMAINS = [
 type FormState = { name: string; url: string; source_type: "rss" | "youtube"; domain: string };
 const EMPTY_FORM: FormState = { name: "", url: "", source_type: "rss", domain: "Technology & AI" };
 
-export default function PodcastManager({ sources, isAuthed }: { sources: Source[]; isAuthed: boolean }) {
+interface Props {
+  sources: Source[];
+  subscribedIds: string[];
+  isAuthed: boolean;
+  isAdmin: boolean;
+}
+
+export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdmin }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [showAdd, setShowAdd] = useState(false);
@@ -27,6 +37,7 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
+  const [localSubs, setLocalSubs] = useState<Set<string>>(new Set(subscribedIds));
 
   const refresh = () => startTransition(() => router.refresh());
 
@@ -34,6 +45,38 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/");
     router.refresh();
+  }
+
+  async function handleSubscribe(source: Source) {
+    if (!isAuthed) { router.push("/login?from=/podcasts"); return; }
+    setActionId(source.id);
+    const isSubscribed = localSubs.has(source.id);
+    // Optimistic update
+    setLocalSubs((prev) => {
+      const next = new Set(prev);
+      isSubscribed ? next.delete(source.id) : next.add(source.id);
+      return next;
+    });
+    try {
+      if (isSubscribed) {
+        await fetch(`/api/subscriptions/${source.id}`, { method: "DELETE" });
+      } else {
+        await fetch("/api/subscriptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceId: source.id }),
+        });
+      }
+    } catch {
+      // Revert optimistic update on error
+      setLocalSubs((prev) => {
+        const next = new Set(prev);
+        isSubscribed ? next.add(source.id) : next.delete(source.id);
+        return next;
+      });
+    } finally {
+      setActionId(null);
+    }
   }
 
   async function handleAdd(e: React.FormEvent) {
@@ -74,7 +117,7 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
   }
 
   async function handleDelete(source: Source) {
-    if (!confirm(`Delete "${source.name}"? This cannot be undone.`)) return;
+    if (!confirm(`Remove "${source.name}" from the catalog? This cannot be undone.`)) return;
     setActionId(source.id);
     try {
       await fetch(`/api/sources/${source.id}`, { method: "DELETE" });
@@ -84,32 +127,38 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
     }
   }
 
-  const enabled  = sources.filter((s) => s.enabled);
-  const disabled = sources.filter((s) => !s.enabled);
+  const subscribedSources  = sources.filter((s) => localSubs.has(s.id));
+  const unsubscribedSources = sources.filter((s) => !localSubs.has(s.id));
 
   return (
     <>
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>My Podcasts</h1>
+          <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>Podcast Catalog</h1>
           <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>
-            {sources.length} source{sources.length !== 1 ? "s" : ""}
-            &nbsp;·&nbsp;
-            {enabled.length} active
+            {sources.length} podcast{sources.length !== 1 ? "s" : ""}
+            {isAuthed && (
+              <>
+                &nbsp;·&nbsp;
+                <span style={{ color: "var(--acc)" }}>{localSubs.size} subscribed</span>
+              </>
+            )}
             {isPending && <span className="ml-2" style={{ color: "var(--txt-4)" }}>refreshing…</span>}
           </p>
         </div>
-        {isAuthed && (
-          <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isAdmin && (
             <button
               onClick={() => { setShowAdd(true); setError(""); }}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-white"
               style={{ background: "var(--acc)" }}
             >
               <Plus className="w-4 h-4" />
-              Add Podcast
+              Add to Catalog
             </button>
+          )}
+          {isAuthed && (
             <button
               onClick={handleLogout}
               title="Sign out"
@@ -119,11 +168,11 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
               <LogOut className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Sign out</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Read-only notice */}
+      {/* Guest notice */}
       {!isAuthed && (
         <div
           className="flex items-center gap-2 mb-6 px-4 py-3 rounded-lg border text-sm"
@@ -131,11 +180,10 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
         >
           <Lock className="w-4 h-4 flex-shrink-0" style={{ color: "var(--acc)" }} />
           <span>
-            Viewing in read-only mode.{" "}
             <a href="/login?from=/podcasts" style={{ color: "var(--acc)" }} className="font-medium hover:underline">
               Sign in
             </a>{" "}
-            to add, enable, or delete podcasts.
+            to subscribe to podcasts and get a personalised daily digest.
           </span>
         </div>
       )}
@@ -145,26 +193,45 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
         <div className="flex flex-col items-center py-20 text-center">
           <span className="text-5xl mb-4">🎙</span>
           <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--txt-1)" }}>No podcasts yet</h2>
-          {isAuthed && (
+          {isAdmin && (
             <p className="text-sm max-w-sm" style={{ color: "var(--txt-3)" }}>
-              Click <strong>Add Podcast</strong> to add your first RSS or YouTube source.
+              Click <strong>Add to Catalog</strong> to add the first RSS or YouTube source.
             </p>
           )}
         </div>
       ) : (
         <div className="space-y-10">
-          {enabled.length > 0 && (
-            <Section title="Active" sources={enabled} actionId={actionId} isAuthed={isAuthed}
-              onToggle={handleToggle} onDelete={handleDelete} />
+          {subscribedSources.length > 0 && (
+            <CatalogSection
+              title="Your Subscriptions"
+              sources={subscribedSources}
+              subscribedIds={localSubs}
+              actionId={actionId}
+              isAuthed={isAuthed}
+              isAdmin={isAdmin}
+              onSubscribe={handleSubscribe}
+              onToggle={handleToggle}
+              onDelete={handleDelete}
+            />
           )}
-          {disabled.length > 0 && (
-            <Section title="Disabled" sources={disabled} actionId={actionId} muted isAuthed={isAuthed}
-              onToggle={handleToggle} onDelete={handleDelete} />
+          {unsubscribedSources.length > 0 && (
+            <CatalogSection
+              title={subscribedSources.length > 0 ? "Available" : "All Podcasts"}
+              sources={unsubscribedSources}
+              subscribedIds={localSubs}
+              actionId={actionId}
+              isAuthed={isAuthed}
+              isAdmin={isAdmin}
+              onSubscribe={handleSubscribe}
+              onToggle={handleToggle}
+              onDelete={handleDelete}
+              muted
+            />
           )}
         </div>
       )}
 
-      {/* Add dialog */}
+      {/* Add to catalog dialog (admin only) */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div
@@ -172,12 +239,8 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
             style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
           >
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold" style={{ color: "var(--txt-1)" }}>Add Podcast</h2>
-              <button
-                onClick={() => setShowAdd(false)}
-                className="transition-colors"
-                style={{ color: "var(--txt-4)" }}
-              >
+              <h2 className="text-lg font-semibold" style={{ color: "var(--txt-1)" }}>Add to Catalog</h2>
+              <button onClick={() => setShowAdd(false)} className="transition-colors" style={{ color: "var(--txt-4)" }}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -258,43 +321,60 @@ export default function PodcastManager({ sources, isAuthed }: { sources: Source[
   );
 }
 
-function Section({ title, sources, muted = false, actionId, isAuthed, onToggle, onDelete }: {
-  title: string; sources: Source[]; muted?: boolean; isAuthed: boolean;
-  actionId: string | null; onToggle: (s: Source) => void; onDelete: (s: Source) => void;
+function CatalogSection({
+  title, sources, subscribedIds, muted = false, actionId,
+  isAuthed, isAdmin, onSubscribe, onToggle, onDelete,
+}: {
+  title: string; sources: Source[]; subscribedIds: Set<string>;
+  muted?: boolean; isAuthed: boolean; isAdmin: boolean; actionId: string | null;
+  onSubscribe: (s: Source) => void; onToggle: (s: Source) => void; onDelete: (s: Source) => void;
 }) {
   return (
     <section>
       <h2 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "var(--txt-4)" }}>{title}</h2>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {sources.map((s) => (
-          <SourceCard key={s.id} source={s} muted={muted} isAuthed={isAuthed}
-            busy={actionId === s.id} onToggle={() => onToggle(s)} onDelete={() => onDelete(s)} />
+          <SourceCard
+            key={s.id}
+            source={s}
+            subscribed={subscribedIds.has(s.id)}
+            muted={muted}
+            isAuthed={isAuthed}
+            isAdmin={isAdmin}
+            busy={actionId === s.id}
+            onSubscribe={() => onSubscribe(s)}
+            onToggle={() => onToggle(s)}
+            onDelete={() => onDelete(s)}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function SourceCard({ source, muted, busy, isAuthed, onToggle, onDelete }: {
-  source: Source; muted: boolean; busy: boolean; isAuthed: boolean; onToggle: () => void; onDelete: () => void;
+function SourceCard({
+  source, subscribed, muted, busy, isAuthed, isAdmin,
+  onSubscribe, onToggle, onDelete,
+}: {
+  source: Source; subscribed: boolean; muted: boolean; busy: boolean;
+  isAuthed: boolean; isAdmin: boolean;
+  onSubscribe: () => void; onToggle: () => void; onDelete: () => void;
 }) {
   const color = getDomainColor(source.domain);
   const isYT  = source.source_type === "youtube";
 
   return (
     <div
-      className="rounded-xl border p-5 flex flex-col gap-3 relative transition-colors"
+      className="rounded-xl border p-5 flex flex-col gap-3 relative transition-all"
       style={{
         background: "var(--bg-surface)",
-        borderColor: "var(--bdr)",
-        opacity: muted ? 0.65 : 1,
+        borderColor: subscribed ? "var(--acc)" : "var(--bdr)",
+        opacity: muted && !subscribed ? 0.7 : 1,
+        boxShadow: subscribed ? "0 0 0 1px var(--acc)" : undefined,
       }}
     >
       {busy && (
-        <div
-          className="absolute inset-0 rounded-xl flex items-center justify-center"
-          style={{ background: "var(--bg-quote)" }}
-        >
+        <div className="absolute inset-0 rounded-xl flex items-center justify-center" style={{ background: "var(--bg-quote)" }}>
           <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-3)" }} />
         </div>
       )}
@@ -321,14 +401,28 @@ function SourceCard({ source, muted, busy, isAuthed, onToggle, onDelete }: {
 
       {/* Footer */}
       <div className="flex items-center justify-between mt-auto pt-1">
-        <span className="text-xs" style={{ color: muted ? "var(--txt-4)" : "#34D399" }}>
-          {muted ? "disabled" : "active"}
-        </span>
-        {isAuthed && (
+        {/* Subscribe toggle */}
+        <button
+          onClick={onSubscribe}
+          title={subscribed ? "Unsubscribe" : "Subscribe"}
+          className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors border"
+          style={subscribed
+            ? { background: "var(--acc)", borderColor: "var(--acc)", color: "#fff" }
+            : { background: "transparent", borderColor: "var(--bdr)", color: "var(--txt-3)" }
+          }
+        >
+          {subscribed
+            ? <><BellOff className="w-3 h-3" /> Subscribed</>
+            : <><Bell    className="w-3 h-3" /> Subscribe</>
+          }
+        </button>
+
+        {/* Admin controls */}
+        {isAdmin && (
           <div className="flex items-center gap-1">
             <button
               onClick={onToggle}
-              title={source.enabled ? "Disable" : "Enable"}
+              title={source.enabled ? "Disable in pipeline" : "Enable in pipeline"}
               className="p-1.5 rounded-md transition-colors"
               style={{ color: "var(--txt-4)" }}
             >
@@ -339,7 +433,7 @@ function SourceCard({ source, muted, busy, isAuthed, onToggle, onDelete }: {
             </button>
             <button
               onClick={onDelete}
-              title="Delete"
+              title="Remove from catalog"
               className="p-1.5 rounded-md transition-colors"
               style={{ color: "var(--txt-4)" }}
             >

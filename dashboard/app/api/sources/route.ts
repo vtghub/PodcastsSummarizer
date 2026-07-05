@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { addSourceAsync } from "@/lib/db";
+import { isAdmin } from "@/lib/auth";
 
 const DOMAINS = [
   "Technology & AI",
@@ -13,6 +14,9 @@ const DOMAINS = [
 ];
 
 export async function POST(req: NextRequest) {
+  if (!(await isAdmin())) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   try {
     const body = await req.json();
     const { name, url, source_type, domain } = body;
