@@ -83,18 +83,16 @@ export default function RegisterPage() {
                 <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
                   Display name <span style={{ color: "var(--txt-4)" }}>(optional)</span>
                 </label>
-                <div className="relative">
-                  <User
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-                    style={{ color: "var(--txt-4)" }}
-                  />
+                <div className="input flex items-center gap-2.5" style={{ padding: "0 0.75rem" }}>
+                  <User className="w-4 h-4 shrink-0" style={{ color: "var(--txt-4)" }} />
                   <input
                     type="text"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     placeholder="Your name"
                     autoFocus
-                    className="input pl-9"
+                    className="flex-1 bg-transparent outline-none py-2 text-sm"
+                    style={{ color: "var(--txt-1)" }}
                   />
                 </div>
               </div>
@@ -104,18 +102,16 @@ export default function RegisterPage() {
                 <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
                   Email
                 </label>
-                <div className="relative">
-                  <Mail
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-                    style={{ color: "var(--txt-4)" }}
-                  />
+                <div className="input flex items-center gap-2.5" style={{ padding: "0 0.75rem" }}>
+                  <Mail className="w-4 h-4 shrink-0" style={{ color: "var(--txt-4)" }} />
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
                     required
-                    className="input pl-9"
+                    className="flex-1 bg-transparent outline-none py-2 text-sm"
+                    style={{ color: "var(--txt-1)" }}
                   />
                 </div>
               </div>
@@ -125,11 +121,8 @@ export default function RegisterPage() {
                 <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
                   Password <span style={{ color: "var(--txt-4)" }}>(min 8 characters)</span>
                 </label>
-                <div className="relative">
-                  <Lock
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-                    style={{ color: "var(--txt-4)" }}
-                  />
+                <div className="input flex items-center gap-2.5" style={{ padding: "0 0.75rem" }}>
+                  <Lock className="w-4 h-4 shrink-0" style={{ color: "var(--txt-4)" }} />
                   <input
                     type={show ? "text" : "password"}
                     value={password}
@@ -137,12 +130,13 @@ export default function RegisterPage() {
                     placeholder="At least 8 characters"
                     required
                     minLength={8}
-                    className="input pl-9 pr-10"
+                    className="flex-1 bg-transparent outline-none py-2 text-sm"
+                    style={{ color: "var(--txt-1)" }}
                   />
                   <button
                     type="button"
                     onClick={() => setShow((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                    className="shrink-0"
                     style={{ color: "var(--txt-4)" }}
                   >
                     {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
