@@ -77,7 +77,7 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")  # service_role sec
 # ---------------------------------------------------------------------------
 GMAIL_SENDER = os.getenv("GMAIL_SENDER", "")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
-DIGEST_RECIPIENT = os.getenv("DIGEST_RECIPIENT", "REDACTED_EMAIL")
+DIGEST_RECIPIENT = os.getenv("DIGEST_RECIPIENT", "")
 
 # ---------------------------------------------------------------------------
 # Digest schedule
