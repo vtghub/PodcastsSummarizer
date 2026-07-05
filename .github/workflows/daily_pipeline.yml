@@ -1,0 +1,68 @@
+name: Daily Podcast Pipeline
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 7:00 AM UTC daily
+  workflow_dispatch:        # allow manual trigger from Actions tab
+    inputs:
+      since_days:
+        description: "Look back N days for episodes"
+        required: false
+        default: "1"
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install system deps (ffmpeg for Whisper)
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        env:
+          STORAGE_PROVIDER: supabase
+          LLM_PROVIDER: gemini
+          TRANSCRIPTION_PROVIDER: local_whisper
+          EMAIL_PROVIDER: console
+          WHISPER_MODEL: tiny
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DIGEST_RECIPIENT: ${{ secrets.DIGEST_RECIPIENT }}
+          SINCE_DAYS: ${{ github.event.inputs.since_days || '1' }}
+          PYTHONUTF8: "1"
+        run: |
+          python - <<'EOF'
+          import sys, os
+          from datetime import datetime, timezone, timedelta
+          sys.path.insert(0, '.')
+          from worker.jobs.pipeline import run_pipeline
+          since_days = int(os.environ.get("SINCE_DAYS", "1"))
+          since = datetime.now(timezone.utc) - timedelta(days=since_days)
+          print(f"Running pipeline | since={since.date()} | storage=supabase | llm=gemini")
+          stats = run_pipeline(since=since, send_email=False)
+          print(f"Done: {stats}")
+          if stats.get("errors", 0) > 0:
+              sys.exit(1)
+          EOF
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-logs-${{ github.run_id }}
+          path: data/logs/
+          if-no-files-found: ignore
+          retention-days: 7

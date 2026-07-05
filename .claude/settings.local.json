@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget",
+      "PowerShell(python --version)",
+      "PowerShell(pip --version)",
+      "PowerShell(yt-dlp --version 2>$null)",
+      "PowerShell(ffmpeg -version 2>$null)",
+      "PowerShell(winget install --id Gyan.FFmpeg --silent --accept-source-agreements --accept-package-agreements 2>&1)",
+      "PowerShell(Tail -3)",
+      "PowerShell(winget install --id Gyan.FFmpeg --silent --accept-source-agreements --accept-package-agreements; Write-Host \"Exit: $LASTEXITCODE\")",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); ffmpeg -version 2>&1 | Select-Object -First 1)",
+      "PowerShell(ollama --version 2>&1)",
+      "PowerShell(ollama list 2>&1)",
+      "PowerShell(winget install --id Ollama.Ollama --silent --accept-source-agreements --accept-package-agreements; Write-Host \"Exit: $LASTEXITCODE\")"
+    ]
+  }
+}
