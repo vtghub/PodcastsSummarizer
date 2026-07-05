@@ -9,9 +9,9 @@ Set SUPABASE_DB_URL in .env:
 """
 
 import json
+import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from urllib.parse import urlparse, unquote
 
 import psycopg2
 import psycopg2.extras
@@ -28,17 +28,25 @@ class SupabaseStorageProvider(StorageProvider):
         self.db_url = db_url
 
     def _connect_kwargs(self) -> dict:
-        # psycopg2 strips the project-ref suffix from usernames like
-        # "postgres.mygigptehwsmhqaoydla" when parsing a DSN URL, causing
-        # auth failures against Supabase's Transaction pooler. Parse manually
-        # and pass each component as a keyword argument instead.
-        p = urlparse(self.db_url)
+        # urlparse misinterprets brackets in passwords like "[PodcastsSummarizer]"
+        # as IPv6 literals, returning a wrong hostname. Parse the URL with
+        # string ops instead so special characters in the password are safe.
+        url = self.db_url
+        # strip scheme  (postgresql:// or postgres://)
+        rest = re.sub(r'^postgres(?:ql)?(?:\+\w+)?://', '', url)
+        last_at = rest.rfind('@')
+        userinfo, hostinfo = rest[:last_at], rest[last_at + 1:]
+        first_colon = userinfo.index(':')
+        user, password = userinfo[:first_colon], userinfo[first_colon + 1:]
+        slash = hostinfo.rfind('/')
+        host_port, dbname = hostinfo[:slash], hostinfo[slash + 1:]
+        host, _, port = host_port.rpartition(':')
         return dict(
-            host=p.hostname,
-            port=p.port or 5432,
-            dbname=(p.path or "/postgres").lstrip("/"),
-            user=unquote(p.username or ""),
-            password=unquote(p.password or ""),
+            host=host,
+            port=int(port) if port else 5432,
+            dbname=dbname,
+            user=user,
+            password=password,
             cursor_factory=psycopg2.extras.RealDictCursor,
         )
 
