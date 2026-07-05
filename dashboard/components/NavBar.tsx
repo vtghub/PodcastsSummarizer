@@ -7,7 +7,7 @@ import { useState, useRef, useEffect } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES, type ThemeKey } from "@/contexts/ThemeContext";
 
-export default function NavBar() {
+export default function NavBar({ isAuthed }: { isAuthed: boolean }) {
   const { enabled, toggle } = useTTS();
   const { theme, setTheme } = useTheme();
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -77,8 +77,8 @@ export default function NavBar() {
             <span className="hidden sm:inline">{enabled ? "Read Aloud On" : "Read Aloud Off"}</span>
           </button>
 
-          {/* Logout — only shown on the podcasts page (middleware guarantees auth there) */}
-          {pathname.startsWith("/podcasts") && (
+          {/* Logout — only shown when authenticated on the podcasts page */}
+          {isAuthed && pathname.startsWith("/podcasts") && (
             <button
               onClick={handleLogout}
               title="Sign out"
