@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# Core pipeline
+# ---------------------------------------------------------------------------
+feedparser==6.0.11          # RSS feed parsing
+yt-dlp>=2024.1.1            # Audio download (RSS + YouTube)
+openai-whisper>=20231117    # Local speech-to-text
+google-generativeai>=0.8.0  # Gemini LLM (free tier)
+requests>=2.31.0            # HTTP (Ollama provider)
+python-dotenv>=1.0.0        # .env file loading
+APScheduler>=3.10.4         # Local cron scheduler
+
+# ---------------------------------------------------------------------------
+# Cloud providers
+# ---------------------------------------------------------------------------
+psycopg2-binary>=2.9.9      # Supabase / PostgreSQL storage provider
+# resend>=0.7.0             # Cloud email (future)
+
+# ---------------------------------------------------------------------------
+# Dev / test
+# ---------------------------------------------------------------------------
+pytest>=8.0.0
+pytest-mock>=3.12.0
