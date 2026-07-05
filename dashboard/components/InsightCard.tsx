@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import type { Insight } from "@/lib/db";
 import { ChevronDown, ChevronUp, Quote, Zap, Tag, Volume2, VolumeX } from "lucide-react";
 import { useTTS } from "@/contexts/TTSContext";
@@ -25,7 +25,8 @@ function buildSpeechText(insight: Insight): string {
 export default function InsightCard({ insight, domainColor }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { enabled: ttsEnabled } = useTTS();
-  const { speaking, speak } = useSpeech(buildSpeechText(insight));
+  const speechText = useMemo(() => buildSpeechText(insight), [insight]);
+  const { speaking, speak } = useSpeech(speechText);
 
   return (
     <article

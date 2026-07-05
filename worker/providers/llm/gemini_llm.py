@@ -11,26 +11,7 @@ import google.generativeai as genai
 
 from worker.core.interfaces import Episode, Insight, LLMProvider, Transcript
 from worker.config.settings import GEMINI_API_KEY, GEMINI_MODEL
-
-_EXTRACTION_PROMPT = """
-You are an expert podcast analyst. Extract structured insights from the transcript below.
-
-Return ONLY valid JSON matching this exact schema — no markdown, no commentary:
-{{
-  "summary": "<2-3 sentence overview of the episode>",
-  "key_points": ["<insight 1>", "<insight 2>", ..., "<insight 5-7>"],
-  "key_quotes": ["<memorable direct quote 1>", "<memorable direct quote 2>", "<memorable direct quote 3>"],
-  "action_items": ["<actionable takeaway 1>", "<actionable takeaway 2>", "<actionable takeaway 3>"],
-  "tags": ["<tag1>", "<tag2>", "<tag3>"]
-}}
-
-Episode title: {title}
-Domain: {domain}
-Description: {description}
-
-Transcript:
-{transcript}
-"""
+from worker.providers.llm.prompts import EXTRACTION_PROMPT
 
 # Cap at ~60k chars (~15k tokens) to stay within free tier rate limits.
 # Sample first 75% + last 25% so episode conclusions aren't silently dropped.
@@ -49,7 +30,7 @@ class GeminiLLMProvider(LLMProvider):
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
         truncated = _smart_truncate(transcript.text, _MAX_TRANSCRIPT_CHARS)
 
-        prompt = textwrap.dedent(_EXTRACTION_PROMPT).format(
+        prompt = textwrap.dedent(EXTRACTION_PROMPT).format(
             title=episode.title,
             domain=domain,
             description=episode.description[:500],

@@ -1,25 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { Volume2, VolumeX, Palette, Check, LogOut } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Volume2, VolumeX, Palette, Check } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES, type ThemeKey } from "@/contexts/ThemeContext";
 
-export default function NavBar({ isAuthed }: { isAuthed: boolean }) {
+export default function NavBar() {
   const { enabled, toggle } = useTTS();
   const { theme, setTheme } = useTheme();
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
-  const router = useRouter();
-
-  async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/");
-    router.refresh();
-  }
 
   // Close picker on outside click
   useEffect(() => {
@@ -76,19 +69,6 @@ export default function NavBar({ isAuthed }: { isAuthed: boolean }) {
             {enabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">{enabled ? "Read Aloud On" : "Read Aloud Off"}</span>
           </button>
-
-          {/* Logout — only shown when authenticated on the podcasts page */}
-          {isAuthed && pathname.startsWith("/podcasts") && (
-            <button
-              onClick={handleLogout}
-              title="Sign out"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              style={{ background: "var(--bg-elevated)", color: "var(--txt-3)", border: "1px solid var(--bdr)" }}
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
-          )}
 
           {/* Theme picker */}
           <div className="relative" ref={pickerRef}>
