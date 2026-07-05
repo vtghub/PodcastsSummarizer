@@ -55,7 +55,7 @@ jobs:
           print(f"Running pipeline | since={since.date()} | storage=supabase | llm=gemini")
           stats = run_pipeline(since=since, send_email=False)
           print(f"Done: {stats}")
-          if stats.get("errors", 0) > 0:
+          if stats.get("errors"):
               sys.exit(1)
           EOF
 
