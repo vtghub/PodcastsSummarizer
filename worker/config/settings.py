@@ -82,7 +82,7 @@ DIGEST_RECIPIENT = os.getenv("DIGEST_RECIPIENT", "")
 # ---------------------------------------------------------------------------
 # Digest schedule
 # ---------------------------------------------------------------------------
-DIGEST_HOUR = int(os.getenv("DIGEST_HOUR", "7"))    # 7 AM local time
+DIGEST_HOUR = int(os.getenv("DIGEST_HOUR", "19"))   # 7 PM EST (00:00 UTC)
 DIGEST_MINUTE = int(os.getenv("DIGEST_MINUTE", "0"))
 
 # ---------------------------------------------------------------------------
