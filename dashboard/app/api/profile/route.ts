@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { getSupabaseClient } from "@/lib/supabase";
+import type { Database } from "@/lib/database.types";
+
+type ProfileUpdate = Database["public"]["Tables"]["user_profiles"]["Update"];
 
 export async function GET() {
   const userId = await getUserId();
@@ -22,7 +25,7 @@ export async function PUT(req: Request) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const update: Record<string, unknown> = {};
+  const update: ProfileUpdate = {};
 
   if (typeof body.display_name === "string") {
     update.display_name = body.display_name.trim() || null;
