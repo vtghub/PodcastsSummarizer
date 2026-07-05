@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import textwrap
+import time
 from datetime import datetime, timezone
 
 from groq import Groq
@@ -31,9 +32,10 @@ Transcript:
 {transcript}
 """
 
-# Groq free tier: 6,000 TPM. Prompt overhead ~1,500 tokens, so cap transcript
+# Groq free tier: 6,000 TPM. Prompt overhead ~1,500 tokens, cap transcript
 # at ~16k chars (~4,000 tokens) to keep total request under 6,000 tokens.
 _MAX_TRANSCRIPT_CHARS = 16_000
+_RETRY_DELAYS = [4, 16, 64]  # seconds; only for transient rate-limit errors
 
 
 class GroqLLMProvider(LLMProvider):
@@ -55,14 +57,29 @@ class GroqLLMProvider(LLMProvider):
             transcript=truncated,
         )
 
-        response = self._client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            response_format={"type": "json_object"},
-        )
-        raw = response.choices[0].message.content.strip()
-        data = self._parse_json(raw)
+        last_exc: Exception | None = None
+        for attempt, delay in enumerate([0] + _RETRY_DELAYS):
+            if delay:
+                print(f"    [Groq] retry {attempt}/{len(_RETRY_DELAYS)} in {delay}s…")
+                time.sleep(delay)
+            try:
+                response = self._client.chat.completions.create(
+                    model=GROQ_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.2,
+                    response_format={"type": "json_object"},
+                )
+                raw = response.choices[0].message.content.strip()
+                data = self._parse_json(raw)
+                break
+            except Exception as e:
+                msg = str(e).lower()
+                if "429" in msg or "rate" in msg or "503" in msg or "unavailable" in msg:
+                    last_exc = e
+                    continue
+                raise
+        else:
+            raise last_exc  # type: ignore[misc]
 
         insight_id = hashlib.md5(f"{episode.id}:{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()
         date_str = episode.published_at.strftime("%Y-%m-%d")

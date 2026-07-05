@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import textwrap
+import time
 from datetime import datetime, timezone
 
 import google.generativeai as genai
@@ -31,9 +32,10 @@ Transcript:
 {transcript}
 """
 
-# Maximum characters sent to the LLM — Gemini Flash handles up to ~1M tokens,
-# but we cap at ~60k chars (~15k tokens) to stay well within free tier rate limits.
+# Cap at ~60k chars (~15k tokens) to stay within free tier rate limits.
+# Sample first 75% + last 25% so episode conclusions aren't silently dropped.
 _MAX_TRANSCRIPT_CHARS = 60_000
+_RETRY_DELAYS = [4, 16, 64]  # seconds; only for transient 429/503 errors
 
 
 class GeminiLLMProvider(LLMProvider):
@@ -45,9 +47,7 @@ class GeminiLLMProvider(LLMProvider):
         self._model = genai.GenerativeModel(GEMINI_MODEL)
 
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
-        truncated = transcript.text[:_MAX_TRANSCRIPT_CHARS]
-        if len(transcript.text) > _MAX_TRANSCRIPT_CHARS:
-            truncated += "\n[transcript truncated for length]"
+        truncated = _smart_truncate(transcript.text, _MAX_TRANSCRIPT_CHARS)
 
         prompt = textwrap.dedent(_EXTRACTION_PROMPT).format(
             title=episode.title,
@@ -56,9 +56,28 @@ class GeminiLLMProvider(LLMProvider):
             transcript=truncated,
         )
 
-        response = self._model.generate_content(prompt)
-        raw = response.text.strip()
-        data = self._parse_json(raw)
+        last_exc: Exception | None = None
+        for attempt, delay in enumerate([0] + _RETRY_DELAYS):
+            if delay:
+                print(f"    [Gemini] retry {attempt}/{len(_RETRY_DELAYS)} in {delay}s…")
+                time.sleep(delay)
+            try:
+                response = self._model.generate_content(prompt)
+                raw = response.text.strip()
+                data = self._parse_json(raw)
+                break
+            except Exception as e:
+                msg = str(e).lower()
+                # Quota exhaustion — don't retry, let the caller fall back to Groq
+                if "resource_exhausted" in msg or "quota" in msg:
+                    raise
+                # Transient errors — retry
+                if "429" in msg or "503" in msg or "rate" in msg or "unavailable" in msg:
+                    last_exc = e
+                    continue
+                raise
+        else:
+            raise last_exc  # type: ignore[misc]
 
         insight_id = hashlib.md5(f"{episode.id}:{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()
         date_str = episode.published_at.strftime("%Y-%m-%d")
@@ -78,10 +97,18 @@ class GeminiLLMProvider(LLMProvider):
 
     @staticmethod
     def _parse_json(text: str) -> dict:
-        # Strip possible markdown code fences
         text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
         text = re.sub(r"\s*```$", "", text, flags=re.MULTILINE)
         try:
             return json.loads(text)
         except json.JSONDecodeError as e:
             raise ValueError(f"LLM returned invalid JSON: {e}\n\nRaw output:\n{text[:500]}")
+
+
+def _smart_truncate(text: str, limit: int) -> str:
+    """Keep first 75% + last 25% of the limit so episode endings aren't lost."""
+    if len(text) <= limit:
+        return text
+    head = int(limit * 0.75)
+    tail = limit - head
+    return text[:head] + "\n[…transcript middle omitted…]\n" + text[-tail:]
