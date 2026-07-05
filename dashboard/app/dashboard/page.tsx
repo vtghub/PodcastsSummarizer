@@ -1,7 +1,6 @@
 import { getInsightsByDate, getAvailableDates, type Insight } from "@/lib/db";
-import { getDomainColor } from "@/lib/domain-colors";
 import DateNav from "@/components/DateNav";
-import InsightCard from "@/components/InsightCard";
+import DomainInsightView from "@/components/DomainInsightView";
 import EmptyState from "@/components/EmptyState";
 import { format, parseISO } from "date-fns";
 
@@ -48,27 +47,6 @@ export default async function DashboardPage({ searchParams }: Props) {
         <DateNav selectedDate={selectedDate} availableDates={availableDates} />
       </div>
 
-      {/* Domain summary chips */}
-      {Object.keys(byDomain).length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-8">
-          {Object.entries(byDomain).map(([domain, list]) => {
-            const color = getDomainColor(domain);
-            return (
-              <a
-                key={domain}
-                href={`#${encodeURIComponent(domain)}`}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border hover:opacity-80 transition-opacity ${color.bg} ${color.text} ${color.border}`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${color.dot}`} />
-                {domain}
-                <span className="opacity-60">({list.length})</span>
-              </a>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Content */}
       {dbError ? (
         <EmptyState
           icon="⚠️"
@@ -84,28 +62,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           hint="Run the pipeline or select a date that has data."
         />
       ) : (
-        <div className="space-y-12">
-          {Object.entries(byDomain).map(([domain, list]) => {
-            const color = getDomainColor(domain);
-            return (
-              <section key={domain} id={encodeURIComponent(domain)} className="scroll-mt-20">
-                <div className="flex items-center gap-3 mb-5">
-                  <span className={`w-2.5 h-2.5 rounded-full ${color.dot}`} />
-                  <h2 className={`text-sm font-bold uppercase tracking-widest ${color.text}`}>{domain}</h2>
-                  <div className="flex-1 h-px" style={{ background: "var(--bdr)" }} />
-                  <span className="text-xs" style={{ color: "var(--txt-4)" }}>
-                    {list.length} episode{list.length > 1 ? "s" : ""}
-                  </span>
-                </div>
-                <div className="grid gap-5 lg:grid-cols-2">
-                  {list.map((insight) => (
-                    <InsightCard key={insight.id} insight={insight} domainColor={color} />
-                  ))}
-                </div>
-              </section>
-            );
-          })}
-        </div>
+        <DomainInsightView byDomain={byDomain} />
       )}
     </div>
   );
