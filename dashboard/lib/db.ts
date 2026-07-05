@@ -96,21 +96,24 @@ async function sbAddSource(fields: {
 }): Promise<void> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
-  const { error } = await sb.from("sources").insert({ ...fields, enabled: true } as never);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (sb.from("sources") as any).insert({ ...fields, enabled: true });
   if (error) throw error;
 }
 
 async function sbDeleteSource(id: string): Promise<void> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
-  const { error } = await sb.from("sources").update({ deleted: true }).eq("id", id);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (sb.from("sources") as any).update({ deleted: true }).eq("id", id);
   if (error) throw error;
 }
 
 async function sbSetSourceEnabled(id: string, enabled: boolean): Promise<void> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
-  const { error } = await sb.from("sources").update({ enabled }).eq("id", id);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (sb.from("sources") as any).update({ enabled }).eq("id", id);
   if (error) throw error;
 }
 
