@@ -6,8 +6,7 @@ import {
   Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2,
   Lock, Bell, BellOff, Search,
 } from "lucide-react";
-import { getDomainColor } from "@/lib/domain-colors";
-import type { Source } from "@/lib/db";
+import type { Source, PlatformLinks } from "@/lib/db";
 import type { PodcastSearchResult } from "@/app/api/podcasts/search/route";
 
 const DOMAINS = [
@@ -19,6 +18,16 @@ const DOMAINS = [
   "Society & Culture",
   "Other",
 ];
+
+const DOMAIN_KEY: Record<string, string> = {
+  "Technology & AI":           "tech",
+  "Business & Startups":       "biz",
+  "Health & Science":          "hlth",
+  "Finance & Investing":       "fin",
+  "Leadership & Productivity": "lead",
+  "Society & Culture":         "soc",
+  "Other":                     "oth",
+};
 
 type FormState = { name: string; url: string; source_type: "rss" | "youtube"; domain: string };
 const EMPTY_FORM: FormState = { name: "", url: "", source_type: "rss", domain: "Technology & AI" };
@@ -40,7 +49,6 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
   const [actionId, setActionId] = useState<string | null>(null);
   const [localSubs, setLocalSubs] = useState<Set<string>>(new Set(subscribedIds));
 
-  // Podcast search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PodcastSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -74,7 +82,6 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
     setShowResults(false);
   }
 
-  // Close dropdown on outside click
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
@@ -100,7 +107,6 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
     if (!isAuthed) { router.push("/login?from=/podcasts"); return; }
     setActionId(source.id);
     const isSubscribed = localSubs.has(source.id);
-    // Optimistic update
     setLocalSubs((prev) => {
       const next = new Set(prev);
       isSubscribed ? next.delete(source.id) : next.add(source.id);
@@ -117,7 +123,6 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         });
       }
     } catch {
-      // Revert optimistic update on error
       setLocalSubs((prev) => {
         const next = new Set(prev);
         isSubscribed ? next.add(source.id) : next.delete(source.id);
@@ -176,8 +181,14 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
     }
   }
 
-  const subscribedSources  = sources.filter((s) => localSubs.has(s.id));
-  const unsubscribedSources = sources.filter((s) => !localSubs.has(s.id));
+  // Group sources by domain, preserving canonical order
+  const domainGroups = DOMAINS.reduce<Record<string, Source[]>>((acc, domain) => {
+    const inDomain = sources.filter((s) => s.domain === domain);
+    if (inDomain.length > 0) acc[domain] = inDomain;
+    return acc;
+  }, {});
+
+  const activeDomains = DOMAINS.filter((d) => domainGroups[d]);
 
   return (
     <>
@@ -187,7 +198,9 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
           <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>Podcast Catalog</h1>
           <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>
             {sources.length} podcast{sources.length !== 1 ? "s" : ""}
-            {isAuthed && (
+            {" across "}
+            {activeDomains.length} domain{activeDomains.length !== 1 ? "s" : ""}
+            {isAuthed && localSubs.size > 0 && (
               <>
                 &nbsp;·&nbsp;
                 <span style={{ color: "var(--acc)" }}>{localSubs.size} subscribed</span>
@@ -196,18 +209,16 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
             {isPending && <span className="ml-2" style={{ color: "var(--txt-4)" }}>refreshing…</span>}
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {isAdmin && (
-            <button
-              onClick={openAdd}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-white"
-              style={{ background: "var(--acc)" }}
-            >
-              <Plus className="w-4 h-4" />
-              Add to Catalog
-            </button>
-          )}
-        </div>
+        {isAdmin && (
+          <button
+            onClick={openAdd}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-white flex-shrink-0"
+            style={{ background: "var(--acc)" }}
+          >
+            <Plus className="w-4 h-4" />
+            Add to Catalog
+          </button>
+        )}
       </div>
 
       {/* Guest notice */}
@@ -226,7 +237,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         </div>
       )}
 
-      {/* Source grid */}
+      {/* Domain sections */}
       {sources.length === 0 ? (
         <div className="flex flex-col items-center py-20 text-center">
           <span className="text-5xl mb-4">🎙</span>
@@ -239,10 +250,11 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         </div>
       ) : (
         <div className="space-y-10">
-          {subscribedSources.length > 0 && (
-            <CatalogSection
-              title="Your Subscriptions"
-              sources={subscribedSources}
+          {activeDomains.map((domain) => (
+            <DomainSection
+              key={domain}
+              domain={domain}
+              sources={domainGroups[domain]}
               subscribedIds={localSubs}
               actionId={actionId}
               isAuthed={isAuthed}
@@ -251,21 +263,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
               onToggle={handleToggle}
               onDelete={handleDelete}
             />
-          )}
-          {unsubscribedSources.length > 0 && (
-            <CatalogSection
-              title={subscribedSources.length > 0 ? "Available" : "All Podcasts"}
-              sources={unsubscribedSources}
-              subscribedIds={localSubs}
-              actionId={actionId}
-              isAuthed={isAuthed}
-              isAdmin={isAdmin}
-              onSubscribe={handleSubscribe}
-              onToggle={handleToggle}
-              onDelete={handleDelete}
-              muted
-            />
-          )}
+          ))}
         </div>
       )}
 
@@ -284,7 +282,6 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
             </div>
 
             <form onSubmit={handleAdd} className="space-y-4">
-              {/* Podcast search */}
               <Field label="Search Podcast">
                 <div ref={searchRef} className="relative">
                   <div className="relative">
@@ -414,24 +411,50 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
   );
 }
 
-function CatalogSection({
-  title, sources, subscribedIds, muted = false, actionId,
-  isAuthed, isAdmin, onSubscribe, onToggle, onDelete,
+// ── Domain section ──────────────────────────────────────────────────────────
+
+function DomainSection({
+  domain, sources, subscribedIds, actionId, isAuthed, isAdmin,
+  onSubscribe, onToggle, onDelete,
 }: {
-  title: string; sources: Source[]; subscribedIds: Set<string>;
-  muted?: boolean; isAuthed: boolean; isAdmin: boolean; actionId: string | null;
+  domain: string; sources: Source[]; subscribedIds: Set<string>;
+  actionId: string | null; isAuthed: boolean; isAdmin: boolean;
   onSubscribe: (s: Source) => void; onToggle: (s: Source) => void; onDelete: (s: Source) => void;
 }) {
+  const dk = DOMAIN_KEY[domain] ?? "oth";
+  // Subscribed sources float to the top within each domain
+  const sorted = [...sources].sort((a, b) => {
+    const aS = subscribedIds.has(a.id) ? 0 : 1;
+    const bS = subscribedIds.has(b.id) ? 0 : 1;
+    return aS - bS;
+  });
+
   return (
     <section>
-      <h2 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "var(--txt-4)" }}>{title}</h2>
+      {/* Domain header */}
+      <div className="flex items-center gap-3 mb-5">
+        <span
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ background: `var(--d-${dk}-dot)` }}
+        />
+        <h2
+          className="text-xs font-bold uppercase tracking-widest flex-shrink-0"
+          style={{ color: `var(--d-${dk}-txt)` }}
+        >
+          {domain}
+        </h2>
+        <div className="flex-1 h-px" style={{ background: "var(--bdr)" }} />
+        <span className="text-xs flex-shrink-0" style={{ color: "var(--txt-4)" }}>
+          {sources.length} podcast{sources.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {sources.map((s) => (
+        {sorted.map((s) => (
           <SourceCard
             key={s.id}
             source={s}
             subscribed={subscribedIds.has(s.id)}
-            muted={muted}
             isAuthed={isAuthed}
             isAdmin={isAdmin}
             busy={actionId === s.id}
@@ -445,99 +468,182 @@ function CatalogSection({
   );
 }
 
+// ── Source card ─────────────────────────────────────────────────────────────
+
 function SourceCard({
-  source, subscribed, muted, busy, isAuthed, isAdmin,
+  source, subscribed, busy, isAuthed, isAdmin,
   onSubscribe, onToggle, onDelete,
 }: {
-  source: Source; subscribed: boolean; muted: boolean; busy: boolean;
+  source: Source; subscribed: boolean; busy: boolean;
   isAuthed: boolean; isAdmin: boolean;
   onSubscribe: () => void; onToggle: () => void; onDelete: () => void;
 }) {
-  const color = getDomainColor(source.domain);
-  const isYT  = source.source_type === "youtube";
+  const dk = DOMAIN_KEY[source.domain] ?? "oth";
+  const isYT = source.source_type === "youtube";
+  const links = source.platform_links ?? {};
+  const hasLinks = Object.values(links).some(Boolean);
 
   return (
     <div
-      className="rounded-xl border p-5 flex flex-col gap-3 relative transition-all min-w-0 overflow-hidden"
+      className="rounded-xl border flex flex-col relative transition-all overflow-hidden"
       style={{
         background: "var(--bg-surface)",
         borderColor: subscribed ? "var(--acc)" : "var(--bdr)",
-        opacity: muted && !subscribed ? 0.7 : 1,
         boxShadow: subscribed ? "0 0 0 1px var(--acc)" : undefined,
       }}
     >
-      {busy && (
-        <div className="absolute inset-0 rounded-xl flex items-center justify-center" style={{ background: "var(--bg-quote)" }}>
-          <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-3)" }} />
-        </div>
-      )}
+      {/* Domain color stripe */}
+      <div className="h-1 w-full flex-shrink-0" style={{ background: `var(--d-${dk}-dot)` }} />
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {isYT
-            ? <Video className="w-4 h-4 flex-shrink-0 text-red-400" />
-            : <Rss   className="w-4 h-4 flex-shrink-0 text-orange-400" />
-          }
-          <span className="font-semibold text-sm truncate" style={{ color: "var(--txt-2)" }}>{source.name}</span>
-        </div>
-        <span className={`flex-shrink min-w-0 flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${color.bg} ${color.text} ${color.border}`}>
-          <span className={`w-1.5 h-1.5 flex-shrink-0 rounded-full ${color.dot}`} />
-          <span className="truncate">{source.domain}</span>
-        </span>
-      </div>
-
-      {/* URL */}
-      <p className="text-xs font-mono truncate" style={{ color: "var(--txt-4)" }} title={source.url}>
-        {source.url}
-      </p>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between mt-auto pt-1">
-        {/* Subscribe toggle */}
-        <button
-          onClick={onSubscribe}
-          title={subscribed ? "Unsubscribe" : "Subscribe"}
-          className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors border"
-          style={subscribed
-            ? { background: "var(--acc)", borderColor: "var(--acc)", color: "#fff" }
-            : { background: "transparent", borderColor: "var(--bdr)", color: "var(--txt-3)" }
-          }
-        >
-          {subscribed
-            ? <><BellOff className="w-3 h-3" /> Subscribed</>
-            : <><Bell    className="w-3 h-3" /> Subscribe</>
-          }
-        </button>
-
-        {/* Admin controls */}
-        {isAdmin && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={onToggle}
-              title={source.enabled ? "Disable in pipeline" : "Enable in pipeline"}
-              className="p-1.5 rounded-md transition-colors"
-              style={{ color: "var(--txt-4)" }}
-            >
-              {source.enabled
-                ? <PowerOff className="w-3.5 h-3.5" />
-                : <Power    className="w-3.5 h-3.5" style={{ color: "#34D399" }} />
-              }
-            </button>
-            <button
-              onClick={onDelete}
-              title="Remove from catalog"
-              className="p-1.5 rounded-md transition-colors"
-              style={{ color: "var(--txt-4)" }}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+      <div className="p-4 flex flex-col gap-3 flex-1">
+        {busy && (
+          <div className="absolute inset-0 rounded-xl flex items-center justify-center" style={{ background: "var(--bg-quote)" }}>
+            <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-3)" }} />
           </div>
         )}
+
+        {/* Name + source type */}
+        <div className="flex items-start gap-2 min-w-0">
+          <span className="flex-shrink-0 mt-0.5">
+            {isYT
+              ? <Video className="w-4 h-4 text-red-400" />
+              : <Rss   className="w-4 h-4 text-orange-400" />
+            }
+          </span>
+          <span
+            className="font-semibold text-sm leading-snug"
+            style={{ color: "var(--txt-1)" }}
+            title={source.url}
+          >
+            {source.name}
+          </span>
+          {!source.enabled && isAdmin && (
+            <span
+              className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded border mt-0.5"
+              style={{ color: "var(--txt-4)", borderColor: "var(--bdr)", fontSize: "0.65rem" }}
+            >
+              off
+            </span>
+          )}
+        </div>
+
+        {/* Platform links */}
+        {hasLinks && <PlatformLinksMini links={links} />}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between mt-auto pt-1">
+          <button
+            onClick={onSubscribe}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors border"
+            style={subscribed
+              ? { background: "var(--acc)", borderColor: "var(--acc)", color: "#fff" }
+              : { background: "transparent", borderColor: "var(--bdr)", color: "var(--txt-3)" }
+            }
+          >
+            {subscribed
+              ? <><BellOff className="w-3 h-3" /> Subscribed</>
+              : <><Bell    className="w-3 h-3" /> Subscribe</>
+            }
+          </button>
+
+          {isAdmin && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onToggle}
+                title={source.enabled ? "Disable in pipeline" : "Enable in pipeline"}
+                className="p-1.5 rounded-md transition-colors hover:opacity-70"
+                style={{ color: "var(--txt-4)" }}
+              >
+                {source.enabled
+                  ? <PowerOff className="w-3.5 h-3.5" />
+                  : <Power    className="w-3.5 h-3.5" style={{ color: "#34D399" }} />
+                }
+              </button>
+              <button
+                onClick={onDelete}
+                title="Remove from catalog"
+                className="p-1.5 rounded-md transition-colors hover:opacity-70"
+                style={{ color: "var(--txt-4)" }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
+
+// ── Platform links mini-row ─────────────────────────────────────────────────
+
+const PLATFORM_ICONS: Record<string, { label: string; color: string; svg: React.ReactElement }> = {
+  spotify: {
+    label: "Spotify",
+    color: "#1DB954",
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13">
+        <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+      </svg>
+    ),
+  },
+  apple: {
+    label: "Apple Podcasts",
+    color: "#B150E2",
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13">
+        <path d="M12.002 1c6.075 0 10.998 4.923 10.998 10.998S18.077 23 12.002 23C5.927 23 1 18.073 1 11.998S5.923 1 12.002 1zm0 1.5C6.75 2.5 2.5 6.75 2.5 11.998 2.5 17.25 6.75 21.5 12.002 21.5 17.25 21.5 21.5 17.25 21.5 11.998 21.5 6.75 17.25 2.5 12.002 2.5zm0 2.77a6.73 6.73 0 110 13.46A6.73 6.73 0 0112 5.27zm0 1.5a5.23 5.23 0 100 10.46A5.23 5.23 0 0012 6.77zm0 1.98c.69 0 1.25.56 1.25 1.25 0 .53-.33.98-.8 1.16v4.09c0 .25-.2.45-.45.45s-.45-.2-.45-.45v-4.09a1.253 1.253 0 01-.8-1.16c0-.69.56-1.25 1.25-1.25z" />
+      </svg>
+    ),
+  },
+  youtube: {
+    label: "YouTube",
+    color: "#FF0000",
+    svg: (
+      <svg viewBox="0 0 24 24" fill="currentColor" width="13" height="13">
+        <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+      </svg>
+    ),
+  },
+  website: {
+    label: "Website",
+    color: "var(--txt-3)",
+    svg: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="2" y1="12" x2="22" y2="12" />
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+      </svg>
+    ),
+  },
+};
+
+function PlatformLinksMini({ links }: { links: PlatformLinks }) {
+  const entries = (["spotify", "apple", "youtube", "website"] as const).filter((k) => links[k]);
+  if (entries.length === 0) return null;
+  return (
+    <div className="flex items-center gap-2">
+      {entries.map((key) => {
+        const { label, color, svg } = PLATFORM_ICONS[key];
+        return (
+          <a
+            key={key}
+            href={links[key]}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={label}
+            className="flex items-center justify-center rounded transition-opacity hover:opacity-70"
+            style={{ color }}
+          >
+            {svg}
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Shared ──────────────────────────────────────────────────────────────────
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
