@@ -13,7 +13,7 @@
 
 import { unstable_cache } from "next/cache";
 
-// ─── Shared types ──────────────────────────────────────────────────────────
+// ─── Shared types ───────────────────────────────────────────────────────────
 
 export interface Source {
   id: string;
@@ -26,6 +26,14 @@ export interface Source {
   created_at: string;
   user_id?: string | null;
   is_public?: boolean;
+}
+
+export interface EpisodeItem {
+  id: string;          // MD5 of audioUrl — matches pipeline's episode_id
+  title: string;
+  publishedAt: string;
+  audioUrl: string;    // enclosure URL — needed to trigger single-episode processing
+  processed: boolean;  // true = insights exist in DB
 }
 
 export interface Insight {
@@ -210,6 +218,51 @@ async function sbSetSourceEnabled(id: string, enabled: boolean): Promise<void> {
   if (error) throw error;
 }
 
+async function sbGetEpisodesWithInsights(userId: string, sourceId: string): Promise<{ id: string; title: string; published_at: string }[]> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+
+  // Get distinct episode_ids that have insights for this source
+  const { data: insightRows, error: iErr } = await sb
+    .from("insights")
+    .select("episode_id")
+    .eq("source_id", sourceId);
+  if (iErr) throw iErr;
+
+  const episodeIds = [...new Set((insightRows ?? []).map((r: { episode_id: string }) => r.episode_id))];
+  if (episodeIds.length === 0) return [];
+
+  // Fetch episode details
+  const { data: epRows, error: eErr } = await sb
+    .from("episodes")
+    .select("id, title, published_at")
+    .in("id", episodeIds)
+    .order("published_at", { ascending: false });
+  if (eErr) throw eErr;
+
+  return (epRows ?? []).map((r: { id: string; title: string; published_at: string }) => ({
+    id: r.id,
+    title: r.title ?? "Untitled",
+    published_at: r.published_at ?? "",
+  }));
+}
+
+async function sbGetInsightsByEpisode(episodeId: string): Promise<Insight[]> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { data, error } = await sb
+    .from("insights")
+    .select("*, sources(name), episodes(title)")
+    .eq("episode_id", episodeId)
+    .order("domain");
+  if (error) throw error;
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    ...r,
+    source_name:   (r.sources  as { name: string }  | null)?.name,
+    episode_title: (r.episodes as { title: string } | null)?.title,
+  })) as Insight[];
+}
+
 async function sbGetInsightsByDate(date: string): Promise<Insight[]> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
@@ -348,6 +401,25 @@ export async function subscribeToSource(userId: string, sourceId: string): Promi
 
 export async function unsubscribeFromSource(userId: string, sourceId: string): Promise<void> {
   if (useSupabase()) return sbUnsubscribe(userId, sourceId);
+}
+
+export async function getEpisodesWithInsights(userId: string, sourceId: string): Promise<{ id: string; title: string; published_at: string }[]> {
+  if (useSupabase()) return sbGetEpisodesWithInsights(userId, sourceId);
+  return []; // SQLite local dev: not supported
+}
+
+export async function getInsightsByEpisode(episodeId: string): Promise<Insight[]> {
+  if (useSupabase()) return sbGetInsightsByEpisode(episodeId);
+  const db = getSqliteDb();
+  const rows = db.prepare(`
+    SELECT i.*, s.name AS source_name, e.title AS episode_title
+    FROM insights i
+    LEFT JOIN sources  s ON s.id = i.source_id
+    LEFT JOIN episodes e ON e.id = i.episode_id
+    WHERE i.episode_id = ?
+    ORDER BY i.domain
+  `).all(episodeId) as Record<string, string>[];
+  return rows.map(parseSqliteInsight);
 }
 
 export async function getRecentInsights(limit = 20): Promise<Insight[]> {
