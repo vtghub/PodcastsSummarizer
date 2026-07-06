@@ -186,7 +186,9 @@ def run_single_episode(
     except Exception as e:
         return {"error": f"RSS fetch failed: {e}", "date": date_str}
 
-    episode = next((e for e in episodes if e.url == audio_url), None)
+    from urllib.parse import unquote as _unquote
+    norm_url = _unquote(audio_url)
+    episode = next((e for e in episodes if _unquote(e.url) == norm_url), None)
     if not episode:
         return {"error": f"Episode not found in feed: {audio_url}", "date": date_str}
 
