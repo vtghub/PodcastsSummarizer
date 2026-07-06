@@ -60,7 +60,8 @@ PodcastsSummarizer/
 │   │   └── email/
 │   │       └── gmail_smtp.py        # Gmail App Password SMTP + HTML renderer
 │   └── jobs/
-│       └── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → email fan-out; run_single_episode() for on-demand
+│       ├── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → email fan-out; run_single_episode() for on-demand
+│       └── backfill_platform_links.py  # One-time job: discover platform URLs for all existing sources
 │
 ├── supabase/
 │   └── migrations/
@@ -114,7 +115,8 @@ PodcastsSummarizer/
 │   └── request-workflow.md          # Mermaid request flow sequence diagrams
 │
 ├── .github/workflows/
-│   └── daily_pipeline.yml           # Cron at midnight UTC; workflow_dispatch with since_days + force_email
+│   ├── daily_pipeline.yml           # Cron at midnight UTC; workflow_dispatch with since_days + force_email
+│   └── backfill_platform_links.yml  # Manual workflow_dispatch — backfills platform URLs for existing sources
 │
 ├── .env.example                     # Template — copy to .env and fill values
 └── requirements.txt
