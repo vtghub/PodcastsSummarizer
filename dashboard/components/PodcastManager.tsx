@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2,
-  Lock, Bell, BellOff,
+  Lock, Bell, BellOff, Search,
 } from "lucide-react";
 import { getDomainColor } from "@/lib/domain-colors";
 import type { Source } from "@/lib/db";
+import type { PodcastSearchResult } from "@/app/api/podcasts/search/route";
 
 const DOMAINS = [
   "Technology & AI",
@@ -38,6 +39,60 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
   const [error, setError] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
   const [localSubs, setLocalSubs] = useState<Set<string>>(new Set(subscribedIds));
+
+  // Podcast search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PodcastSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  const runSearch = useCallback(async (q: string) => {
+    if (q.length < 2) { setSearchResults([]); setShowResults(false); return; }
+    setSearching(true);
+    try {
+      const res = await fetch(`/api/podcasts/search?q=${encodeURIComponent(q)}`);
+      const data: PodcastSearchResult[] = await res.json();
+      setSearchResults(data);
+      setShowResults(data.length > 0);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  function handleSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const q = e.target.value;
+    setSearchQuery(q);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => runSearch(q), 350);
+  }
+
+  function handlePickResult(r: PodcastSearchResult) {
+    setForm({ ...form, name: r.name, url: r.feedUrl, source_type: "rss" });
+    setSearchQuery(r.name);
+    setShowResults(false);
+  }
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowResults(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  function openAdd() {
+    setShowAdd(true);
+    setError("");
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowResults(false);
+    setForm(EMPTY_FORM);
+  }
 
   const refresh = () => startTransition(() => router.refresh());
 
@@ -144,7 +199,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         <div className="flex items-center gap-2 flex-shrink-0">
           {isAdmin && (
             <button
-              onClick={() => { setShowAdd(true); setError(""); }}
+              onClick={openAdd}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-white"
               style={{ background: "var(--acc)" }}
             >
@@ -229,6 +284,61 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
             </div>
 
             <form onSubmit={handleAdd} className="space-y-4">
+              {/* Podcast search */}
+              <Field label="Search Podcast">
+                <div ref={searchRef} className="relative">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--txt-4)" }} />
+                    {searching
+                      ? <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin" style={{ color: "var(--txt-4)" }} />
+                      : searchQuery && (
+                        <button type="button" onClick={() => { setSearchQuery(""); setSearchResults([]); setShowResults(false); setForm(EMPTY_FORM); }}
+                          className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: "var(--txt-4)" }}>
+                          <X className="w-4 h-4" />
+                        </button>
+                      )
+                    }
+                    <input
+                      value={searchQuery}
+                      onChange={handleSearchChange}
+                      onFocus={() => searchResults.length > 0 && setShowResults(true)}
+                      placeholder="Search by podcast name…"
+                      className="input"
+                      style={{ paddingLeft: "2.25rem", paddingRight: "2.25rem" }}
+                      autoComplete="off"
+                    />
+                  </div>
+                  {showResults && (
+                    <ul
+                      className="absolute z-10 w-full mt-1 rounded-xl border shadow-xl overflow-hidden"
+                      style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
+                    >
+                      {searchResults.map((r) => (
+                        <li key={r.id}>
+                          <button
+                            type="button"
+                            onClick={() => handlePickResult(r)}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors hover:opacity-80"
+                            style={{ background: "transparent" }}
+                          >
+                            {r.artworkUrl
+                              ? <img src={r.artworkUrl} alt="" className="w-9 h-9 rounded-md flex-shrink-0 object-cover" />
+                              : <div className="w-9 h-9 rounded-md flex-shrink-0" style={{ background: "var(--bg-elevated)" }} />
+                            }
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>{r.name}</p>
+                              {r.publisher && r.publisher !== r.name && (
+                                <p className="text-xs truncate" style={{ color: "var(--txt-4)" }}>{r.publisher}</p>
+                              )}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </Field>
+
               <Field label="Name">
                 <input
                   required
