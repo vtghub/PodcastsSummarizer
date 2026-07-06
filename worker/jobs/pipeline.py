@@ -34,15 +34,18 @@ def run_pipeline(
     since: datetime | None = None,
     send_email: bool = True,
     dry_run: bool = False,
+    force_email: bool = False,
 ) -> dict:
     """
     Full daily pipeline. Returns a summary dict with counts and errors.
 
     Args:
-        since:      Only process episodes published after this datetime.
-                    Defaults to 24 hours ago.
-        send_email: Whether to send the digest email after processing.
-        dry_run:    Fetch and list episodes only — no download, no LLM, no email.
+        since:       Only process episodes published after this datetime.
+                     Defaults to 24 hours ago.
+        send_email:  Whether to send the digest email after processing.
+        dry_run:     Fetch and list episodes only — no download, no LLM, no email.
+        force_email: Send digest using today's existing DB insights even if
+                     no new episodes were processed this run (for testing).
     """
     if since is None:
         from datetime import timedelta
@@ -191,7 +194,10 @@ def run_pipeline(
                     stats["errors"] += 1
 
     # ── Phase 3: digest email ────────────────────────────────────────────────
-    if send_email and not dry_run and stats["insights"] > 0:
+    should_email = send_email and not dry_run and (stats["insights"] > 0 or force_email)
+    if should_email:
+        if force_email and stats["insights"] == 0:
+            print("[Email] force_email=True — sending digest from existing DB insights")
         _send_per_user_digests(storage, date_str)
 
     print(f"\n[Pipeline] Done — {stats}")
