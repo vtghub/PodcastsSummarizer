@@ -348,7 +348,7 @@ function SourceCard({
 
   return (
     <div
-      className="rounded-xl border p-5 flex flex-col gap-3 relative transition-all"
+      className="rounded-xl border p-5 flex flex-col gap-3 relative transition-all min-w-0 overflow-hidden"
       style={{
         background: "var(--bg-surface)",
         borderColor: subscribed ? "var(--acc)" : "var(--bdr)",
@@ -371,9 +371,9 @@ function SourceCard({
           }
           <span className="font-semibold text-sm truncate" style={{ color: "var(--txt-2)" }}>{source.name}</span>
         </div>
-        <span className={`flex-shrink-0 flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${color.bg} ${color.text} ${color.border}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${color.dot}`} />
-          {source.domain}
+        <span className={`flex-shrink min-w-0 flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${color.bg} ${color.text} ${color.border}`}>
+          <span className={`w-1.5 h-1.5 flex-shrink-0 rounded-full ${color.dot}`} />
+          <span className="truncate">{source.domain}</span>
         </span>
       </div>
 

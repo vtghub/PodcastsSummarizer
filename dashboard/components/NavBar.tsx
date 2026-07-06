@@ -59,16 +59,16 @@ export default function NavBar({
       className="sticky top-0 z-40 border-b"
       style={{ background: "var(--bg-nav)", borderColor: "var(--nav-bdr)" }}
     >
-      <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 font-semibold transition-opacity hover:opacity-80" style={{ color: "var(--txt-1)" }}>
           <span className="text-lg">🎙</span>
-          <span>Podcast Insights</span>
+          <span className="hidden sm:inline">Podcast Insights</span>
         </Link>
 
         {/* Right controls */}
-        <div className="flex items-center gap-3">
-          {navLink("/", "Dashboard")}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <span className="hidden sm:inline">{navLink("/", "Dashboard")}</span>
           {navLink("/podcasts", "My Podcasts")}
 
           {/* User menu */}
