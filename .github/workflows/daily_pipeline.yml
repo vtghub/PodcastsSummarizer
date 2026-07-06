@@ -14,6 +14,18 @@ on:
         description: "Send digest from existing DB insights even if no new episodes processed"
         required: false
         default: "false"
+      episode_audio_url:
+        description: "Single-episode mode: audio URL of the specific episode to process"
+        required: false
+        default: ""
+      source_id:
+        description: "Single-episode mode: source ID the episode belongs to"
+        required: false
+        default: ""
+      target_email:
+        description: "Single-episode mode: email address to send the targeted digest to"
+        required: false
+        default: ""
 
 jobs:
   run-pipeline:
@@ -56,21 +68,39 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SINCE_DAYS: ${{ github.event.inputs.since_days || '1' }}
           FORCE_EMAIL: ${{ github.event.inputs.force_email || 'false' }}
+          EPISODE_AUDIO_URL: ${{ github.event.inputs.episode_audio_url || '' }}
+          EPISODE_SOURCE_ID: ${{ github.event.inputs.source_id || '' }}
+          TARGET_EMAIL: ${{ github.event.inputs.target_email || '' }}
           PYTHONUTF8: "1"
         run: |
           python - <<'EOF'
           import sys, os
           from datetime import datetime, timezone, timedelta
           sys.path.insert(0, '.')
-          from worker.jobs.pipeline import run_pipeline
-          since_days = int(os.environ.get("SINCE_DAYS", "1"))
-          since = datetime.now(timezone.utc) - timedelta(days=since_days)
-          print(f"Running pipeline | since={since.date()} | storage=supabase | llm=gemini")
-          force_email = os.environ.get("FORCE_EMAIL", "false").lower() == "true"
-          stats = run_pipeline(since=since, send_email=True, force_email=force_email)
-          print(f"Done: {stats}")
-          if stats.get("errors"):
-              sys.exit(1)
+
+          episode_audio_url = os.environ.get("EPISODE_AUDIO_URL", "").strip()
+          source_id         = os.environ.get("EPISODE_SOURCE_ID", "").strip()
+          target_email      = os.environ.get("TARGET_EMAIL", "").strip()
+
+          if episode_audio_url and source_id:
+              # Single-episode on-demand mode
+              from worker.jobs.pipeline import run_single_episode
+              print(f"Single-episode mode | source={source_id} | target={target_email or 'none'}")
+              result = run_single_episode(episode_audio_url, source_id, user_email=target_email)
+              print(f"Done: {result}")
+              if result.get("error"):
+                  sys.exit(1)
+          else:
+              # Full daily pipeline
+              from worker.jobs.pipeline import run_pipeline
+              since_days = int(os.environ.get("SINCE_DAYS", "1"))
+              since = datetime.now(timezone.utc) - timedelta(days=since_days)
+              print(f"Running pipeline | since={since.date()} | storage=supabase | llm=gemini")
+              force_email = os.environ.get("FORCE_EMAIL", "false").lower() == "true"
+              stats = run_pipeline(since=since, send_email=True, force_email=force_email)
+              print(f"Done: {stats}")
+              if stats.get("errors"):
+                  sys.exit(1)
           EOF
 
       - name: Upload logs

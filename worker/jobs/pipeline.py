@@ -16,7 +16,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-from worker.core.interfaces import PodcastSource, Transcript
+from worker.core.interfaces import PodcastSource
 from worker.core.registry import (
     get_email_provider, get_llm_provider,
     get_storage_provider, get_transcription_provider,
@@ -96,78 +96,11 @@ def run_pipeline(
 
     def _process(source: PodcastSource, provider, episode) -> tuple[str, str | None]:
         """Returns (stat_key, optional_error_message)."""
-        tag = f"[{source.name}] [{episode.title[:50]}]"
-
-        if storage.episode_exists(episode.id):
-            print(f"  {tag} already processed — skip")
-            return "skipped", None
-
         if dry_run:
+            tag = f"[{source.name}] [{episode.title[:50]}]"
             print(f"  {tag} dry-run — skip")
             return "skipped", None
-
-        storage.save_episode(episode)
-
-        # ── Step 1: text transcript ──────────────────────────────────────
-        transcript_text: str | None = None
-        transcript_source = ""
-        try:
-            transcript_text = provider.fetch_transcript_text(episode)
-            if transcript_text:
-                transcript_source = "text"
-        except Exception as e:
-            print(f"  {tag} [warn] text transcript failed: {e}")
-
-        # ── Step 2: Whisper fallback (serialised — CPU-bound) ────────────
-        if not transcript_text:
-            print(f"  {tag} downloading audio for Whisper…")
-            audio_path: str | None = None
-            try:
-                audio_path = provider.download_audio(episode)
-            except Exception as e:
-                return "errors", f"  {tag} [ERROR] audio download: {e}"
-            try:
-                with _WHISPER_LOCK:
-                    transcriber = get_transcription_provider()
-                    result = transcriber.transcribe(audio_path)
-                transcript_text = result.text
-                transcript_source = "whisper"
-                print(f"  {tag} Whisper: {len(transcript_text):,} chars")
-            except Exception as e:
-                return "errors", f"  {tag} [ERROR] Whisper: {e}"
-            finally:
-                if audio_path and os.path.exists(audio_path):
-                    os.remove(audio_path)
-
-        if not transcript_text:
-            return "errors", f"  {tag} [ERROR] no transcript available"
-
-        transcript = Transcript(episode_id=episode.id, text=transcript_text, language="en")
-        storage.save_transcript(transcript)
-        print(f"  {tag} transcript [{transcript_source}]: {len(transcript_text):,} chars")
-
-        # ── Step 3: LLM insight extraction ──────────────────────────────
-        try:
-            insight = llm.extract_insights(episode, transcript, domain=source.domain)
-            insight.date = date_str
-        except Exception as e:
-            # Auto-fallback: if Gemini quota exhausted and Groq key available, retry with Groq
-            if _is_quota_error(e) and GROQ_API_KEY:
-                print(f"  {tag} Gemini quota — falling back to Groq")
-                try:
-                    from worker.providers.llm.groq_llm import GroqLLMProvider
-                    groq = GroqLLMProvider()
-                    insight = groq.extract_insights(episode, transcript, domain=source.domain)
-                    insight.date = date_str
-                except Exception as groq_e:
-                    return "errors", f"  {tag} [ERROR] Groq fallback also failed: {groq_e}"
-            else:
-                return "errors", f"  {tag} [ERROR] LLM: {e}"
-
-        storage.save_insight(insight)
-        storage.mark_episode_done(episode.id)
-        print(f"  {tag} insights: {len(insight.key_points)} points, {len(insight.key_quotes)} quotes")
-        return "insights", None
+        return _process_episode(storage, llm, source, provider, episode, date_str)
 
     with ThreadPoolExecutor(max_workers=_EPISODE_WORKERS) as ex:
         ep_futures = {
@@ -211,6 +144,136 @@ def run_pipeline(
             print(f"  {e}")
 
     return {**stats, "date": date_str, "errors": errors}
+
+
+def run_single_episode(
+    audio_url: str,
+    source_id: str,
+    user_email: str = "",
+    send_email: bool = True,
+) -> dict:
+    """
+    Process one specific episode (identified by its audio URL) and optionally
+    send a targeted digest email to user_email.
+
+    Used by on-demand processing triggered from the dashboard.
+    """
+    storage = get_storage_provider()
+    llm = get_llm_provider()
+    date_str = datetime.now().strftime("%Y-%m-%d")
+
+    source = storage.get_source(source_id)
+    if not source:
+        return {"error": f"Source {source_id} not found", "date": date_str}
+
+    provider = _get_source_provider(source)
+
+    # Fetch all recent episodes from RSS to locate the target
+    from datetime import timedelta
+    since = datetime.now(timezone.utc) - timedelta(days=365)
+    try:
+        episodes = provider.fetch_latest_episodes(source, since=since)
+    except Exception as e:
+        return {"error": f"RSS fetch failed: {e}", "date": date_str}
+
+    episode = next((e for e in episodes if e.url == audio_url), None)
+    if not episode:
+        return {"error": f"Episode not found in feed: {audio_url}", "date": date_str}
+
+    print(f"[SingleEpisode] Processing: {episode.title[:80]}")
+
+    stat, error_msg = _process_episode(storage, llm, source, provider, episode, date_str)
+    if error_msg:
+        print(error_msg)
+
+    if stat == "insights" and send_email and user_email:
+        email = get_email_provider()
+        # Retrieve the just-stored insight
+        from collections import defaultdict
+        insights = storage.get_insights_by_date_and_sources(date_str, [source_id])
+        ep_insights = [i for i in insights if i.episode_id == episode.id]
+        if ep_insights:
+            by_domain: dict[str, list] = defaultdict(list)
+            for ins in ep_insights:
+                by_domain[ins.domain].append(ins)
+            try:
+                email.send_digest(user_email, date_str, dict(by_domain))
+                print(f"[SingleEpisode] Digest sent to {user_email}")
+            except Exception as e:
+                print(f"[SingleEpisode] Email send failed: {e}")
+
+    return {"stat": stat, "error": error_msg, "date": date_str}
+
+
+def _process_episode(
+    storage, llm, source: "PodcastSource", provider, episode, date_str: str
+) -> tuple[str, str | None]:
+    """Extract insights from one episode. Returns (stat_key, error_msg|None)."""
+    tag = f"[{source.name}] [{episode.title[:50]}]"
+
+    if storage.episode_exists(episode.id):
+        print(f"  {tag} already processed — skip")
+        return "skipped", None
+
+    storage.save_episode(episode)
+
+    transcript_text: str | None = None
+    transcript_source = ""
+    try:
+        transcript_text = provider.fetch_transcript_text(episode)
+        if transcript_text:
+            transcript_source = "text"
+    except Exception as e:
+        print(f"  {tag} [warn] text transcript failed: {e}")
+
+    if not transcript_text:
+        print(f"  {tag} downloading audio for Whisper…")
+        audio_path: str | None = None
+        try:
+            audio_path = provider.download_audio(episode)
+        except Exception as e:
+            return "errors", f"  {tag} [ERROR] audio download: {e}"
+        try:
+            with _WHISPER_LOCK:
+                transcriber = get_transcription_provider()
+                result = transcriber.transcribe(audio_path)
+            transcript_text = result.text
+            transcript_source = "whisper"
+            print(f"  {tag} Whisper: {len(transcript_text):,} chars")
+        except Exception as e:
+            return "errors", f"  {tag} [ERROR] Whisper: {e}"
+        finally:
+            if audio_path and os.path.exists(audio_path):
+                os.remove(audio_path)
+
+    if not transcript_text:
+        return "errors", f"  {tag} [ERROR] no transcript available"
+
+    from worker.core.interfaces import Transcript
+    transcript = Transcript(episode_id=episode.id, text=transcript_text, language="en")
+    storage.save_transcript(transcript)
+    print(f"  {tag} transcript [{transcript_source}]: {len(transcript_text):,} chars")
+
+    try:
+        insight = llm.extract_insights(episode, transcript, domain=source.domain)
+        insight.date = date_str
+    except Exception as e:
+        if _is_quota_error(e) and GROQ_API_KEY:
+            print(f"  {tag} Gemini quota — falling back to Groq")
+            try:
+                from worker.providers.llm.groq_llm import GroqLLMProvider
+                groq = GroqLLMProvider()
+                insight = groq.extract_insights(episode, transcript, domain=source.domain)
+                insight.date = date_str
+            except Exception as groq_e:
+                return "errors", f"  {tag} [ERROR] Groq fallback also failed: {groq_e}"
+        else:
+            return "errors", f"  {tag} [ERROR] LLM: {e}"
+
+    storage.save_insight(insight)
+    storage.mark_episode_done(episode.id)
+    print(f"  {tag} insights: {len(insight.key_points)} points, {len(insight.key_quotes)} quotes")
+    return "insights", None
 
 
 def _is_quota_error(exc: Exception) -> bool:
