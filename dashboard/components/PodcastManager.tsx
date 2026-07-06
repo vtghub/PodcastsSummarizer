@@ -212,8 +212,8 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         {isAdmin && (
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors text-white flex-shrink-0"
-            style={{ background: "var(--acc)" }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
+            style={{ background: "var(--bdr-strong)", color: "var(--txt-1)" }}
           >
             <Plus className="w-4 h-4" />
             Add to Catalog
@@ -396,8 +396,8 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 text-white"
-                  style={{ background: "var(--acc)" }}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                  style={{ background: "var(--bdr-strong)", color: "var(--txt-1)" }}
                 >
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   {saving ? "Adding…" : "Add Podcast"}
@@ -439,7 +439,7 @@ function DomainSection({
         />
         <h2
           className="text-xs font-bold uppercase tracking-widest flex-shrink-0"
-          style={{ color: `var(--d-${dk}-txt)` }}
+          style={{ color: "var(--txt-1)" }}
         >
           {domain}
         </h2>
@@ -488,12 +488,12 @@ function SourceCard({
       className="rounded-xl border flex flex-col relative transition-all overflow-hidden"
       style={{
         background: "var(--bg-surface)",
-        borderColor: subscribed ? "var(--acc)" : "var(--bdr)",
-        boxShadow: subscribed ? "0 0 0 1px var(--acc)" : undefined,
+        borderColor: subscribed ? "var(--bdr-strong)" : "var(--bdr)",
+        boxShadow: subscribed ? "0 0 0 1px var(--bdr-strong)" : undefined,
       }}
     >
-      {/* Domain color stripe */}
-      <div className="h-1 w-full flex-shrink-0" style={{ background: `var(--d-${dk}-dot)` }} />
+      {/* Domain color stripe — soft pastel tint */}
+      <div className="h-1 w-full flex-shrink-0" style={{ background: `var(--d-${dk}-bdr)` }} />
 
       <div className="p-4 flex flex-col gap-3 flex-1">
         {busy && (
@@ -536,7 +536,7 @@ function SourceCard({
             onClick={onSubscribe}
             className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors border"
             style={subscribed
-              ? { background: "var(--acc)", borderColor: "var(--acc)", color: "#fff" }
+              ? { background: "var(--bdr-strong)", borderColor: "var(--bdr-strong)", color: "var(--txt-1)" }
               : { background: "transparent", borderColor: "var(--bdr)", color: "var(--txt-3)" }
             }
           >
