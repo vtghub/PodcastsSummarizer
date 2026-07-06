@@ -196,9 +196,13 @@ def run_pipeline(
     # ── Phase 3: digest email ────────────────────────────────────────────────
     should_email = send_email and not dry_run and (stats["insights"] > 0 or force_email)
     if should_email:
+        email_date = date_str
         if force_email and stats["insights"] == 0:
-            print("[Email] force_email=True — sending digest from existing DB insights")
-        _send_per_user_digests(storage, date_str)
+            # Use most recent date with insights instead of today (which has none yet)
+            available = storage.get_available_dates()
+            email_date = available[0] if available else date_str
+            print(f"[Email] force_email=True — sending digest from existing DB insights ({email_date})")
+        _send_per_user_digests(storage, email_date)
 
     print(f"\n[Pipeline] Done — {stats}")
     if errors:
