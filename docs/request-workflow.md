@@ -1,161 +1,217 @@
 # Request Workflow Diagrams
 
-## 1. Pipeline — GitHub Actions → Supabase
+## 1. Pipeline — GitHub Actions → Supabase → Gmail
 
 ```mermaid
 sequenceDiagram
-    participant GHA as GitHub Actions
-    participant P as Pipeline
-    participant S as Storage (Supabase)
-    participant SRC as Source Provider
-    participant W as Whisper (local)
-    participant LLM as LLM (Gemini / Groq)
+    participant GH as GitHub Actions
+    participant PY as Python Pipeline
+    participant RSS as RSS/YouTube
+    participant W as Whisper STT
+    participant LLM as Gemini/Groq
+    participant DB as Supabase DB
+    participant MAIL as Gmail SMTP
 
-    GHA->>P: run_pipeline(since=yesterday)
-    Note over GHA: Fires at 7 PM EST (midnight UTC) daily
-    P->>S: get_sources(enabled_only=True)
-    S-->>P: [sources]
+    GH->>PY: trigger (cron or workflow_dispatch)
+    PY->>DB: get_sources(enabled=True)
+    DB-->>PY: 16 sources
 
-    loop Each source
-        P->>SRC: fetch_latest_episodes(since)
-        SRC-->>P: [episodes]
+    loop parallel (8 workers)
+        PY->>RSS: fetch_latest_episodes(since)
+        RSS-->>PY: new episodes
+    end
 
-        loop Each episode
-            P->>S: episode_exists?
-            alt already processed
-                S-->>P: true → skip
-            else new episode
-                P->>S: save_episode()
-                P->>SRC: fetch_transcript_text()
-                alt text / captions available
-                    SRC-->>P: transcript text
-                else no text transcript
-                    P->>SRC: download_audio()
-                    P->>W: transcribe(audio_path)
-                    W-->>P: transcript text
-                end
-                P->>S: save_transcript()
-                P->>LLM: extract_insights(episode, transcript, domain)
-                LLM-->>P: Insight {summary, key_points, quotes, action_items, tags}
-                P->>S: save_insight()
-                P->>S: mark_episode_done()
-            end
+    loop per episode (4 workers)
+        PY->>RSS: fetch_transcript_text()
+        alt captions available
+            RSS-->>PY: text transcript
+        else no captions
+            PY->>RSS: download_audio()
+            PY->>W: transcribe(audio)
+            W-->>PY: transcript text
+        end
+        PY->>LLM: extract_insights(episode, transcript)
+        alt Gemini quota error
+            PY->>LLM: retry with Groq
+        end
+        LLM-->>PY: Insight (summary, key_points, quotes, actions, tags)
+        PY->>DB: save_insight(insight, date=today)
+        PY->>DB: mark_episode_done(episode_id)
+    end
+
+    Note over PY,MAIL: Email fan-out (send_email=True)
+    PY->>DB: get_users_with_digest_enabled()
+    DB-->>PY: [user1, user2, ...]
+    loop per user
+        PY->>DB: get_user_subscribed_source_ids(user_id)
+        PY->>DB: get_insights_by_date_and_sources(date, source_ids)
+        alt has insights for subscriptions
+            PY->>MAIL: send_digest(user.email, date, insights_by_domain)
         end
     end
 ```
 
 ---
 
-## 2. Public Dashboard Request — `/dashboard`
+## 2. Public Dashboard Request (guest)
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant MW as Edge Middleware
-    participant SC as Server Component
+    participant MW as middleware.ts
+    participant PAGE as dashboard/page.tsx
+    participant CACHE as unstable_cache (1h TTL)
     participant DB as Supabase
-    participant CC as Client Components
 
-    B->>MW: GET /dashboard
-    MW->>MW: route not protected → pass through
-    MW->>SC: render page (server-side)
-    SC->>DB: getInsightsByDate(today)
-    DB-->>SC: insights[]
-    SC-->>B: HTML + serialised data
-
-    B->>CC: hydrate React tree
-    Note over CC: ThemeContext applies saved theme<br/>TTSContext restores TTS toggle<br/>DomainInsightView defaults to "Business & Startups"
-    CC-->>B: fully interactive page
+    B->>MW: GET /dashboard?date=2026-07-05
+    MW->>MW: refresh Supabase session (no-op for guest)
+    MW-->>PAGE: pass through
+    PAGE->>PAGE: getUser() → null (guest)
+    PAGE->>CACHE: _cachedGetInsightsByDate("2026-07-05")
+    alt cache miss
+        CACHE->>DB: SELECT * FROM insights WHERE date=?
+        DB-->>CACHE: 18 insights
+        CACHE-->>PAGE: 18 insights (cached 1h)
+    else cache hit
+        CACHE-->>PAGE: 18 insights
+    end
+    PAGE->>CACHE: _cachedGetAvailableDates()
+    CACHE-->>PAGE: ["2026-07-05", ...]
+    PAGE-->>B: HTML — all public insights + guest banner
 ```
 
 ---
 
-## 3. My Podcasts Page — Public with Auth-Aware UI
+## 3. Authenticated Dashboard Request (personalized)
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant MW as Edge Middleware
-    participant SC as Server Component (podcasts/page.tsx)
+    participant MW as middleware.ts
+    participant PAGE as dashboard/page.tsx
     participant DB as Supabase
-    participant PM as PodcastManager (client)
 
-    B->>MW: GET /podcasts
-    MW->>MW: public route → pass through (no redirect)
-    MW->>SC: render page (server-side)
-    SC->>SC: isValidSession(cookie) → isAuthed true/false
-    SC->>DB: getSourcesAsync()
-    DB-->>SC: sources[]
-    SC-->>B: HTML with isAuthed prop
+    B->>MW: GET /dashboard (with JWT cookie)
+    MW->>DB: verify + refresh JWT session
+    MW-->>PAGE: pass through
+    PAGE->>DB: getUser() [React cache — 1 req/render]
+    DB-->>PAGE: user {id, email}
+    PAGE->>DB: sbGetInsightsByDateForUser(date, userId)
+    Note right of DB: JOIN user_subscriptions ON source_id\nWHERE user_id = userId
+    DB-->>PAGE: insights for subscribed sources only
+    PAGE->>DB: sbGetAvailableDatesForUser(userId)
+    DB-->>PAGE: dates with insights for user's sources
+    PAGE-->>B: HTML — personalized insights (no cache)
+```
 
-    alt isAuthed = false (guest)
-        B->>PM: render read-only mode
-        Note over PM: List visible · No Add/toggle/delete buttons<br/>"Sign in to manage" banner shown<br/>No Sign Out in navbar
-    else isAuthed = true (signed in)
-        B->>PM: render full management UI
-        Note over PM: Add Podcast button · Enable/disable · Delete<br/>Sign Out shown in navbar
+---
+
+## 4. Register
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant PAGE as register/page.tsx
+    participant API as /api/auth/register
+    participant SB as Supabase Auth
+    participant DB as Supabase DB
+
+    B->>PAGE: fill display_name, email, password
+    B->>API: POST {displayName, email, password}
+    API->>SB: supabase.auth.signUp({email, password})
+    SB-->>API: {user, session}
+    API->>DB: INSERT user_profiles (user_id, display_name, is_admin=false)
+    API-->>B: 200 OK (Supabase sets SSR cookies)
+    B->>B: redirect to /dashboard
+```
+
+---
+
+## 5. Login / Logout
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant API as /api/auth/login
+    participant SB as Supabase Auth
+
+    B->>API: POST {email, password}
+    API->>SB: supabase.auth.signInWithPassword()
+    SB-->>API: JWT session
+    API-->>B: 200 OK (Supabase sets http-only SSR cookies)
+    B->>B: redirect to /dashboard
+
+    Note over B,SB: Logout
+    B->>API: POST /api/auth/logout
+    API->>SB: supabase.auth.signOut()
+    SB-->>API: cleared
+    API-->>B: 200 OK (cookies cleared)
+    B->>B: redirect to /
+```
+
+---
+
+## 6. Subscribe / Unsubscribe (optimistic)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant PM as PodcastManager.tsx
+    participant API as /api/subscriptions
+
+    B->>PM: click Subscribe on source card
+    PM->>PM: optimistic update (localSubs.add(source_id))
+    PM->>API: POST {sourceId}
+    alt success
+        API-->>PM: 200 OK
+    else error
+        API-->>PM: 4xx/5xx
+        PM->>PM: revert optimistic update
     end
+
+    B->>PM: click Subscribed (toggle off)
+    PM->>PM: optimistic update (localSubs.delete(source_id))
+    PM->>API: DELETE /api/subscriptions/{sourceId}
 ```
 
 ---
 
-## 4. Login Flow
+## 7. Profile Update
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant LP as /login page
-    participant LA as POST /api/auth/login
-    participant MW as Edge Middleware
+    participant FORM as ProfileForm.tsx
+    participant API as /api/profile
 
-    B->>LP: navigate to /login?from=/podcasts
-    B->>LA: POST { passcode }
-    LA->>LA: SHA-256(passcode) == SHA-256(ADMIN_SECRET)?
-
-    alt wrong passcode
-        LA-->>B: 401 { error: "Invalid passcode" }
-    else correct passcode
-        LA-->>B: 200 + Set-Cookie: admin_session (httpOnly, SameSite=strict, 30d)
-        Note over B: window.location.href = "/podcasts"<br/>(full navigation — ensures middleware sees cookie)
-        B->>MW: GET /podcasts (cookie present)
-        MW->>MW: public route → pass through
-        B->>B: /podcasts renders in full management mode
-    end
+    B->>FORM: edit display_name / digest_enabled / digest_hour
+    FORM->>API: PUT {display_name, digest_enabled, digest_hour}
+    API->>API: validate: user authed, digest_hour 0-23
+    API->>DB: UPDATE user_profiles SET ... WHERE user_id=?
+    DB-->>API: ok
+    API-->>FORM: 200 {display_name, digest_enabled, digest_hour}
+    FORM->>FORM: show green checkmark, router.refresh()
 ```
 
 ---
 
-## 5. Logout Flow
+## 8. Admin Source Management
 
 ```mermaid
 sequenceDiagram
-    participant B as Browser
-    participant LA as POST /api/auth/logout
-
-    B->>LA: POST /api/auth/logout
-    LA-->>B: 200 + Set-Cookie: admin_session="" (maxAge=0)
-    Note over B: Cookie cleared in browser
-    B->>B: router.push("/") → Home page
-    Note over B: /podcasts now shows read-only mode
-```
-
----
-
-## 6. API Source Mutation — Auth Guard
-
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant MW as Edge Middleware
+    participant B as Browser (admin)
+    participant MW as middleware.ts
     participant API as /api/sources
+    participant DB as Supabase
 
-    B->>MW: POST/PUT/DELETE /api/sources/[id]
-
-    alt no valid session cookie
-        MW-->>B: 401 { error: "Unauthorized" }
-    else valid cookie
-        MW->>API: pass through
-        API->>API: perform mutation (add / update / delete)
-        API-->>B: 200 / 204
+    B->>MW: POST /api/sources (with JWT cookie)
+    MW->>MW: verify session → user present
+    MW-->>API: pass through
+    API->>DB: isAdmin() → user_profiles.is_admin
+    alt is_admin = true
+        API->>DB: INSERT sources (is_public=true)
+        API-->>B: 201 Created
+    else not admin
+        API-->>B: 403 Forbidden
     end
 ```
