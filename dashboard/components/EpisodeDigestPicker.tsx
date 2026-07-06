@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Loader2, Send, CheckCircle, AlertCircle, Zap } from "lucide-react";
 import type { Source, EpisodeItem } from "@/lib/db";
 
+// "queued" = background job dispatched; browser is free — pipeline emails when done
 type ButtonState = "idle" | "loading-episodes" | "sending" | "processing" | "sent" | "queued" | "error";
 
 interface Props {
@@ -11,16 +12,14 @@ interface Props {
 }
 
 export default function EpisodeDigestPicker({ subscribedSources }: Props) {
-  const [sourceId, setSourceId]     = useState("");
-  const [episodes, setEpisodes]     = useState<EpisodeItem[]>([]);
-  const [episodeId, setEpisodeId]   = useState("");
-  const [state, setState]           = useState<ButtonState>("idle");
-  const [message, setMessage]       = useState("");
-  const [pollTimer, setPollTimer]   = useState<ReturnType<typeof setInterval> | null>(null);
+  const [sourceId, setSourceId]   = useState("");
+  const [episodes, setEpisodes]   = useState<EpisodeItem[]>([]);
+  const [episodeId, setEpisodeId] = useState("");
+  const [state, setState]         = useState<ButtonState>("idle");
+  const [message, setMessage]     = useState("");
 
   const selectedEpisode = episodes.find((e) => e.id === episodeId);
 
-  // Fetch episodes when source changes
   const loadEpisodes = useCallback(async (sid: string) => {
     if (!sid) { setEpisodes([]); setEpisodeId(""); return; }
     setState("loading-episodes");
@@ -38,12 +37,7 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
     }
   }, []);
 
-  useEffect(() => {
-    loadEpisodes(sourceId);
-  }, [sourceId, loadEpisodes]);
-
-  // Stop polling on unmount
-  useEffect(() => () => { if (pollTimer) clearInterval(pollTimer); }, [pollTimer]);
+  useEffect(() => { loadEpisodes(sourceId); }, [sourceId, loadEpisodes]);
 
   async function handleSend() {
     if (!selectedEpisode) return;
@@ -56,8 +50,10 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
         body: JSON.stringify({ episodeId: selectedEpisode.id }),
       });
       const data = await res.json();
-      if (!res.ok) { setState("error"); setMessage(data.error ?? "Failed to send digest"); }
-      else {
+      if (!res.ok) {
+        setState("error");
+        setMessage(data.error ?? "Failed to send digest");
+      } else {
         setState("sent");
         setMessage(`Digest sent — ${data.count} insight${data.count !== 1 ? "s" : ""} from ${data.date}`);
         setTimeout(() => { setState("idle"); setMessage(""); }, 8000);
@@ -84,49 +80,16 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
         }),
       });
       const data = await res.json();
-      if (!res.ok) { setState("error"); setMessage(data.error ?? "Failed to queue processing"); return; }
-
+      if (!res.ok) {
+        setState("error");
+        setMessage(data.error ?? "Failed to queue processing");
+        return;
+      }
+      // Job is now running in GitHub Actions — pipeline sends the email when done.
+      // No polling needed; user can close this page.
       setState("queued");
-      setMessage("Processing started — polling for completion…");
-
-      // Poll every 10s for up to 10 minutes
-      let attempts = 0;
-      const timer = setInterval(async () => {
-        attempts++;
-        if (attempts > 60) {
-          clearInterval(timer);
-          setState("queued");
-          setMessage("Still processing — you'll receive an email when ready.");
-          return;
-        }
-        try {
-          const statusRes = await fetch(`/api/digest/status?episodeId=${selectedEpisode.id}`);
-          const status = await statusRes.json();
-          if (status.processed) {
-            clearInterval(timer);
-            // Mark episode as processed in local state so dropdown shows ✓
-            setEpisodes((prev) =>
-              prev.map((ep) => ep.id === selectedEpisode.id ? { ...ep, processed: true } : ep)
-            );
-            // Auto-send the digest now that insights are ready
-            const sendRes = await fetch("/api/digest/send", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ episodeId: selectedEpisode.id }),
-            });
-            const sendData = await sendRes.json();
-            if (sendRes.ok) {
-              setState("sent");
-              setMessage(`Processing complete! Digest sent — ${sendData.count} insight${sendData.count !== 1 ? "s" : ""}.`);
-              setTimeout(() => { setState("idle"); setMessage(""); }, 10000);
-            } else {
-              setState("error");
-              setMessage(sendData.error ?? "Processing done but email send failed");
-            }
-          }
-        } catch { /* ignore polling errors */ }
-      }, 10000);
-      setPollTimer(timer);
+      setMessage("Processing queued — you'll receive an email when the digest is ready (~3–5 min). You can close this page.");
+      setTimeout(() => { setState("idle"); setMessage(""); }, 12000);
     } catch {
       setState("error");
       setMessage("Network error — please try again");
@@ -206,26 +169,22 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
             >
               {state === "sending" && <Loader2 className="w-4 h-4 animate-spin" />}
               {state === "sent"    && <CheckCircle className="w-4 h-4" style={{ color: "#34D399" }} />}
-              {state === "idle" || state === "error" ? <Send className="w-4 h-4" /> : null}
+              {(state === "idle" || state === "error") && <Send className="w-4 h-4" />}
               {state === "sending" ? "Sending…" : state === "sent" ? "Digest sent!" : "Send Episode Digest"}
             </button>
           ) : (
             <button
               onClick={handleProcess}
-              disabled={busy || state === "queued" || state === "sent"}
+              disabled={busy || state === "queued"}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 text-white"
-              style={{ background: state === "queued" || state === "sent" ? "#6b7280" : "#7c3aed" }}
+              style={{ background: state === "queued" ? "#6b7280" : "#7c3aed" }}
             >
-              {state === "processing" || state === "queued"
+              {state === "processing"
                 ? <Loader2 className="w-4 h-4 animate-spin" />
-                : state === "sent"
+                : state === "queued"
                 ? <CheckCircle className="w-4 h-4" style={{ color: "#34D399" }} />
-                : <Zap className="w-4 h-4" />
-              }
-              {state === "processing" ? "Queueing…"
-                : state === "queued"  ? "Processing…"
-                : state === "sent"    ? "Done!"
-                : "Process & Send Digest"}
+                : <Zap className="w-4 h-4" />}
+              {state === "processing" ? "Queueing…" : state === "queued" ? "Queued!" : "Process & Send Digest"}
             </button>
           )}
 
