@@ -53,13 +53,32 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   // Load queued IDs from localStorage on mount
   useEffect(() => { setQueuedIds(readQueuedIds()); }, []);
 
-  // Subscribe to Supabase Realtime for queued episodes visible in the current list
+  // Subscribe to Supabase Realtime + poll status for queued episodes
   useEffect(() => {
     const visibleQueued = episodes
       .filter((ep) => queuedIds.has(ep.id) && !ep.processed)
       .map((ep) => ep.id);
     if (visibleQueued.length === 0) return;
 
+    function markDone(epId: string) {
+      setEpisodes((prev) =>
+        prev.map((ep) => ep.id === epId ? { ...ep, processed: true } : ep)
+      );
+      setQueuedIds((prev) => { const next = new Set(prev); next.delete(epId); return next; });
+      removeQueuedId(epId);
+    }
+
+    function markFailed(epId: string) {
+      setEpisodes((prev) =>
+        prev.map((ep) => ep.id === epId ? { ...ep, processed: false } : ep)
+      );
+      setQueuedIds((prev) => { const next = new Set(prev); next.delete(epId); return next; });
+      removeQueuedId(epId);
+      setMessage("Processing failed or timed out — you can try again.");
+      setState("error");
+    }
+
+    // Realtime: fires instantly on successful pipeline INSERT
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
       .channel("queued-episode-insights")
@@ -69,20 +88,34 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
         (payload) => {
           const epId = payload.new?.episode_id as string | undefined;
           if (!epId || !visibleQueued.includes(epId)) return;
-          setEpisodes((prev) =>
-            prev.map((ep) => ep.id === epId ? { ...ep, processed: true } : ep)
-          );
-          setQueuedIds((prev) => {
-            const next = new Set(prev);
-            next.delete(epId);
-            return next;
-          });
-          removeQueuedId(epId);
+          markDone(epId);
         }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Poll every 60s as a fallback: catches pipeline failures and delayed completions
+    const interval = setInterval(async () => {
+      const stored: { id: string; queuedAt: number }[] = JSON.parse(
+        localStorage.getItem(STORAGE_KEY) ?? "[]"
+      );
+      const now = Date.now();
+
+      for (const epId of visibleQueued) {
+        const entry = stored.find((e) => e.id === epId);
+        // TTL expired without completion → pipeline likely failed
+        if (!entry || now - entry.queuedAt >= QUEUE_TTL_MS) {
+          markFailed(epId);
+          continue;
+        }
+        try {
+          const res = await fetch(`/api/digest/status?episodeId=${encodeURIComponent(epId)}`);
+          const data = await res.json();
+          if (data.processed) markDone(epId);
+        } catch { /* network error — will retry next interval */ }
+      }
+    }, 60_000);
+
+    return () => { supabase.removeChannel(channel); clearInterval(interval); };
   }, [queuedIds, episodes]);
 
   const selectedEpisode = episodes.find((e) => e.id === episodeId);
