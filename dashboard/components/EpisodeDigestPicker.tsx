@@ -104,6 +104,10 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
           const status = await statusRes.json();
           if (status.processed) {
             clearInterval(timer);
+            // Mark episode as processed in local state so dropdown shows ✓
+            setEpisodes((prev) =>
+              prev.map((ep) => ep.id === selectedEpisode.id ? { ...ep, processed: true } : ep)
+            );
             // Auto-send the digest now that insights are ready
             const sendRes = await fetch("/api/digest/send", {
               method: "POST",
