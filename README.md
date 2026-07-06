@@ -82,6 +82,7 @@ PodcastsSummarizer/
 │   │       ├── sources/             # CRUD for podcast catalog (admin only)
 │   │       ├── subscriptions/       # GET/POST user subscriptions
 │   │       ├── subscriptions/[id]/  # DELETE subscription
+│   │       ├── digest/send/         # POST — send personalized digest on demand (authed)
 │   │       └── profile/             # GET/PUT user profile
 │   ├── components/
 │   │   ├── NavBar.tsx               # Sticky nav — user dropdown (Profile + Sign out) for authed users
@@ -89,6 +90,7 @@ PodcastsSummarizer/
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client)
 │   │   ├── PodcastManager.tsx       # Catalog — optimistic subscribe toggles; admin add/delete/toggle
 │   │   ├── ProfileForm.tsx          # Display name, digest toggle, UTC hour picker
+│   │   ├── SendDigestButton.tsx     # On-demand digest send — idle/sending/sent/error states
 │   │   ├── SignOutButton.tsx        # POST /api/auth/logout → redirect
 │   │   └── DateNav.tsx              # Date picker navigation
 │   ├── contexts/
@@ -97,6 +99,7 @@ PodcastsSummarizer/
 │   ├── lib/
 │   │   ├── auth.ts                  # React-cached getUser(), getUserId(), isAdmin(), getDisplayName()
 │   │   ├── db.ts                    # Supabase / SQLite queries; unstable_cache for public views
+│   │   ├── email.ts                 # nodemailer Gmail SMTP sender — HTML + plain text digest renderer
 │   │   └── supabase.ts              # Service-role Supabase client
 │   └── middleware.ts                # Supabase SSR session refresh; guards /api routes (401 if no user)
 │
@@ -181,6 +184,8 @@ All providers are swapped via `.env` — no code changes needed:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key (public, safe to expose) |
 | `SUPABASE_URL` | Yes | Same as above (server-side client) |
 | `SUPABASE_SERVICE_KEY` | Yes | Supabase service role key (bypasses RLS) |
+| `GMAIL_SENDER` | On-demand digest | Gmail address — used by `/api/digest/send` |
+| `GMAIL_APP_PASSWORD` | On-demand digest | Gmail App Password — used by `/api/digest/send` |
 
 ### GitHub Actions Secrets
 
@@ -226,7 +231,7 @@ npm run dev      # http://localhost:3000
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management |
-| **Profile** | Display name, digest enable/disable, digest hour (UTC) |
+| **Profile** | Display name, digest enable/disable, digest hour (UTC); on-demand "Send Digest Now" button |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
 

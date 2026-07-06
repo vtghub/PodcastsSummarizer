@@ -195,7 +195,44 @@ sequenceDiagram
 
 ---
 
-## 8. Admin Source Management
+## 8. On-Demand Digest Send (Profile page)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant BTN as SendDigestButton.tsx
+    participant API as /api/digest/send
+    participant DB as Supabase
+    participant MAIL as Gmail SMTP
+
+    B->>BTN: click "Send Digest Now"
+    BTN->>BTN: setState("sending")
+    BTN->>API: POST /api/digest/send
+    API->>DB: getUser() → user {id, email}
+    alt not signed in
+        API-->>BTN: 401 Unauthorized
+        BTN->>BTN: setState("error")
+    else signed in
+        API->>DB: getAvailableDates(user.id)
+        DB-->>API: ["2026-07-05", ...]
+        API->>DB: getInsightsByDate(date, user.id)
+        Note right of DB: JOIN user_subscriptions\nWHERE user_id = userId
+        DB-->>API: insights for subscribed sources
+        alt no insights
+            API-->>BTN: 404 "No insights found"
+            BTN->>BTN: setState("error")
+        else has insights
+            API->>MAIL: sendDigestEmail(user.email, date, byDomain)
+            MAIL-->>API: sent
+            API-->>BTN: 200 {ok, date, count}
+            BTN->>BTN: setState("sent") → auto-reset after 6s
+        end
+    end
+```
+
+---
+
+## 9. Admin Source Management
 
 ```mermaid
 sequenceDiagram
