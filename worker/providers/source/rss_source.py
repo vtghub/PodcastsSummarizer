@@ -147,7 +147,8 @@ class RSSSourceProvider(SourceProvider):
         if website and isinstance(website, str) and website.startswith("http"):
             links["website"] = website
 
-        # Spotify via Podcast 2.0 namespace: <podcast:id platform="spotify" url="...">
+        # Podcast 2.0 namespace: <podcast:id platform="spotify|youtube" url="...">
+        _p2_platforms = {"spotify", "youtube"}
         for key in ("podcast_id", "podcast_guid"):
             val = feed.feed.get(key)
             if not val:
@@ -155,10 +156,10 @@ class RSSSourceProvider(SourceProvider):
             items = val if isinstance(val, list) else [val]
             for item in items:
                 if isinstance(item, dict):
-                    if item.get("platform") == "spotify":
-                        url = item.get("url") or item.get("href")
-                        if url:
-                            links["spotify"] = url
+                    platform = item.get("platform")
+                    url = item.get("url") or item.get("href")
+                    if platform in _p2_platforms and url:
+                        links[platform] = url
 
         # Apple Podcasts via iTunes Search API (public, no key required)
         # Search by name, prefer exact feed URL match, fall back to first result.
