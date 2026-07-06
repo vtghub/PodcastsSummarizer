@@ -232,7 +232,86 @@ sequenceDiagram
 
 ---
 
-## 9. Admin Source Management
+## 9. Episode Digest — Phase 1 (processed episode, fast path)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant PICKER as EpisodeDigestPicker.tsx
+    participant EAPI as /api/digest/episodes
+    participant SAPI as /api/digest/send
+    participant DB as Supabase
+    participant MAIL as Gmail SMTP
+
+    B->>PICKER: select podcast
+    PICKER->>EAPI: GET ?sourceId=X&includeAll=true
+    EAPI->>DB: get processed episode_ids (insights table)
+    EAPI->>EAPI: fetch RSS feed (redirect: follow)
+    EAPI->>EAPI: parse items → MD5(audioUrl) = episode_id
+    EAPI-->>PICKER: EpisodeItem[] (processed ✓ / unprocessed ○)
+
+    B->>PICKER: select processed episode (✓)
+    PICKER->>PICKER: show "Send Episode Digest" button
+
+    B->>PICKER: click Send Episode Digest
+    PICKER->>SAPI: POST {episodeId}
+    SAPI->>DB: getInsightsByEpisode(episodeId)
+    DB-->>SAPI: insights[]
+    SAPI->>MAIL: sendDigestEmail(user.email, date, byDomain)
+    MAIL-->>SAPI: sent
+    SAPI-->>PICKER: 200 {ok, date, count}
+    PICKER->>PICKER: setState("sent") → auto-reset 8s
+```
+
+---
+
+## 10. Episode Digest — Phase 2 (unprocessed episode, slow path)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant PICKER as EpisodeDigestPicker.tsx
+    participant PAPI as /api/digest/process
+    participant STAT as /api/digest/status
+    participant GH as GitHub Actions
+    participant PY as Python Pipeline
+    participant DB as Supabase
+    participant MAIL as Gmail SMTP
+
+    B->>PICKER: select unprocessed episode (○)
+    PICKER->>PICKER: show "Process & Send Digest" button (purple)
+
+    B->>PICKER: click Process & Send Digest
+    PICKER->>PAPI: POST {sourceId, audioUrl, episodeTitle}
+    PAPI->>PAPI: verify user subscription
+    PAPI->>GH: POST /actions/workflows/daily_pipeline.yml/dispatches\n{episode_audio_url, source_id, target_email}
+    GH-->>PAPI: 204 No Content
+    PAPI-->>PICKER: 200 {queued: true}
+    PICKER->>PICKER: setState("processing") — show spinner
+
+    loop poll every 10s (max 10 min)
+        PICKER->>STAT: GET ?episodeId=X
+        STAT->>DB: SELECT * FROM insights WHERE episode_id=?
+        DB-->>STAT: {processed: false}
+        STAT-->>PICKER: {processed: false}
+    end
+
+    Note over GH,PY: GitHub Actions picks up dispatch
+    GH->>PY: run_single_episode(audio_url, source_id, target_email)
+    PY->>PY: fetch RSS → find episode → transcribe → LLM
+    PY->>DB: save_insight(insight)
+    PY->>MAIL: send_digest(target_email, date, insights)
+
+    PICKER->>STAT: GET ?episodeId=X
+    STAT->>DB: SELECT * FROM insights WHERE episode_id=?
+    DB-->>STAT: {processed: true}
+    STAT-->>PICKER: {processed: true}
+    PICKER->>PICKER: auto-send via /api/digest/send → setState("sent")
+```
+
+---
+
+## 11. Admin Source Management
 
 ```mermaid
 sequenceDiagram

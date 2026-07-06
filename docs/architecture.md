@@ -3,7 +3,7 @@
 ```mermaid
 graph TB
     subgraph CI["⚙️ GitHub Actions — daily_pipeline.yml"]
-        CRON["🕛 Cron: midnight UTC daily\n+ workflow_dispatch\n(since_days, force_email)"]
+        CRON["🕛 Cron: midnight UTC daily\n+ workflow_dispatch\n(since_days, force_email,\nepisode_audio_url, source_id, target_email)"]
     end
 
     subgraph PIPELINE["🐍 Python Worker Pipeline"]
@@ -49,6 +49,9 @@ graph TB
         ARSUBS["/api/subscriptions\nauthed users"]
         ARPROF["/api/profile\nauthed users"]
         ARDIG["/api/digest/send\nauthed users — on-demand email"]
+        ARDIGEPI["/api/digest/episodes\nRSS-aware episode list"]
+        ARDIGPROC["/api/digest/process\ntriggers workflow_dispatch"]
+        ARDIGSTAT["/api/digest/status\npoll for insights"]
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
     end
 
@@ -96,6 +99,10 @@ graph TB
     ARPROF --> PROFILES
     ARDIG --> INSIGHTS
     ARDIG --> EMAIL
+    ARDIGEPI --> INSIGHTS
+    ARDIGEPI -.->|RSS feed| SOURCES
+    ARDIGPROC -.->|workflow_dispatch| CI
+    ARDIGSTAT --> INSIGHTS
     ARSEARCH -.->|iTunes API| SOURCES
 ```
 
