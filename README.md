@@ -240,7 +240,7 @@ npm run dev      # http://localhost:3000
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
 | **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
-| **Episode Digest** | Pick a subscribed podcast + episode → instant email (processed ✓) or fire-and-forget async processing (unprocessed ○, triggers GitHub Actions); "View Dashboard" link shown after queuing |
+| **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); queued episodes show ⏳ in dropdown with a disabled "Processing Queued" button to prevent duplicate requests; queued state persisted in localStorage (20-min TTL) |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
 
