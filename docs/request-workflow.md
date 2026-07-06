@@ -300,7 +300,39 @@ sequenceDiagram
 
 ---
 
-## 11. Admin Source Management
+## 11. Episode Digest — Live Update via Supabase Realtime
+
+When the profile page is open and an episode is queued, the browser subscribes to Supabase Realtime. The ⏳ flips to ✓ the moment the pipeline writes the insight row — no polling, no page refresh.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (profile page open)
+    participant PICKER as EpisodeDigestPicker.tsx
+    participant RT as Supabase Realtime (WebSocket)
+    participant DB as Supabase DB
+    participant PY as Python Pipeline
+
+    Note over PICKER,RT: useEffect fires when queuedIds is non-empty
+    PICKER->>RT: supabase.channel("queued-episode-insights")\n.on("postgres_changes", INSERT on insights)\n.subscribe()
+    RT-->>PICKER: SUBSCRIBED
+
+    Note over PY,DB: GitHub Actions pipeline completes (~3–5 min later)
+    PY->>DB: INSERT INTO insights (episode_id, ...)
+    DB->>RT: logical replication event
+    RT-->>PICKER: payload { new: { episode_id, ... } }
+
+    PICKER->>PICKER: episode_id in queuedIds? → yes
+    PICKER->>PICKER: setEpisodes — mark episode processed: true
+    PICKER->>PICKER: setQueuedIds — remove episode_id
+    PICKER->>PICKER: removeQueuedId(localStorage)
+
+    Note over B,PICKER: Dropdown ⏳ → ✓, button → "Send Episode Digest"
+    PICKER->>RT: removeChannel() on cleanup
+```
+
+---
+
+## 12. Admin Source Management
 
 ```mermaid
 sequenceDiagram

@@ -32,6 +32,10 @@ graph TB
         RLS["Row Level Security\nsources · user_profiles\nuser_subscriptions"]
     end
 
+    subgraph REALTIME["⚡ Supabase Realtime"]
+        RT["postgres_changes WebSocket\nINSERT on insights table"]
+    end
+
     subgraph DASH["🌐 Next.js 15 Dashboard — Vercel"]
         MW["middleware.ts\nSession refresh · API guard"]
         LAYOUT["layout.tsx (async)\ngetUser() + getDisplayName()"]
@@ -104,6 +108,9 @@ graph TB
     ARDIGPROC -.->|workflow_dispatch| CI
     ARDIGSTAT --> INSIGHTS
     ARSEARCH -.->|iTunes API| SOURCES
+
+    INSIGHTS -.->|Realtime broadcast| RT
+    RT -.->|WebSocket push| DASH
 ```
 
 ---
