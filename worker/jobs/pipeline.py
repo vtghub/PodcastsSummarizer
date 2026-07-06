@@ -9,6 +9,7 @@ Performance: sources are RSS-fetched in parallel; episodes are processed (LLM / 
 concurrently up to _EPISODE_WORKERS simultaneous workers.
 """
 
+import hashlib
 import os
 import threading
 import traceback
@@ -178,19 +179,58 @@ def run_single_episode(
 
     provider = _get_source_provider(source)
 
-    # Fetch all recent episodes from RSS to locate the target
     from datetime import timedelta
+    from urllib.parse import unquote as _unquote
+    from worker.core.interfaces import Episode as _Episode
+
+    norm_url = _unquote(audio_url)
+    episode_id = hashlib.md5(norm_url.encode()).hexdigest()
+
+    # Fast path: already processed — just resend the email
+    if storage.episode_exists(episode_id):
+        print(f"[SingleEpisode] Already processed ({episode_id[:8]}), resending email")
+        if send_email and user_email:
+            email = get_email_provider()
+            from collections import defaultdict
+            insights = storage.get_insights_by_date_and_sources(date_str, [source_id])
+            # Fall back to any date if today has no insights for this episode
+            if not any(i.episode_id == episode_id for i in insights):
+                insights = [i for d in storage.get_available_dates() or []
+                            for i in storage.get_insights_by_date_and_sources(d, [source_id])
+                            if i.episode_id == episode_id]
+            ep_insights = [i for i in insights if i.episode_id == episode_id]
+            if ep_insights:
+                by_domain: dict[str, list] = defaultdict(list)
+                for ins in ep_insights:
+                    by_domain[ins.domain].append(ins)
+                try:
+                    email.send_digest(user_email, ep_insights[0].date, dict(by_domain))
+                    print(f"[SingleEpisode] Digest resent to {user_email}")
+                except Exception as e:
+                    print(f"[SingleEpisode] Email send failed: {e}")
+        return {"stat": "resent", "error": None, "date": date_str}
+
+    # Try to locate episode in RSS feed (covers recent episodes)
     since = datetime.now(timezone.utc) - timedelta(days=365)
     try:
         episodes = provider.fetch_latest_episodes(source, since=since)
     except Exception as e:
         return {"error": f"RSS fetch failed: {e}", "date": date_str}
 
-    from urllib.parse import unquote as _unquote
-    norm_url = _unquote(audio_url)
     episode = next((e for e in episodes if _unquote(e.url) == norm_url), None)
+
+    # Fallback: episode is older than the RSS feed window — synthesise a minimal Episode
     if not episode:
-        return {"error": f"Episode not found in feed: {audio_url}", "date": date_str}
+        print(f"[SingleEpisode] Not in feed, constructing minimal episode from URL")
+        episode = _Episode(
+            id=episode_id,
+            source_id=source_id,
+            title="(Episode)",
+            url=norm_url,
+            published_at=datetime.now(timezone.utc),
+            duration_seconds=0,
+            description="",
+        )
 
     print(f"[SingleEpisode] Processing: {episode.title[:80]}")
 
