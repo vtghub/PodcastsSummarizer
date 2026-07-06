@@ -10,6 +10,10 @@ on:
         description: "Look back N days for episodes"
         required: false
         default: "1"
+      force_email:
+        description: "Send digest from existing DB insights even if no new episodes processed"
+        required: false
+        default: "false"
 
 jobs:
   run-pipeline:
@@ -51,6 +55,7 @@ jobs:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SINCE_DAYS: ${{ github.event.inputs.since_days || '1' }}
+          FORCE_EMAIL: ${{ github.event.inputs.force_email || 'false' }}
           PYTHONUTF8: "1"
         run: |
           python - <<'EOF'
@@ -61,7 +66,8 @@ jobs:
           since_days = int(os.environ.get("SINCE_DAYS", "1"))
           since = datetime.now(timezone.utc) - timedelta(days=since_days)
           print(f"Running pipeline | since={since.date()} | storage=supabase | llm=gemini")
-          stats = run_pipeline(since=since, send_email=True)
+          force_email = os.environ.get("FORCE_EMAIL", "false").lower() == "true"
+          stats = run_pipeline(since=since, send_email=True, force_email=force_email)
           print(f"Done: {stats}")
           if stats.get("errors"):
               sys.exit(1)
