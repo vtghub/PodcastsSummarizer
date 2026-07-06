@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Insight } from "@/lib/db";
-import { getDomainColor } from "@/lib/domain-colors";
+import { getDomainColor, DOMAINS as DOMAIN_ORDER } from "@/lib/domain-colors";
 import InsightCard from "@/components/InsightCard";
 
 const DEFAULT_DOMAIN = "Business & Startups";
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export default function DomainInsightView({ byDomain }: Props) {
-  const domains = Object.keys(byDomain);
+  const domains = DOMAIN_ORDER.filter((d) => byDomain[d]);
   const initialDomain =
     domains.includes(DEFAULT_DOMAIN) ? DEFAULT_DOMAIN : domains[0];
   const [selected, setSelected] = useState(initialDomain);

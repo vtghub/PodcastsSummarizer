@@ -8,6 +8,8 @@ const DOMAIN_KEY: Record<string, string> = {
   "Other":                     "oth",
 };
 
+export const DOMAINS = Object.keys(DOMAIN_KEY);
+
 export function getDomainColor(domain: string) {
   const k = DOMAIN_KEY[domain] ?? "oth";
   return {
