@@ -15,6 +15,13 @@ import { unstable_cache } from "next/cache";
 
 // ─── Shared types ───────────────────────────────────────────────────────────
 
+export interface PlatformLinks {
+  spotify?: string;
+  apple?: string;
+  youtube?: string;
+  website?: string;
+}
+
 export interface Source {
   id: string;
   name: string;
@@ -26,6 +33,7 @@ export interface Source {
   created_at: string;
   user_id?: string | null;
   is_public?: boolean;
+  platform_links?: PlatformLinks;
 }
 
 export interface EpisodeItem {
@@ -50,6 +58,7 @@ export interface Insight {
   created_at: string;
   source_name?: string;
   episode_title?: string;
+  platform_links?: PlatformLinks;
 }
 
 // ─── Backend detection ─────────────────────────────────────────────────────
@@ -164,15 +173,16 @@ async function sbGetInsightsByDateForUser(date: string, userId: string): Promise
   if (sourceIds.length === 0) return [];
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name), episodes(title)")
+    .select("*, sources(name, platform_links), episodes(title)")
     .eq("date", date)
     .in("source_id", sourceIds)
     .order("domain").order("created_at");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
-    source_name:   (r.sources as { name: string } | null)?.name,
-    episode_title: (r.episodes as { title: string } | null)?.title,
+    source_name:    (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.name,
+    episode_title:  (r.episodes as { title: string } | null)?.title,
+    platform_links: (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
   })) as Insight[];
 }
 
@@ -252,7 +262,7 @@ async function sbGetInsightsByEpisode(episodeId: string): Promise<Insight[]> {
   const sb = getSupabaseClient();
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name), episodes(title)")
+    .select("*, sources(name, platform_links), episodes(title)")
     .eq("episode_id", episodeId)
     .order("domain");
   if (error) throw error;
@@ -268,14 +278,15 @@ async function sbGetInsightsByDate(date: string): Promise<Insight[]> {
   const sb = getSupabaseClient();
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name), episodes(title)")
+    .select("*, sources(name, platform_links), episodes(title)")
     .eq("date", date)
     .order("domain").order("created_at");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
-    source_name:   (r.sources as { name: string } | null)?.name,
-    episode_title: (r.episodes as { title: string } | null)?.title,
+    source_name:    (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.name,
+    episode_title:  (r.episodes as { title: string } | null)?.title,
+    platform_links: (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
   })) as Insight[];
 }
 
@@ -428,7 +439,7 @@ export async function getRecentInsights(limit = 20): Promise<Insight[]> {
     const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("insights")
-      .select("*, sources(name), episodes(title)")
+      .select("*, sources(name, platform_links), episodes(title)")
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error) throw error;
