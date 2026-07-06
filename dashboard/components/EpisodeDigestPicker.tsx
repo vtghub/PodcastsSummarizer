@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, Send, CheckCircle, AlertCircle, Zap, Clock } from "lucide-react";
 import type { Source, EpisodeItem } from "@/lib/db";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 type ButtonState = "idle" | "loading-episodes" | "sending" | "processing" | "sent" | "queued" | "error";
 type EpisodeStatus = "processed" | "queued" | "unprocessed";
@@ -52,26 +53,36 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   // Load queued IDs from localStorage on mount
   useEffect(() => { setQueuedIds(readQueuedIds()); }, []);
 
-  // Poll every 30s for queued episodes visible in the current list
+  // Subscribe to Supabase Realtime for queued episodes visible in the current list
   useEffect(() => {
-    const visibleQueued = episodes.filter((ep) => queuedIds.has(ep.id) && !ep.processed).map((ep) => ep.id);
+    const visibleQueued = episodes
+      .filter((ep) => queuedIds.has(ep.id) && !ep.processed)
+      .map((ep) => ep.id);
     if (visibleQueued.length === 0) return;
 
-    const interval = setInterval(async () => {
-      for (const epId of visibleQueued) {
-        try {
-          const res = await fetch(`/api/digest/status?episodeId=${epId}`);
-          const { processed } = await res.json();
-          if (processed) {
-            setEpisodes((prev) => prev.map((ep) => ep.id === epId ? { ...ep, processed: true } : ep));
-            setQueuedIds((prev) => { const next = new Set(prev); next.delete(epId); return next; });
-            removeQueuedId(epId);
-          }
-        } catch { /* ignore transient errors */ }
-      }
-    }, 30_000);
+    const supabase = getSupabaseBrowserClient();
+    const channel = supabase
+      .channel("queued-episode-insights")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "insights" },
+        (payload) => {
+          const epId = payload.new?.episode_id as string | undefined;
+          if (!epId || !visibleQueued.includes(epId)) return;
+          setEpisodes((prev) =>
+            prev.map((ep) => ep.id === epId ? { ...ep, processed: true } : ep)
+          );
+          setQueuedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(epId);
+            return next;
+          });
+          removeQueuedId(epId);
+        }
+      )
+      .subscribe();
 
-    return () => clearInterval(interval);
+    return () => { supabase.removeChannel(channel); };
   }, [queuedIds, episodes]);
 
   const selectedEpisode = episodes.find((e) => e.id === episodeId);
