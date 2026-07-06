@@ -105,7 +105,8 @@ PodcastsSummarizer/
 │   │   ├── auth.ts                  # React-cached getUser(), getUserId(), isAdmin(), getDisplayName()
 │   │   ├── db.ts                    # Supabase / SQLite queries; unstable_cache for public views
 │   │   ├── email.ts                 # nodemailer Gmail SMTP sender — HTML + plain text digest renderer
-│   │   └── supabase.ts              # Service-role Supabase client
+│   │   ├── supabase.ts              # Service-role Supabase client (server-only)
+│   │   └── supabase-browser.ts      # Anon-key Supabase client singleton (browser — Realtime)
 │   └── middleware.ts                # Supabase SSR session refresh; guards /api routes (401 if no user)
 │
 ├── docs/
@@ -240,7 +241,7 @@ npm run dev      # http://localhost:3000
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
 | **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
-| **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); queued episodes show ⏳ in dropdown with a disabled "Processing Queued" button to prevent duplicate requests; queued state persisted in localStorage (20-min TTL) |
+| **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); queued episodes show ⏳ in dropdown with a disabled "Processing Queued" button to prevent duplicate requests; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime WebSocket (no page refresh needed) |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
 
