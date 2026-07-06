@@ -393,7 +393,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
                     onChange={(e) => setForm({ ...form, domain: e.target.value })}
                     className="input"
                   >
-                    {DOMAINS.map((d) => <option key={d}>{d}</option>)}
+                    {DOMAIN_ORDER.map((d) => <option key={d}>{d}</option>)}
                   </select>
                 </Field>
               </div>
