@@ -3,6 +3,7 @@ import { getUser } from "@/lib/auth";
 import { getSupabaseClient } from "@/lib/supabase";
 import ProfileForm from "@/components/ProfileForm";
 import SignOutButton from "@/components/SignOutButton";
+import SendDigestButton from "@/components/SendDigestButton";
 
 export default async function ProfilePage() {
   const user = await getUser();
@@ -29,6 +30,14 @@ export default async function ProfilePage() {
         initialDigestEnabled={profile?.digest_enabled ?? true}
         initialDigestHour={profile?.digest_hour ?? 19}
       />
+
+      <div className="mt-8 pt-6 border-t" style={{ borderColor: "var(--bdr)" }}>
+        <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--txt-2)" }}>Email Digest</h2>
+        <p className="text-xs mb-4" style={{ color: "var(--txt-4)" }}>
+          Send your personalized digest right now based on your current subscriptions.
+        </p>
+        <SendDigestButton />
+      </div>
     </div>
   );
 }
