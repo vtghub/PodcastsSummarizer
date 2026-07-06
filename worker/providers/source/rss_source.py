@@ -11,6 +11,7 @@ import hashlib
 import json as _json
 import os
 import subprocess
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -160,25 +161,38 @@ class RSSSourceProvider(SourceProvider):
                         if url:
                             links["spotify"] = url
 
-        # Apple Podcasts via iTunes Search API — match by feed URL then fall back to name
+        # Apple Podcasts + website via Podcast Index API (podcastindex.org)
         try:
-            query = urllib.parse.quote(source.name)
-            api_url = f"https://itunes.apple.com/search?media=podcast&term={query}&limit=10"
-            req = urllib.request.Request(api_url, headers={"User-Agent": "PodcastInsights/1.0"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = _json.loads(resp.read())
-            results = data.get("results", [])
-            apple_url = None
-            for r in results:
-                if r.get("feedUrl", "").rstrip("/") == source.url.rstrip("/"):
-                    apple_url = r.get("trackViewUrl")
-                    break
-            if not apple_url and results:
-                apple_url = results[0].get("trackViewUrl")
-            if apple_url:
-                links["apple"] = apple_url
+            from worker.config.settings import PODCAST_INDEX_API_KEY, PODCAST_INDEX_API_SECRET
+            if PODCAST_INDEX_API_KEY and PODCAST_INDEX_API_SECRET:
+                ts = str(int(time.time()))
+                auth_hash = hashlib.sha1(
+                    (PODCAST_INDEX_API_KEY + PODCAST_INDEX_API_SECRET + ts).encode()
+                ).hexdigest()
+                pi_url = (
+                    "https://api.podcastindex.org/api/1.0/podcasts/byfeedurl"
+                    f"?url={urllib.parse.quote(source.url, safe='')}"
+                )
+                req = urllib.request.Request(pi_url, headers={
+                    "X-Auth-Key": PODCAST_INDEX_API_KEY,
+                    "X-Auth-Date": ts,
+                    "Authorization": auth_hash,
+                    "User-Agent": "PodcastInsights/1.0",
+                })
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = _json.loads(resp.read())
+                feed_data = data.get("feed", {})
+                # Website (only if not already found from RSS <link>)
+                if not links.get("website") and feed_data.get("link"):
+                    links["website"] = feed_data["link"]
+                # Apple Podcasts from itunesId
+                itunes_id = feed_data.get("itunesId")
+                if itunes_id:
+                    links["apple"] = f"https://podcasts.apple.com/podcast/id{itunes_id}"
+            else:
+                print(f"    [platform] PODCAST_INDEX_API_KEY not set — skipping Apple/website lookup")
         except Exception as e:
-            print(f"    [platform] iTunes API lookup failed for {source.name}: {e}")
+            print(f"    [platform] Podcast Index API lookup failed for {source.name}: {e}")
 
         return links
 
