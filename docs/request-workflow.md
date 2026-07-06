@@ -297,10 +297,16 @@ sequenceDiagram
 
     Note over GH,PY: GitHub Actions picks up dispatch (runs in background)
     GH->>PY: run_single_episode(audio_url, source_id, target_email)
-    PY->>PY: fetch RSS → normalizeUrl match → find episode → transcribe → LLM
-    PY->>DB: save_insight(insight)
-    PY->>MAIL: send_digest(target_email, date, insights)
-    Note over B,MAIL: User receives email; clicks "View Dashboard" to see new insights
+    PY->>PY: fetch RSS → normalizeUrl match → find episode (or synthesise from URL)
+    PY->>PY: transcribe → LLM
+    alt success
+        PY->>DB: save_insight(insight)
+        PY->>DB: upsert episode_queue(status=done)
+        PY->>MAIL: send_digest(target_email, date, insights)
+        Note over B,MAIL: User receives email; clicks "View Dashboard" to see new insights
+    else failure
+        PY->>DB: upsert episode_queue(status=failed, error_msg)
+    end
 ```
 
 ---
@@ -318,20 +324,26 @@ sequenceDiagram
     participant PY as Python Pipeline
 
     Note over PICKER,RT: useEffect fires when queuedIds is non-empty
-    PICKER->>RT: supabase.channel("queued-episode-insights")\n.on("postgres_changes", INSERT on insights)\n.subscribe()
+    PICKER->>RT: supabase.channel("queued-episode-updates")\n.on("postgres_changes", INSERT on insights)\n.on("postgres_changes", INSERT/UPDATE on episode_queue)\n.subscribe()
     RT-->>PICKER: SUBSCRIBED
 
     Note over PY,DB: GitHub Actions pipeline completes (~3–5 min later)
-    PY->>DB: INSERT INTO insights (episode_id, ...)
-    DB->>RT: logical replication event
-    RT-->>PICKER: payload { new: { episode_id, ... } }
-
-    PICKER->>PICKER: episode_id in queuedIds? → yes
-    PICKER->>PICKER: setEpisodes — mark episode processed: true
-    PICKER->>PICKER: setQueuedIds — remove episode_id
-    PICKER->>PICKER: removeQueuedId(localStorage)
-
-    Note over B,PICKER: Dropdown ⏳ → ✓, button → "Send Episode Digest"
+    alt pipeline succeeds
+        PY->>DB: INSERT INTO insights (episode_id, ...)
+        PY->>DB: UPSERT episode_queue (status=done)
+        DB->>RT: logical replication event (insights INSERT)
+        RT-->>PICKER: payload { new: { episode_id, ... } }
+        PICKER->>PICKER: episode_id in queuedIds? → mark processed: true
+        PICKER->>PICKER: removeQueuedId(localStorage)
+        Note over B,PICKER: Dropdown ⏳ → ✓, button → "Send Episode Digest"
+    else pipeline fails
+        PY->>DB: UPSERT episode_queue (status=failed, error_msg)
+        DB->>RT: logical replication event (episode_queue UPDATE)
+        RT-->>PICKER: payload { new: { episode_id, status: "failed", error_msg } }
+        PICKER->>PICKER: episode_id in queuedIds? → mark unprocessed, show error
+        PICKER->>PICKER: removeQueuedId(localStorage)
+        Note over B,PICKER: Dropdown ⏳ → ○, error message shown
+    end
     PICKER->>RT: removeChannel() on cleanup
 ```
 

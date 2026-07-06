@@ -22,6 +22,7 @@ graph TB
         EPISODES[("episodes\nstatus: done/pending")]
         TRANSCRIPTS[("transcripts")]
         INSIGHTS[("insights\ndate, domain, source_id")]
+        EPQUEUE[("episode_queue\nepisode_id, status\ndone·failed·pending")]
         PROFILES[("user_profiles\nis_admin, digest_enabled\ndigest_hour")]
         SUBS[("user_subscriptions\nuser_id → source_id")]
         AUTHUSERS[("auth.users\nSupabase Auth")]
@@ -33,7 +34,7 @@ graph TB
     end
 
     subgraph REALTIME["⚡ Supabase Realtime"]
-        RT["postgres_changes WebSocket\nINSERT on insights table"]
+        RT["postgres_changes WebSocket\nINSERT on insights table\nINSERT/UPDATE on episode_queue"]
     end
 
     subgraph DASH["🌐 Next.js 15 Dashboard — Vercel"]
@@ -109,7 +110,9 @@ graph TB
     ARDIGSTAT --> INSIGHTS
     ARSEARCH -.->|iTunes API| SOURCES
 
+    LLM --> EPQUEUE
     INSIGHTS -.->|Realtime broadcast| RT
+    EPQUEUE -.->|Realtime broadcast| RT
     RT -.->|WebSocket push| DASH
 ```
 
@@ -173,12 +176,21 @@ erDiagram
         jsonb tags
     }
 
+    episode_queue {
+        text episode_id PK
+        text source_id
+        text status
+        text error_msg
+        timestamptz updated_at
+    }
+
     auth_users ||--|| user_profiles : "has"
     auth_users ||--o{ user_subscriptions : "subscribes"
     sources ||--o{ user_subscriptions : "subscribed by"
     sources ||--o{ episodes : "has"
     episodes ||--o| transcripts : "has"
     episodes ||--o| insights : "has"
+    episodes ||--o| episode_queue : "queued in"
 ```
 
 ---
