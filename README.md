@@ -60,7 +60,7 @@ PodcastsSummarizer/
 │   │   └── email/
 │   │       └── gmail_smtp.py        # Gmail App Password SMTP + HTML renderer
 │   └── jobs/
-│       └── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → email fan-out
+│       └── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → email fan-out; run_single_episode() for on-demand
 │
 ├── supabase/
 │   └── migrations/
@@ -72,7 +72,7 @@ PodcastsSummarizer/
 │   │   ├── layout.tsx               # Root layout — async; fetches user server-side; passes to NavBar
 │   │   ├── dashboard/page.tsx       # Daily Insights — personalized when signed in, public preview for guests
 │   │   ├── podcasts/page.tsx        # Podcast catalog — subscribe/unsubscribe; admin controls
-│   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour
+│   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, episode digest picker
 │   │   ├── login/page.tsx           # Email + password sign-in
 │   │   ├── register/page.tsx        # New user registration
 │   │   └── api/
@@ -82,7 +82,10 @@ PodcastsSummarizer/
 │   │       ├── sources/             # CRUD for podcast catalog (admin only)
 │   │       ├── subscriptions/       # GET/POST user subscriptions
 │   │       ├── subscriptions/[id]/  # DELETE subscription
-│   │       ├── digest/send/         # POST — send personalized digest on demand (authed)
+│   │       ├── digest/send/         # POST — send personalized or episode-specific digest (authed)
+│   │       ├── digest/episodes/     # GET — RSS-aware episode list with processed flag
+│   │       ├── digest/process/      # POST — trigger workflow_dispatch for unprocessed episode
+│   │       ├── digest/status/       # GET — poll DB for insights on a specific episode
 │   │       ├── podcasts/search/     # GET — proxy iTunes Search API for podcast name lookup
 │   │       └── profile/             # GET/PUT user profile
 │   ├── components/
@@ -92,6 +95,7 @@ PodcastsSummarizer/
 │   │   ├── PodcastManager.tsx       # Catalog — optimistic subscribe toggles; admin add/delete/toggle
 │   │   ├── ProfileForm.tsx          # Display name, digest toggle, UTC hour picker
 │   │   ├── SendDigestButton.tsx     # On-demand digest send — idle/sending/sent/error states
+│   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
 │   │   ├── SignOutButton.tsx        # POST /api/auth/logout → redirect
 │   │   └── DateNav.tsx              # Date picker navigation
 │   ├── contexts/
@@ -187,6 +191,9 @@ All providers are swapped via `.env` — no code changes needed:
 | `SUPABASE_SERVICE_KEY` | Yes | Supabase service role key (bypasses RLS) |
 | `GMAIL_SENDER` | On-demand digest | Gmail address — used by `/api/digest/send` |
 | `GMAIL_APP_PASSWORD` | On-demand digest | Gmail App Password — used by `/api/digest/send` |
+| `GH_TOKEN` | Phase 2 episode processing | GitHub PAT with `workflow` scope — used by `/api/digest/process` to trigger `workflow_dispatch` |
+| `GH_OWNER` | No | GitHub repo owner (default: `vtghub`) |
+| `GH_REPO` | No | GitHub repo name (default: `PodcastsSummarizer`) |
 
 ### GitHub Actions Secrets
 
@@ -232,7 +239,8 @@ npm run dev      # http://localhost:3000
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
-| **Profile** | Display name, digest enable/disable, digest hour (UTC); on-demand "Send Digest Now" button |
+| **Profile** | Display name, digest enable/disable, digest hour (UTC); "Send Digest Now"; Episode Digest picker |
+| **Episode Digest** | Pick a subscribed podcast + specific episode → instant email (processed) or queue for analysis (unprocessed, triggers GitHub Actions) |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
 
@@ -243,6 +251,7 @@ npm run dev      # http://localhost:3000
 - **Pipeline**: GitHub Actions runs `daily_pipeline.yml` at **midnight UTC (8 PM EDT)** daily.
   - `since_days` input: look-back window (default: 1)
   - `force_email` input: send digest from existing DB insights even if no new episodes (for testing)
+  - `episode_audio_url` + `source_id` + `target_email` inputs: single-episode on-demand mode (triggered by `/api/digest/process`)
 - **Dashboard**: Vercel auto-deploys on every push to `main`.
 - **Branching**: `main` ← `develop` ← `feature/*`. PRs merged via GitHub; develop promoted to main after each feature.
 
