@@ -13,9 +13,19 @@ CREATE TABLE IF NOT EXISTS episode_queue (
 -- Allow the dashboard (anon key) to read rows via Realtime
 ALTER TABLE episode_queue ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "episode_queue_public_read"
-  ON episode_queue FOR SELECT
-  USING (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename  = 'episode_queue'
+      AND policyname = 'episode_queue_public_read'
+  ) THEN
+    CREATE POLICY "episode_queue_public_read"
+      ON episode_queue FOR SELECT
+      USING (true);
+  END IF;
+END$$;
 
 -- Enable Realtime on this table (run once)
 -- In Supabase dashboard: Database → Replication → Realtime → enable episode_queue
