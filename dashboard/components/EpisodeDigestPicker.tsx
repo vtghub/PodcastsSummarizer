@@ -53,7 +53,10 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   // Load queued IDs from localStorage on mount
   useEffect(() => { setQueuedIds(readQueuedIds()); }, []);
 
-  // Subscribe to Supabase Realtime + poll status for queued episodes
+  // Subscribe to Supabase Realtime for queued episodes.
+  // Watches two tables:
+  //   - insights INSERT  → pipeline succeeded, mark episode processed (✓)
+  //   - episode_queue INSERT/UPDATE → pipeline wrote done/failed status
   useEffect(() => {
     const visibleQueued = episodes
       .filter((ep) => queuedIds.has(ep.id) && !ep.processed)
@@ -68,20 +71,20 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
       removeQueuedId(epId);
     }
 
-    function markFailed(epId: string) {
+    function markFailed(epId: string, errMsg?: string) {
       setEpisodes((prev) =>
         prev.map((ep) => ep.id === epId ? { ...ep, processed: false } : ep)
       );
       setQueuedIds((prev) => { const next = new Set(prev); next.delete(epId); return next; });
       removeQueuedId(epId);
-      setMessage("Processing failed or timed out — you can try again.");
+      setMessage(errMsg ?? "Processing failed — you can try again.");
       setState("error");
     }
 
-    // Realtime: fires instantly on successful pipeline INSERT
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
-      .channel("queued-episode-insights")
+      .channel("queued-episode-updates")
+      // insights INSERT → success
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "insights" },
@@ -91,31 +94,20 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
           markDone(epId);
         }
       )
+      // episode_queue INSERT or UPDATE → done or failed
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "episode_queue" },
+        (payload) => {
+          const row = payload.new as { episode_id?: string; status?: string; error_msg?: string } | undefined;
+          if (!row?.episode_id || !visibleQueued.includes(row.episode_id)) return;
+          if (row.status === "done") markDone(row.episode_id);
+          else if (row.status === "failed") markFailed(row.episode_id, row.error_msg ?? undefined);
+        }
+      )
       .subscribe();
 
-    // Poll every 60s as a fallback: catches pipeline failures and delayed completions
-    const interval = setInterval(async () => {
-      const stored: { id: string; queuedAt: number }[] = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) ?? "[]"
-      );
-      const now = Date.now();
-
-      for (const epId of visibleQueued) {
-        const entry = stored.find((e) => e.id === epId);
-        // TTL expired without completion → pipeline likely failed
-        if (!entry || now - entry.queuedAt >= QUEUE_TTL_MS) {
-          markFailed(epId);
-          continue;
-        }
-        try {
-          const res = await fetch(`/api/digest/status?episodeId=${encodeURIComponent(epId)}`);
-          const data = await res.json();
-          if (data.processed) markDone(epId);
-        } catch { /* network error — will retry next interval */ }
-      }
-    }, 60_000);
-
-    return () => { supabase.removeChannel(channel); clearInterval(interval); };
+    return () => { supabase.removeChannel(channel); };
   }, [queuedIds, episodes]);
 
   const selectedEpisode = episodes.find((e) => e.id === episodeId);

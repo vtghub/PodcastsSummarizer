@@ -238,9 +238,17 @@ def run_single_episode(
     if error_msg:
         print(error_msg)
 
+    # Signal completion status via episode_queue so the dashboard Realtime listener
+    # can react instantly — on both success and failure.
+    queue_status = "done" if stat == "insights" else "failed"
+    try:
+        storage.upsert_episode_queue_status(episode.id, source_id, queue_status, error_msg)
+        print(f"[SingleEpisode] Queue status → {queue_status}")
+    except Exception as e:
+        print(f"[SingleEpisode] Failed to write queue status: {e}")
+
     if stat == "insights" and send_email and user_email:
         email = get_email_provider()
-        # Retrieve the just-stored insight
         from collections import defaultdict
         insights = storage.get_insights_by_date_and_sources(date_str, [source_id])
         ep_insights = [i for i in insights if i.episode_id == episode.id]
