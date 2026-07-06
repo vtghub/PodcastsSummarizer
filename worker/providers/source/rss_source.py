@@ -126,8 +126,7 @@ class RSSSourceProvider(SourceProvider):
 
     def fetch_platform_links(self, source) -> dict:
         """
-        Discover platform URLs for a source by parsing its RSS feed and
-        querying the iTunes Search API. Returns a dict with any subset of:
+        Discover platform URLs for a source. Returns any subset of:
         {spotify, apple, youtube, website}.
         """
         links: dict = {}
@@ -147,21 +146,7 @@ class RSSSourceProvider(SourceProvider):
         if website and isinstance(website, str) and website.startswith("http"):
             links["website"] = website
 
-        # Spotify via Podcast 2.0 namespace: <podcast:id platform="spotify" url="...">
-        for key in ("podcast_id", "podcast_guid"):
-            val = feed.feed.get(key)
-            if not val:
-                continue
-            items = val if isinstance(val, list) else [val]
-            for item in items:
-                if isinstance(item, dict):
-                    if item.get("platform") == "spotify":
-                        url = item.get("url") or item.get("href")
-                        if url:
-                            links["spotify"] = url
-
         # Apple Podcasts via iTunes Search API (public, no key required)
-        # Search by name, prefer exact feed URL match, fall back to first result.
         try:
             query = urllib.parse.quote(source.name)
             api_url = f"https://itunes.apple.com/search?media=podcast&term={query}&limit=10"
@@ -181,7 +166,126 @@ class RSSSourceProvider(SourceProvider):
         except Exception as e:
             print(f"    [platform] iTunes Search API lookup failed for {source.name}: {e}")
 
+        # Spotify — cascade through providers until one succeeds
+        spotify_url = self._discover_spotify(source, feed)
+        if spotify_url:
+            links["spotify"] = spotify_url
+
         return links
+
+    def _discover_spotify(self, source, feed) -> str | None:
+        """
+        Try each provider in order, return the first Spotify show URL found.
+        Providers are skipped silently when their API key is not configured
+        or when a rate limit (429) is returned — preserving free-tier budgets.
+
+        Chain:
+          1. RSS Podcast 2.0 namespace   — no key, no quota
+          2. Listen Notes Search API     — ~100 req/month free
+          3. Taddy GraphQL API           — ~1 000 req/month free
+        """
+        providers = [
+            self._spotify_from_rss_namespace,
+            self._spotify_from_listennotes,
+            self._spotify_from_taddy,
+        ]
+        for fn in providers:
+            try:
+                result = fn(source, feed)
+                if result:
+                    print(f"    [platform] Spotify found via {fn.__name__}: {result}")
+                    return result
+            except Exception as e:
+                print(f"    [platform] {fn.__name__} failed for {source.name}: {e}")
+        return None
+
+    @staticmethod
+    def _spotify_from_rss_namespace(source, feed) -> str | None:
+        """Podcast 2.0: <podcast:id platform="spotify" url="...">"""
+        for key in ("podcast_id", "podcast_guid"):
+            val = feed.feed.get(key)
+            if not val:
+                continue
+            for item in (val if isinstance(val, list) else [val]):
+                if isinstance(item, dict) and item.get("platform") == "spotify":
+                    url = item.get("url") or item.get("href")
+                    if url:
+                        return url
+        return None
+
+    @staticmethod
+    def _spotify_from_listennotes(source, feed) -> str | None:
+        """
+        Listen Notes Search API — free tier ~100 req/month.
+        https://www.listennotes.com/api/docs/
+        Env: LISTEN_NOTES_API_KEY
+        """
+        from worker.config.settings import LISTEN_NOTES_API_KEY
+        if not LISTEN_NOTES_API_KEY:
+            return None
+
+        query = urllib.parse.quote(source.name)
+        url = f"https://listen-api.listennotes.com/api/v2/search?q={query}&type=podcast&limit=10"
+        req = urllib.request.Request(url, headers={
+            "X-ListenAPI-Key": LISTEN_NOTES_API_KEY,
+            "User-Agent": "PodcastInsights/1.0",
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status == 429:
+                raise RuntimeError("Listen Notes rate limit reached")
+            data = _json.loads(resp.read())
+
+        feed_url = source.url.rstrip("/")
+        results = data.get("results", [])
+        # Prefer exact RSS feed URL match
+        for r in results:
+            if r.get("rss", "").rstrip("/") == feed_url:
+                spotify = (r.get("extra") or {}).get("spotify_url") or r.get("spotify_url")
+                if spotify:
+                    return spotify
+        # Fall back to first result's Spotify URL
+        if results:
+            r = results[0]
+            return (r.get("extra") or {}).get("spotify_url") or r.get("spotify_url")
+        return None
+
+    @staticmethod
+    def _spotify_from_taddy(source, feed) -> str | None:
+        """
+        Taddy GraphQL API — free tier ~1 000 req/month.
+        https://taddy.org/developers/podcast-api
+        Env: TADDY_API_KEY, TADDY_USER_ID
+        """
+        from worker.config.settings import TADDY_API_KEY, TADDY_USER_ID
+        if not TADDY_API_KEY or not TADDY_USER_ID:
+            return None
+
+        query = '{ getPodcastSeries(rssUrl: "%s") { spotifyId } }' % source.url.replace('"', '\\"')
+        payload = _json.dumps({"query": query}).encode()
+        req = urllib.request.Request(
+            "https://api.taddy.org",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-KEY": TADDY_API_KEY,
+                "X-USER-ID": TADDY_USER_ID,
+                "User-Agent": "PodcastInsights/1.0",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status == 429:
+                raise RuntimeError("Taddy rate limit reached")
+            data = _json.loads(resp.read())
+
+        spotify_id = (
+            data.get("data", {})
+                .get("getPodcastSeries", {})
+                .get("spotifyId")
+        )
+        if spotify_id:
+            return f"https://open.spotify.com/show/{spotify_id}"
+        return None
 
     # ------------------------------------------------------------------
     # Private helpers

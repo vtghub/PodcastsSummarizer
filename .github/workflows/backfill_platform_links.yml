@@ -25,5 +25,8 @@ jobs:
         env:
           STORAGE_PROVIDER: supabase
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          LISTEN_NOTES_API_KEY: ${{ secrets.LISTEN_NOTES_API_KEY }}
+          TADDY_API_KEY: ${{ secrets.TADDY_API_KEY }}
+          TADDY_USER_ID: ${{ secrets.TADDY_USER_ID }}
           PYTHONUTF8: "1"
         run: python -m worker.jobs.backfill_platform_links

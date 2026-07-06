@@ -181,6 +181,9 @@ All providers are swapped via `.env` — no code changes needed:
 | `SUPABASE_DB_URL` | Cloud mode | Transaction Pooler URL (`aws-0-*.pooler.supabase.com:6543`) — **not** the direct IPv6 URL |
 | `GMAIL_SENDER` | Email digest | Gmail address used as sender |
 | `GMAIL_APP_PASSWORD` | Email digest | Gmail App Password (not your account password) |
+| `LISTEN_NOTES_API_KEY` | Spotify links (optional) | Listen Notes API key — ~100 req/month free at [listennotes.com/api](https://www.listennotes.com/api/) |
+| `TADDY_API_KEY` | Spotify links (optional) | Taddy API key — ~1 000 req/month free at [taddy.org](https://taddy.org/developers/podcast-api) |
+| `TADDY_USER_ID` | Spotify links (optional) | Taddy user ID — paired with key above |
 | `STORAGE_PROVIDER` | No | `sqlite` (default) or `supabase` |
 | `EMAIL_PROVIDER` | No | `console` (default) or `gmail_smtp` |
 | `WHISPER_MODEL` | No | `tiny` / `base` / `small` (default: `base`) |
@@ -208,6 +211,9 @@ All providers are swapped via `.env` — no code changes needed:
 | `GROQ_API_KEY` | Groq API key (optional fallback) |
 | `GMAIL_SENDER` | Gmail sender address |
 | `GMAIL_APP_PASSWORD` | Gmail App Password |
+| `LISTEN_NOTES_API_KEY` | Listen Notes key for Spotify URL discovery (optional) |
+| `TADDY_API_KEY` | Taddy key for Spotify URL discovery (optional) |
+| `TADDY_USER_ID` | Taddy user ID (optional, paired with `TADDY_API_KEY`) |
 
 ---
 

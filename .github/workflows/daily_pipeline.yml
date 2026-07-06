@@ -66,6 +66,9 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          LISTEN_NOTES_API_KEY: ${{ secrets.LISTEN_NOTES_API_KEY }}
+          TADDY_API_KEY: ${{ secrets.TADDY_API_KEY }}
+          TADDY_USER_ID: ${{ secrets.TADDY_USER_ID }}
           SINCE_DAYS: ${{ github.event.inputs.since_days || '1' }}
           FORCE_EMAIL: ${{ github.event.inputs.force_email || 'false' }}
           EPISODE_AUDIO_URL: ${{ github.event.inputs.episode_audio_url || '' }}

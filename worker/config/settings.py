@@ -80,6 +80,13 @@ GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 DIGEST_RECIPIENT = os.getenv("DIGEST_RECIPIENT", "")
 
 # ---------------------------------------------------------------------------
+# Spotify discovery — cascading free providers (each skipped if key absent)
+# ---------------------------------------------------------------------------
+LISTEN_NOTES_API_KEY = os.getenv("LISTEN_NOTES_API_KEY", "")   # ~100 req/month free
+TADDY_API_KEY        = os.getenv("TADDY_API_KEY", "")           # ~1 000 req/month free
+TADDY_USER_ID        = os.getenv("TADDY_USER_ID", "")
+
+# ---------------------------------------------------------------------------
 # Digest schedule
 # ---------------------------------------------------------------------------
 DIGEST_HOUR = int(os.getenv("DIGEST_HOUR", "19"))   # 7 PM EST (00:00 UTC)
