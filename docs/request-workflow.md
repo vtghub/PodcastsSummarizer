@@ -252,7 +252,7 @@ sequenceDiagram
     PICKER->>EAPI: GET ?sourceId=X&includeAll=true
     EAPI->>DB: get processed episode_ids (insights table)
     EAPI->>EAPI: fetch RSS feed (redirect: follow)
-    EAPI->>EAPI: parse items → MD5(audioUrl) = episode_id
+    EAPI->>EAPI: parse items → normalizeUrl(audioUrl) → MD5 = episode_id
     EAPI-->>PICKER: EpisodeItem[] (processed ✓ / unprocessed ○)
 
     B->>PICKER: select processed episode (✓)
@@ -297,7 +297,7 @@ sequenceDiagram
 
     Note over GH,PY: GitHub Actions picks up dispatch (runs in background)
     GH->>PY: run_single_episode(audio_url, source_id, target_email)
-    PY->>PY: fetch RSS → find episode → transcribe → LLM
+    PY->>PY: fetch RSS → normalizeUrl match → find episode → transcribe → LLM
     PY->>DB: save_insight(insight)
     PY->>MAIL: send_digest(target_email, date, insights)
     Note over B,MAIL: User receives email; clicks "View Dashboard" to see new insights
