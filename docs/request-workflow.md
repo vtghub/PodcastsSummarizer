@@ -19,6 +19,11 @@ sequenceDiagram
     loop parallel (8 workers)
         PY->>RSS: fetch_latest_episodes(since)
         RSS-->>PY: new episodes
+        alt platform_links empty for this source
+            PY->>RSS: parse feed for website + Spotify namespace
+            PY->>RSS: iTunes Search API → Apple Podcasts URL
+            PY->>DB: update_source_platform_links(source_id, links)
+        end
     end
 
     loop per episode (4 workers)

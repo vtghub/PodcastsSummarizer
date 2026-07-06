@@ -60,12 +60,14 @@ PodcastsSummarizer/
 │   │   └── email/
 │   │       └── gmail_smtp.py        # Gmail App Password SMTP + HTML renderer
 │   └── jobs/
-│       └── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → email fan-out; run_single_episode() for on-demand
+│       ├── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → email fan-out; run_single_episode() for on-demand
+│       └── backfill_platform_links.py  # One-time job: discover platform URLs for all existing sources
 │
 ├── supabase/
 │   └── migrations/
 │       ├── 001_initial.sql          # Core tables: sources, episodes, transcripts, insights
-│       └── 002_multi_user.sql       # user_profiles, user_subscriptions, RLS policies
+│       ├── 002_multi_user.sql       # user_profiles, user_subscriptions, RLS policies
+│       └── 003_platform_links.sql   # platform_links JSONB column on sources
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
@@ -114,7 +116,8 @@ PodcastsSummarizer/
 │   └── request-workflow.md          # Mermaid request flow sequence diagrams
 │
 ├── .github/workflows/
-│   └── daily_pipeline.yml           # Cron at midnight UTC; workflow_dispatch with since_days + force_email
+│   ├── daily_pipeline.yml           # Cron at midnight UTC; workflow_dispatch with since_days + force_email
+│   └── backfill_platform_links.yml  # Manual workflow_dispatch — backfills platform URLs for existing sources
 │
 ├── .env.example                     # Template — copy to .env and fill values
 └── requirements.txt
@@ -242,6 +245,7 @@ npm run dev      # http://localhost:3000
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
 | **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); queued episodes show ⏳ in dropdown with a disabled "Processing Queued" button to prevent duplicate requests; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime WebSocket (no page refresh needed) |
+| **Platform Links** | Each insight card shows a "Listen on" icon row — Spotify (green), Apple Podcasts (purple), YouTube (red), Website — linked to the correct platform; URLs auto-discovered by the pipeline on first run via iTunes Search API and RSS feed parsing; no API key required |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
 
