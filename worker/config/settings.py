@@ -86,12 +86,6 @@ DIGEST_HOUR = int(os.getenv("DIGEST_HOUR", "19"))   # 7 PM EST (00:00 UTC)
 DIGEST_MINUTE = int(os.getenv("DIGEST_MINUTE", "0"))
 
 # ---------------------------------------------------------------------------
-# Podcast Index API (platform link discovery — free at podcastindex.org)
-# ---------------------------------------------------------------------------
-PODCAST_INDEX_API_KEY    = os.getenv("PODCAST_INDEX_API_KEY", "")
-PODCAST_INDEX_API_SECRET = os.getenv("PODCAST_INDEX_API_SECRET", "")
-
-# ---------------------------------------------------------------------------
 # Domains — edit freely, podcasts are tagged to one of these
 # ---------------------------------------------------------------------------
 DOMAINS = [
