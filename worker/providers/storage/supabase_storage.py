@@ -96,6 +96,23 @@ class SupabaseStorageProvider(StorageProvider):
                     (json.dumps(links), source_id),
                 )
 
+    def upsert_episode_queue_status(
+        self, episode_id: str, source_id: str, status: str, error_msg: str | None = None
+    ) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO episode_queue (episode_id, source_id, status, error_msg, updated_at)
+                    VALUES (%s, %s, %s, %s, NOW())
+                    ON CONFLICT (episode_id) DO UPDATE
+                      SET status = EXCLUDED.status,
+                          error_msg = EXCLUDED.error_msg,
+                          updated_at = NOW()
+                    """,
+                    (episode_id, source_id, status, error_msg),
+                )
+
     def get_source(self, source_id: str) -> PodcastSource | None:
         with self._conn() as conn:
             with conn.cursor() as cur:

@@ -53,31 +53,56 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   // Load queued IDs from localStorage on mount
   useEffect(() => { setQueuedIds(readQueuedIds()); }, []);
 
-  // Subscribe to Supabase Realtime for queued episodes visible in the current list
+  // Subscribe to Supabase Realtime for queued episodes.
+  // Watches two tables:
+  //   - insights INSERT  → pipeline succeeded, mark episode processed (✓)
+  //   - episode_queue INSERT/UPDATE → pipeline wrote done/failed status
   useEffect(() => {
     const visibleQueued = episodes
       .filter((ep) => queuedIds.has(ep.id) && !ep.processed)
       .map((ep) => ep.id);
     if (visibleQueued.length === 0) return;
 
+    function markDone(epId: string) {
+      setEpisodes((prev) =>
+        prev.map((ep) => ep.id === epId ? { ...ep, processed: true } : ep)
+      );
+      setQueuedIds((prev) => { const next = new Set(prev); next.delete(epId); return next; });
+      removeQueuedId(epId);
+    }
+
+    function markFailed(epId: string, errMsg?: string) {
+      setEpisodes((prev) =>
+        prev.map((ep) => ep.id === epId ? { ...ep, processed: false } : ep)
+      );
+      setQueuedIds((prev) => { const next = new Set(prev); next.delete(epId); return next; });
+      removeQueuedId(epId);
+      setMessage(errMsg ?? "Processing failed — you can try again.");
+      setState("error");
+    }
+
     const supabase = getSupabaseBrowserClient();
     const channel = supabase
-      .channel("queued-episode-insights")
+      .channel("queued-episode-updates")
+      // insights INSERT → success
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "insights" },
         (payload) => {
           const epId = payload.new?.episode_id as string | undefined;
           if (!epId || !visibleQueued.includes(epId)) return;
-          setEpisodes((prev) =>
-            prev.map((ep) => ep.id === epId ? { ...ep, processed: true } : ep)
-          );
-          setQueuedIds((prev) => {
-            const next = new Set(prev);
-            next.delete(epId);
-            return next;
-          });
-          removeQueuedId(epId);
+          markDone(epId);
+        }
+      )
+      // episode_queue INSERT or UPDATE → done or failed
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "episode_queue" },
+        (payload) => {
+          const row = payload.new as { episode_id?: string; status?: string; error_msg?: string } | undefined;
+          if (!row?.episode_id || !visibleQueued.includes(row.episode_id)) return;
+          if (row.status === "done") markDone(row.episode_id);
+          else if (row.status === "failed") markFailed(row.episode_id, row.error_msg ?? undefined);
         }
       )
       .subscribe();
