@@ -146,6 +146,7 @@ erDiagram
         bool deleted
         bool is_public
         uuid user_id
+        jsonb platform_links
     }
     episodes {
         text id PK
