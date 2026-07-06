@@ -67,7 +67,8 @@ PodcastsSummarizer/
 │   └── migrations/
 │       ├── 001_initial.sql          # Core tables: sources, episodes, transcripts, insights
 │       ├── 002_multi_user.sql       # user_profiles, user_subscriptions, RLS policies
-│       └── 003_platform_links.sql   # platform_links JSONB column on sources
+│       ├── 003_platform_links.sql   # platform_links JSONB column on sources
+│       └── 004_episode_queue.sql    # episode_queue table for async pipeline status signalling
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
@@ -244,7 +245,7 @@ npm run dev      # http://localhost:3000
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
 | **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
-| **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); queued episodes show ⏳ in dropdown with a disabled "Processing Queued" button to prevent duplicate requests; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime WebSocket (no page refresh needed) |
+| **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); queued episodes show ⏳ in dropdown with a disabled "Processing Queued" button to prevent duplicate requests; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime (no page refresh); if pipeline fails, the `episode_queue` table receives a `failed` status row — Realtime pushes it to the browser instantly, resetting the episode to ○ with an error message (no polling) |
 | **Platform Links** | Each insight card shows a "Listen on" icon row — Spotify (green), Apple Podcasts (purple), YouTube (red), Website — linked to the correct platform; URLs auto-discovered by the pipeline: Apple via iTunes Search API (public, no key), Spotify + YouTube via Podcast 2.0 namespace tags in the RSS feed, Website from RSS `<channel><link>`; no API key required |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
