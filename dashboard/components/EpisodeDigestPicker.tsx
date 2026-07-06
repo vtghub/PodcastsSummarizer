@@ -88,7 +88,7 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
       // Job is now running in GitHub Actions — pipeline sends the email when done.
       // No polling needed; user can close this page.
       setState("queued");
-      setMessage("Processing queued — you'll receive an email when the digest is ready (~3–5 min). You can close this page.");
+      setMessage("");
       setTimeout(() => { setState("idle"); setMessage(""); }, 12000);
     } catch {
       setState("error");
@@ -188,7 +188,16 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
             </button>
           )}
 
-          {message && (
+          {state === "queued" && (
+            <p className="text-xs" style={{ color: "var(--txt-4)" }}>
+              Processing in background — you&apos;ll receive an email when ready (~3–5 min).{" "}
+              <a href="/dashboard" style={{ color: "var(--acc)", textDecoration: "underline" }}>
+                View Dashboard
+              </a>{" "}
+              after processing to see the new insights.
+            </p>
+          )}
+          {message && state !== "queued" && (
             <p className="text-xs flex items-start gap-1.5" style={{ color: state === "error" ? "#F87171" : "var(--txt-4)" }}>
               {state === "error" && <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />}
               {message}
