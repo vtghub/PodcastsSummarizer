@@ -32,9 +32,9 @@ export default function InsightCard({ insight, domainColor }: Props) {
   return (
     <article
       className="rounded-xl overflow-hidden border transition-colors theme-transition"
-      style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)" }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--bdr-hov)")}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--bdr)")}
+      style={{ background: "var(--gold-bg)", borderColor: "var(--gold-bg)" }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--gold-bg)")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--gold-bg)")}
     >
       {/* Card header */}
       <div className="px-5 pt-5 pb-4">
