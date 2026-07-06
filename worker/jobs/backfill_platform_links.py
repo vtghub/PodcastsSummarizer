@@ -19,20 +19,25 @@ def backfill_platform_links() -> None:
     sources = storage.get_sources(enabled_only=False)
     rss = RSSSourceProvider()
 
-    empty = [s for s in sources if not s.platform_links]
-    already = len(sources) - len(empty)
+    # Process sources that are missing links entirely OR missing the youtube key
+    to_process = [s for s in sources if not s.platform_links or "youtube" not in s.platform_links]
+    already = len(sources) - len(to_process)
 
-    print(f"[Backfill] {len(sources)} total sources — {already} already have links, {len(empty)} to process")
+    print(f"[Backfill] {len(sources)} total sources — {already} already complete, {len(to_process)} to process")
 
-    for source in empty:
+    for source in to_process:
         print(f"[{source.name}] discovering...")
         try:
-            links = rss.fetch_platform_links(source)
-            if links:
-                storage.update_source_platform_links(source.id, links)
-                print(f"[{source.name}] saved: {list(links.keys())}")
+            discovered = rss.fetch_platform_links(source)
+            # Merge new links with existing ones; only save if something changed
+            existing = source.platform_links or {}
+            merged = {**existing, **discovered}
+            if merged != existing:
+                storage.update_source_platform_links(source.id, merged)
+                new_keys = [k for k in merged if k not in existing]
+                print(f"[{source.name}] saved new: {new_keys} | full: {list(merged.keys())}")
             else:
-                print(f"[{source.name}] no links found")
+                print(f"[{source.name}] no new links found")
         except Exception as e:
             print(f"[{source.name}] ERROR: {e}")
 
