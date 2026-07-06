@@ -30,6 +30,13 @@ function persistQueuedId(episodeId: string) {
   } catch {}
 }
 
+function removeQueuedId(episodeId: string) {
+  try {
+    const entries: { id: string; queuedAt: number }[] = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.filter((e) => e.id !== episodeId)));
+  } catch {}
+}
+
 interface Props {
   subscribedSources: Source[];
 }
@@ -44,6 +51,28 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
 
   // Load queued IDs from localStorage on mount
   useEffect(() => { setQueuedIds(readQueuedIds()); }, []);
+
+  // Poll every 30s for queued episodes visible in the current list
+  useEffect(() => {
+    const visibleQueued = episodes.filter((ep) => queuedIds.has(ep.id) && !ep.processed).map((ep) => ep.id);
+    if (visibleQueued.length === 0) return;
+
+    const interval = setInterval(async () => {
+      for (const epId of visibleQueued) {
+        try {
+          const res = await fetch(`/api/digest/status?episodeId=${epId}`);
+          const { processed } = await res.json();
+          if (processed) {
+            setEpisodes((prev) => prev.map((ep) => ep.id === epId ? { ...ep, processed: true } : ep));
+            setQueuedIds((prev) => { const next = new Set(prev); next.delete(epId); return next; });
+            removeQueuedId(epId);
+          }
+        } catch { /* ignore transient errors */ }
+      }
+    }, 30_000);
+
+    return () => clearInterval(interval);
+  }, [queuedIds, episodes]);
 
   const selectedEpisode = episodes.find((e) => e.id === episodeId);
 
