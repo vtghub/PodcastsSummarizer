@@ -212,8 +212,8 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         {isAdmin && (
           <button
             onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
-            style={{ background: "var(--bdr-strong)", color: "var(--txt-1)" }}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0 text-white"
+            style={{ background: "var(--acc)" }}
           >
             <Plus className="w-4 h-4" />
             Add to Catalog
@@ -396,8 +396,8 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                  style={{ background: "var(--bdr-strong)", color: "var(--txt-1)" }}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 text-white"
+                  style={{ background: "var(--acc)" }}
                 >
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   {saving ? "Adding…" : "Add Podcast"}
@@ -536,7 +536,7 @@ function SourceCard({
             onClick={onSubscribe}
             className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors border"
             style={subscribed
-              ? { background: "var(--bdr-strong)", borderColor: "var(--bdr-strong)", color: "var(--txt-1)" }
+              ? { background: "var(--acc-bg)", borderColor: "var(--acc)", color: "var(--acc-txt)" }
               : { background: "transparent", borderColor: "var(--bdr)", color: "var(--txt-3)" }
             }
           >
