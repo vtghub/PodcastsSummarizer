@@ -49,6 +49,7 @@ graph TB
         ARSUBS["/api/subscriptions\nauthed users"]
         ARPROF["/api/profile\nauthed users"]
         ARDIG["/api/digest/send\nauthed users — on-demand email"]
+        ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
     end
 
     CRON --> SRC
@@ -95,6 +96,7 @@ graph TB
     ARPROF --> PROFILES
     ARDIG --> INSIGHTS
     ARDIG --> EMAIL
+    ARSEARCH -.->|iTunes API| SOURCES
 ```
 
 ---

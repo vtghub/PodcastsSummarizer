@@ -83,6 +83,7 @@ PodcastsSummarizer/
 │   │       ├── subscriptions/       # GET/POST user subscriptions
 │   │       ├── subscriptions/[id]/  # DELETE subscription
 │   │       ├── digest/send/         # POST — send personalized digest on demand (authed)
+│   │       ├── podcasts/search/     # GET — proxy iTunes Search API for podcast name lookup
 │   │       └── profile/             # GET/PUT user profile
 │   ├── components/
 │   │   ├── NavBar.tsx               # Sticky nav — user dropdown (Profile + Sign out) for authed users
@@ -230,7 +231,7 @@ npm run dev      # http://localhost:3000
 | **Domain Tabs** | Filter by domain (Technology & AI, Business & Startups, etc.) |
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
-| **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management |
+| **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
 | **Profile** | Display name, digest enable/disable, digest hour (UTC); on-demand "Send Digest Now" button |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
