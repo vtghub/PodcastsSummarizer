@@ -245,7 +245,7 @@ npm run dev      # http://localhost:3000
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
 | **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); queued episodes show ⏳ in dropdown with a disabled "Processing Queued" button to prevent duplicate requests; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime WebSocket (no page refresh needed) |
-| **Platform Links** | Each insight card shows a "Listen on" icon row — Spotify (green), Apple Podcasts (purple), YouTube (red), Website — linked to the correct platform; URLs auto-discovered by the pipeline on first run via iTunes Search API and RSS feed parsing; no API key required |
+| **Platform Links** | Each insight card shows a "Listen on" icon row — Spotify (green), Apple Podcasts (purple), YouTube (red), Website — linked to the correct platform; URLs auto-discovered by the pipeline: Apple via iTunes Search API (public, no key), Spotify + YouTube via Podcast 2.0 namespace tags in the RSS feed, Website from RSS `<channel><link>`; no API key required |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
 
