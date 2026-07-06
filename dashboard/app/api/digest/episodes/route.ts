@@ -52,6 +52,15 @@ function extractText(xml: string, tag: string): string {
   return (m?.[1] ?? "").trim();
 }
 
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
 function extractEnclosureUrl(itemXml: string): string | null {
   // Handles url/href in double or single quotes, type before or after url
   const patterns = [
@@ -61,7 +70,7 @@ function extractEnclosureUrl(itemXml: string): string | null {
   ];
   for (const p of patterns) {
     const m = itemXml.match(p);
-    if (m?.[1]) return m[1];
+    if (m?.[1]) return decodeHtmlEntities(m[1]);
   }
   return null;
 }
