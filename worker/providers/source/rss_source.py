@@ -51,6 +51,9 @@ class RSSSourceProvider(SourceProvider):
             if since and published_at <= since.replace(tzinfo=timezone.utc):
                 continue
 
+            # Normalize percent-encoding (e.g. %3D%3D → ==) so MD5 is consistent
+            # across feedparser and the dashboard's RSS regex parser.
+            audio_url = urllib.parse.unquote(audio_url)
             episode_id = hashlib.md5(audio_url.encode()).hexdigest()
 
             # Stash the raw feed entry so fetch_transcript_text can use it

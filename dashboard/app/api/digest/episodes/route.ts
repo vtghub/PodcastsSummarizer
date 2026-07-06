@@ -61,6 +61,11 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&#39;/g, "'");
 }
 
+function normalizeUrl(s: string): string {
+  const htmlDecoded = decodeHtmlEntities(s);
+  try { return decodeURIComponent(htmlDecoded); } catch { return htmlDecoded; }
+}
+
 function extractEnclosureUrl(itemXml: string): string | null {
   // Handles url/href in double or single quotes, type before or after url
   const patterns = [
@@ -70,7 +75,7 @@ function extractEnclosureUrl(itemXml: string): string | null {
   ];
   for (const p of patterns) {
     const m = itemXml.match(p);
-    if (m?.[1]) return decodeHtmlEntities(m[1]);
+    if (m?.[1]) return normalizeUrl(m[1]);
   }
   return null;
 }
