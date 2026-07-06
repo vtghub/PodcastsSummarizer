@@ -43,12 +43,13 @@ jobs:
           STORAGE_PROVIDER: supabase
           LLM_PROVIDER: ${{ secrets.GROQ_API_KEY != '' && 'groq' || 'gemini' }}
           TRANSCRIPTION_PROVIDER: local_whisper
-          EMAIL_PROVIDER: console
+          EMAIL_PROVIDER: gmail_smtp
           WHISPER_MODEL: tiny
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          DIGEST_RECIPIENT: ${{ secrets.DIGEST_RECIPIENT }}
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           SINCE_DAYS: ${{ github.event.inputs.since_days || '1' }}
           PYTHONUTF8: "1"
         run: |
@@ -60,7 +61,7 @@ jobs:
           since_days = int(os.environ.get("SINCE_DAYS", "1"))
           since = datetime.now(timezone.utc) - timedelta(days=since_days)
           print(f"Running pipeline | since={since.date()} | storage=supabase | llm=gemini")
-          stats = run_pipeline(since=since, send_email=False)
+          stats = run_pipeline(since=since, send_email=True)
           print(f"Done: {stats}")
           if stats.get("errors"):
               sys.exit(1)
