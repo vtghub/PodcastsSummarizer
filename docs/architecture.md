@@ -48,6 +48,7 @@ graph TB
         ARSRC["/api/sources\nadmin only"]
         ARSUBS["/api/subscriptions\nauthed users"]
         ARPROF["/api/profile\nauthed users"]
+        ARDIG["/api/digest/send\nauthed users — on-demand email"]
     end
 
     CRON --> SRC
@@ -92,6 +93,8 @@ graph TB
     ARSRC --> SOURCES
     ARSUBS --> SUBS
     ARPROF --> PROFILES
+    ARDIG --> INSIGHTS
+    ARDIG --> EMAIL
 ```
 
 ---
