@@ -259,20 +259,20 @@ sequenceDiagram
     DB-->>SAPI: insights[]
     SAPI->>MAIL: sendDigestEmail(user.email, date, byDomain)
     MAIL-->>SAPI: sent
+    SAPI->>SAPI: revalidatePath("/dashboard") — bust public cache
     SAPI-->>PICKER: 200 {ok, date, count}
     PICKER->>PICKER: setState("sent") → auto-reset 8s
 ```
 
 ---
 
-## 10. Episode Digest — Phase 2 (unprocessed episode, slow path)
+## 10. Episode Digest — Phase 2 (unprocessed episode, async fire-and-forget)
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
     participant PICKER as EpisodeDigestPicker.tsx
     participant PAPI as /api/digest/process
-    participant STAT as /api/digest/status
     participant GH as GitHub Actions
     participant PY as Python Pipeline
     participant DB as Supabase
@@ -287,26 +287,15 @@ sequenceDiagram
     PAPI->>GH: POST /actions/workflows/daily_pipeline.yml/dispatches\n{episode_audio_url, source_id, target_email}
     GH-->>PAPI: 204 No Content
     PAPI-->>PICKER: 200 {queued: true}
-    PICKER->>PICKER: setState("processing") — show spinner
+    PICKER->>PICKER: setState("queued") — show "Queued!" + "View Dashboard" link
+    Note over B,PICKER: Browser is free — no polling, page can be closed
 
-    loop poll every 10s (max 10 min)
-        PICKER->>STAT: GET ?episodeId=X
-        STAT->>DB: SELECT * FROM insights WHERE episode_id=?
-        DB-->>STAT: {processed: false}
-        STAT-->>PICKER: {processed: false}
-    end
-
-    Note over GH,PY: GitHub Actions picks up dispatch
+    Note over GH,PY: GitHub Actions picks up dispatch (runs in background)
     GH->>PY: run_single_episode(audio_url, source_id, target_email)
     PY->>PY: fetch RSS → find episode → transcribe → LLM
     PY->>DB: save_insight(insight)
     PY->>MAIL: send_digest(target_email, date, insights)
-
-    PICKER->>STAT: GET ?episodeId=X
-    STAT->>DB: SELECT * FROM insights WHERE episode_id=?
-    DB-->>STAT: {processed: true}
-    STAT-->>PICKER: {processed: true}
-    PICKER->>PICKER: auto-send via /api/digest/send → setState("sent")
+    Note over B,MAIL: User receives email; clicks "View Dashboard" to see new insights
 ```
 
 ---

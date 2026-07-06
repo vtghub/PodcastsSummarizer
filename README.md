@@ -239,8 +239,8 @@ npm run dev      # http://localhost:3000
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
-| **Profile** | Display name, digest enable/disable, digest hour (UTC); "Send Digest Now"; Episode Digest picker |
-| **Episode Digest** | Pick a subscribed podcast + specific episode → instant email (processed) or queue for analysis (unprocessed, triggers GitHub Actions) |
+| **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
+| **Episode Digest** | Pick a subscribed podcast + episode → instant email (processed ✓) or fire-and-forget async processing (unprocessed ○, triggers GitHub Actions); "View Dashboard" link shown after queuing |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
 
