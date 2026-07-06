@@ -22,6 +22,7 @@ class PodcastSource:
     domain: str                 # e.g. "Technology & AI"
     enabled: bool = True
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    platform_links: dict = field(default_factory=dict)  # {spotify, apple, youtube, website}
 
 
 @dataclass
@@ -158,6 +159,9 @@ class StorageProvider(ABC):
     def get_user_subscribed_source_ids(self, user_id: str) -> list[str]:
         """Return source IDs the user is subscribed to. Default: empty list."""
         return []
+
+    def update_source_platform_links(self, source_id: str, links: dict) -> None:
+        """Persist discovered platform URLs for a source. Default: no-op (local dev)."""
 
     def get_insights_by_date_and_sources(self, date: str, source_ids: list[str]) -> list[Insight]:
         """Return insights for a specific date filtered to the given source IDs."""

@@ -8,8 +8,11 @@ Transcript acquisition priority:
 """
 
 import hashlib
+import json as _json
 import os
 import subprocess
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
@@ -120,6 +123,64 @@ class RSSSourceProvider(SourceProvider):
                 return os.path.join(output_dir, fname)
 
         raise FileNotFoundError(f"Downloaded file not found for episode {episode.id}")
+
+    def fetch_platform_links(self, source) -> dict:
+        """
+        Discover platform URLs for a source by parsing its RSS feed and
+        querying the iTunes Search API. Returns a dict with any subset of:
+        {spotify, apple, youtube, website}.
+        """
+        links: dict = {}
+
+        if source.source_type == "youtube":
+            links["youtube"] = source.url
+            return links
+
+        try:
+            feed = feedparser.parse(source.url)
+        except Exception as e:
+            print(f"    [platform] RSS parse failed for {source.name}: {e}")
+            return links
+
+        # Website from RSS channel <link>
+        website = getattr(feed.feed, "link", None)
+        if website and isinstance(website, str) and website.startswith("http"):
+            links["website"] = website
+
+        # Spotify via Podcast 2.0 namespace: <podcast:id platform="spotify" url="...">
+        for key in ("podcast_id", "podcast_guid"):
+            val = feed.feed.get(key)
+            if not val:
+                continue
+            items = val if isinstance(val, list) else [val]
+            for item in items:
+                if isinstance(item, dict):
+                    if item.get("platform") == "spotify":
+                        url = item.get("url") or item.get("href")
+                        if url:
+                            links["spotify"] = url
+
+        # Apple Podcasts via iTunes Search API — match by feed URL then fall back to name
+        try:
+            query = urllib.parse.quote(source.name)
+            api_url = f"https://itunes.apple.com/search?media=podcast&term={query}&limit=10"
+            req = urllib.request.Request(api_url, headers={"User-Agent": "PodcastInsights/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = _json.loads(resp.read())
+            results = data.get("results", [])
+            apple_url = None
+            for r in results:
+                if r.get("feedUrl", "").rstrip("/") == source.url.rstrip("/"):
+                    apple_url = r.get("trackViewUrl")
+                    break
+            if not apple_url and results:
+                apple_url = results[0].get("trackViewUrl")
+            if apple_url:
+                links["apple"] = apple_url
+        except Exception as e:
+            print(f"    [platform] iTunes API lookup failed for {source.name}: {e}")
+
+        return links
 
     # ------------------------------------------------------------------
     # Private helpers

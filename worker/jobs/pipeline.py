@@ -69,6 +69,16 @@ def run_pipeline(
     def _fetch(src: PodcastSource):
         prov = _get_source_provider(src)
         eps = prov.fetch_latest_episodes(src, since=since)
+        # Discover platform links once when the column is still empty
+        if not src.platform_links and hasattr(prov, "fetch_platform_links"):
+            try:
+                links = prov.fetch_platform_links(src)
+                if links:
+                    storage.update_source_platform_links(src.id, links)
+                    src.platform_links = links
+                    print(f"[{src.name}] platform links: {list(links.keys())}")
+            except Exception as e:
+                print(f"[{src.name}] [warn] platform link discovery failed: {e}")
         return src, prov, eps
 
     with ThreadPoolExecutor(max_workers=min(len(sources), _FETCH_WORKERS)) as ex:

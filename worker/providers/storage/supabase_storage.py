@@ -88,6 +88,14 @@ class SupabaseStorageProvider(StorageProvider):
                     cur.execute("SELECT * FROM sources WHERE deleted = FALSE ORDER BY domain, name")
                 return [self._row_to_source(r) for r in cur.fetchall()]
 
+    def update_source_platform_links(self, source_id: str, links: dict) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE sources SET platform_links = %s WHERE id = %s",
+                    (json.dumps(links), source_id),
+                )
+
     def get_source(self, source_id: str) -> PodcastSource | None:
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -244,12 +252,19 @@ class SupabaseStorageProvider(StorageProvider):
     # ------------------------------------------------------------------
     @staticmethod
     def _row_to_source(row: dict) -> PodcastSource:
+        raw_links = row.get("platform_links") or {}
+        if isinstance(raw_links, str):
+            try:
+                raw_links = json.loads(raw_links)
+            except Exception:
+                raw_links = {}
         return PodcastSource(
             id=row["id"], name=row["name"], url=row["url"],
             source_type=row["source_type"], domain=row["domain"],
             enabled=bool(row["enabled"]),
             created_at=row["created_at"] if isinstance(row["created_at"], datetime)
                        else datetime.fromisoformat(str(row["created_at"])),
+            platform_links=raw_links,
         )
 
     @staticmethod
