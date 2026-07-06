@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/auth";
 import { getAvailableDates, getInsightsByDate, getInsightsByEpisode } from "@/lib/db";
 import { sendDigestEmail } from "@/lib/email";
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
     for (const ins of insights) (byDomain[ins.domain] ??= []).push(ins);
 
     await sendDigestEmail(user.email!, date, byDomain);
+    revalidatePath("/dashboard");
     return NextResponse.json({ ok: true, date, count: insights.length });
   }
 
@@ -40,5 +42,6 @@ export async function POST(req: NextRequest) {
   for (const ins of insights) (byDomain[ins.domain] ??= []).push(ins);
 
   await sendDigestEmail(user.email!, date, byDomain);
+  revalidatePath("/dashboard");
   return NextResponse.json({ ok: true, date, count: insights.length });
 }
