@@ -8,16 +8,8 @@ import {
 } from "lucide-react";
 import type { Source, PlatformLinks } from "@/lib/db";
 import type { PodcastSearchResult } from "@/app/api/podcasts/search/route";
+import { getDomainColor, DOMAINS as DOMAIN_ORDER } from "@/lib/domain-colors";
 
-const DOMAINS = [
-  "Technology & AI",
-  "Business & Startups",
-  "Health & Science",
-  "Finance & Investing",
-  "Leadership & Productivity",
-  "Society & Culture",
-  "Other",
-];
 
 const DOMAIN_KEY: Record<string, string> = {
   "Technology & AI":           "tech",
@@ -182,13 +174,15 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
   }
 
   // Group sources by domain, preserving canonical order
-  const domainGroups = DOMAINS.reduce<Record<string, Source[]>>((acc, domain) => {
+  const domainGroups = DOMAIN_ORDER.reduce<Record<string, Source[]>>((acc, domain) => {
     const inDomain = sources.filter((s) => s.domain === domain);
     if (inDomain.length > 0) acc[domain] = inDomain;
     return acc;
   }, {});
 
-  const activeDomains = DOMAINS.filter((d) => domainGroups[d]);
+  const activeDomains = DOMAIN_ORDER.filter((d) => domainGroups[d]);
+
+  const [selectedDomain, setSelectedDomain] = useState<string>(() => activeDomains[0] ?? "");
 
   return (
     <>
@@ -237,7 +231,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         </div>
       )}
 
-      {/* Domain sections */}
+      {/* Domain tabs + cards */}
       {sources.length === 0 ? (
         <div className="flex flex-col items-center py-20 text-center">
           <span className="text-5xl mb-4">🎙</span>
@@ -249,12 +243,36 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
           )}
         </div>
       ) : (
-        <div className="space-y-10">
-          {activeDomains.map((domain) => (
+        <>
+          {/* Domain tabs */}
+          <div className="flex flex-wrap gap-2 mb-8">
+            {activeDomains.map((domain) => {
+              const c = getDomainColor(domain);
+              const active = domain === selectedDomain;
+              return (
+                <button
+                  key={domain}
+                  onClick={() => setSelectedDomain(domain)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    active ? `${c.bg} ${c.text} ${c.border} shadow-sm` : "opacity-50 hover:opacity-80"
+                  }`}
+                  style={active ? {} : { background: "var(--bg-elevated)", borderColor: "var(--bdr)", color: "var(--txt-3)" }}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                  {domain}
+                  <span className={active ? "opacity-70" : "opacity-50"}>
+                    ({domainGroups[domain].length})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Active domain cards */}
+          {selectedDomain && domainGroups[selectedDomain] && (
             <DomainSection
-              key={domain}
-              domain={domain}
-              sources={domainGroups[domain]}
+              domain={selectedDomain}
+              sources={domainGroups[selectedDomain]}
               subscribedIds={localSubs}
               actionId={actionId}
               isAuthed={isAuthed}
@@ -263,8 +281,8 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
               onToggle={handleToggle}
               onDelete={handleDelete}
             />
-          ))}
-        </div>
+          )}
+        </>
       )}
 
       {/* Add to catalog dialog (admin only) */}
