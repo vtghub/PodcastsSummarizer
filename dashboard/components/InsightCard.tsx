@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import type { Insight, PlatformLinks } from "@/lib/db";
-import { ChevronDown, ChevronUp, Quote, Zap, Tag, Volume2, VolumeX, Globe } from "lucide-react";
+import { ChevronDown, ChevronUp, Quote, Zap, Tag, Volume2, VolumeX, Globe, CalendarDays } from "lucide-react";
 
 import { useTTS } from "@/contexts/TTSContext";
 import { useSpeech } from "@/hooks/useSpeech";
@@ -21,6 +21,14 @@ function buildSpeechText(insight: Insight): string {
   if (insight.action_items.length > 0)
     parts.push("Action items: " + insight.action_items.join(". ") + ".");
   return parts.join(" ");
+}
+
+function formatPublishedDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return iso;
+  }
 }
 
 function domainColorKey(domain: string): string {
@@ -67,6 +75,12 @@ export default function InsightCard({ insight, domainColor }: Props) {
               <h3 className="text-sm font-semibold leading-snug line-clamp-2" style={{ color: "var(--txt-1)" }}>
                 {insight.episode_title}
               </h3>
+            )}
+            {insight.episode_published_at && (
+              <p className="flex items-center gap-1 text-xs mt-1" style={{ color: "var(--txt-4)" }}>
+                <CalendarDays className="w-3 h-3 flex-shrink-0" />
+                {formatPublishedDate(insight.episode_published_at)}
+              </p>
             )}
           </div>
           {ttsEnabled && (

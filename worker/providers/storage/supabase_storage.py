@@ -154,6 +154,15 @@ class SupabaseStorageProvider(StorageProvider):
                     (episode_id,)
                 )
 
+    def update_episode_published_at(self, episode_id: str, published_at: str) -> int:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE episodes SET published_at = %s WHERE id = %s AND published_at IS NULL",
+                    (published_at, episode_id)
+                )
+                return cur.rowcount
+
     # ------------------------------------------------------------------
     # Transcripts
     # ------------------------------------------------------------------
