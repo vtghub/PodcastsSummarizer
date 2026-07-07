@@ -99,7 +99,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           hint={userId ? "Run the pipeline or select a date that has data." : "Run the pipeline or select a date that has data."}
         />
       ) : (
-        <DomainInsightView byDomain={byDomain} />
+        <DomainInsightView key={selectedDate} byDomain={byDomain} />
       )}
     </div>
   );
