@@ -65,6 +65,7 @@ graph TB
         ARENG["/api/insights/[id]/engagement\n/react · /comments\n/api/comments/[id]\n/react · DELETE"]
         ARFTS["/api/insights/search\nGET ?q= — websearch FTS"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
+        ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]
     end
 
     CRON --> SRC
@@ -121,6 +122,7 @@ graph TB
     ARENG --> COMMENTS
     ARENG --> CREACTIONS
     ARFTS --> INSIGHTS
+    ARDIGPREV --> INSIGHTS
     LLM -.->|POST after insights saved| ARREV
     ARREV -.->|revalidateTag("insights")| CACHE
 
