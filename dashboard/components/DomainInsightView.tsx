@@ -13,8 +13,9 @@ interface Props {
 export default function DomainInsightView({ byDomain, isAuthed }: Props) {
   const domains = DOMAIN_ORDER.filter((d) => byDomain[d]);
   const [selected, setSelected] = useState(domains[0]);
+  const [pendingHash, setPendingHash] = useState<string | null>(null);
 
-  // On mount: select domain from ?domain= param, then scroll to #insight-{id}
+  // On mount: read ?domain= and #hash from URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const domainParam = params.get("domain");
@@ -22,15 +23,19 @@ export default function DomainInsightView({ byDomain, isAuthed }: Props) {
       setSelected(domainParam);
     }
     const hash = window.location.hash;
-    if (hash) {
-      // Wait one tick for the selected domain's cards to render
-      setTimeout(() => {
-        const el = document.querySelector(hash);
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 100);
-    }
+    if (hash) setPendingHash(hash);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Scroll to target card after selected tab has rendered
+  useEffect(() => {
+    if (!pendingHash) return;
+    const el = document.querySelector(pendingHash);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setPendingHash(null);
+    }
+  }, [selected, pendingHash]);
 
   const insights = byDomain[selected] ?? [];
   const color = getDomainColor(selected);
