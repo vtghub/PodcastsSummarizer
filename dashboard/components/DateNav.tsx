@@ -144,43 +144,42 @@ export default function DateNav({ selectedDate, availableDates }: Props) {
         />
       </div>
 
-      {/* Mobile bottom sheet + backdrop */}
+      {/* Mobile floating card + backdrop */}
       {isMobile && open && availableDates.length > 0 && (
         <>
           {/* Backdrop */}
           <div
             className="fixed inset-0 z-40"
-            style={{ background: "rgba(0,0,0,0.45)" }}
+            style={{ background: "rgba(0,0,0,0.5)" }}
             onClick={() => setOpen(false)}
           />
-          {/* Sheet */}
+          {/* Compact floating card — centred, not full-screen */}
           <div
-            className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl overflow-hidden"
+            className="fixed z-50 rounded-2xl overflow-hidden"
             style={{
               background: "var(--bg-surface)",
-              boxShadow: "0 -4px 32px rgba(0,0,0,0.18)",
-              maxHeight: "90dvh",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.32), 0 2px 8px rgba(0,0,0,0.12)",
+              border: "1px solid var(--bdr)",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "min(320px, calc(100vw - 32px))",
             }}
           >
-            {/* Sheet handle + header */}
+            {/* Header */}
             <div
-              className="flex items-center justify-between px-5 pt-4 pb-2 border-b"
-              style={{ borderColor: "var(--bdr)" }}
+              className="flex items-center justify-between px-4 py-3 border-b"
+              style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}
             >
-              <div className="flex-1" />
-              <div
-                className="w-10 h-1 rounded-full absolute top-2 left-1/2 -translate-x-1/2"
-                style={{ background: "var(--bdr-hov)" }}
-              />
-              <span className="text-sm font-semibold flex-1 text-center" style={{ color: "var(--txt-1)" }}>
+              <span className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>
                 Select Date
               </span>
               <button
                 onClick={() => setOpen(false)}
-                className="flex-1 flex justify-end p-1 rounded-lg"
+                className="p-1 rounded-lg transition-colors"
                 style={{ color: "var(--txt-4)" }}
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -190,7 +189,7 @@ export default function DateNav({ selectedDate, availableDates }: Props) {
               viewDate={viewDate}
               onViewChange={setViewDate}
               onSelect={navigate}
-              mode="sheet"
+              mode="modal"
             />
           </div>
         </>
@@ -233,7 +232,7 @@ interface CalendarPanelProps {
   viewDate: Date;
   onViewChange: (d: Date) => void;
   onSelect: (date: string) => void;
-  mode: "popover" | "sheet";
+  mode: "popover" | "sheet" | "modal";
 }
 
 function CalendarPanel({ selectedDate, availableSet, viewDate, onViewChange, onSelect, mode }: CalendarPanelProps) {
@@ -394,5 +393,6 @@ function CalendarPanel({ selectedDate, availableSet, viewDate, onViewChange, onS
     );
   }
 
+  // "modal" and "sheet" both render inline (no absolute wrapper)
   return inner;
 }
