@@ -1,5 +1,5 @@
 /**
- * Edge middleware — two responsibilities:
+ * Edge middleware — three responsibilities:
  *
  * 1. Session refresh: calls supabase.auth.getUser() on every request so
  *    Supabase can rotate short-lived JWTs and write the updated token back
@@ -7,16 +7,62 @@
  *
  * 2. Auth guard: blocks unauthenticated requests to /api/sources (admin) and
  *    /api/subscriptions (any signed-in user) with a 401 JSON response.
+ *
+ * 3. Rate limiting: token-bucket per IP on comment/reaction mutation routes.
+ *    20 requests/minute with a burst capacity of 20. Per-instance (edge node),
+ *    which is sufficient to stop accidental runaway clients.
  */
 
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+// ── Token-bucket rate limiter ────────────────────────────────────────────────
+// Routes that mutate engagement data (comments, reactions) are rate-limited.
+const RATE_LIMIT_PATHS = [
+  "/api/insights/",  // POST .../comments, POST .../react
+  "/api/comments/",  // POST/DELETE .../react, DELETE ...
+];
+const RATE_LIMIT_METHODS = new Set(["POST", "DELETE", "PATCH"]);
+const BUCKET_CAPACITY = 20;   // max burst
+const REFILL_RATE = 20 / 60;  // tokens per ms → 20 per minute
+
+type Bucket = { tokens: number; lastMs: number };
+const _buckets = new Map<string, Bucket>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  let b = _buckets.get(ip);
+  if (!b) {
+    b = { tokens: BUCKET_CAPACITY - 1, lastMs: now };
+    _buckets.set(ip, b);
+    return true;
+  }
+  const refill = (now - b.lastMs) * REFILL_RATE;
+  b.tokens = Math.min(BUCKET_CAPACITY, b.tokens + refill);
+  b.lastMs = now;
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 export async function middleware(request: NextRequest) {
+  const { pathname, method } = { pathname: request.nextUrl.pathname, method: request.method };
+
+  // Rate-limit engagement mutation routes.
+  if (
+    RATE_LIMIT_METHODS.has(method) &&
+    RATE_LIMIT_PATHS.some((p) => pathname.startsWith(p))
+  ) {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+  }
+
   // Start with a pass-through response that carries the original request headers.
   let supabaseResponse = NextResponse.next({ request });
 

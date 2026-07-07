@@ -404,6 +404,9 @@ def _get_source_provider(source: PodcastSource):
     return RSSSourceProvider()
 
 
+_EMAIL_WORKERS = 8  # max concurrent SMTP connections for digest fan-out
+
+
 def _send_per_user_digests(storage, date_str: str):
     """Fan out personalised digest emails to every user with digest_enabled=TRUE."""
     email = get_email_provider()
@@ -421,29 +424,32 @@ def _send_per_user_digests(storage, date_str: str):
         return
 
     print(f"[Email] Sending digests to {len(users)} user(s)")
-    for user in users:
-        try:
-            source_ids = storage.get_user_subscribed_source_ids(user.user_id)
-            if not source_ids:
-                print(f"[Email] {user.email} — no subscriptions, skipping")
-                continue
 
-            insights = storage.get_insights_by_date_and_sources(date_str, source_ids)
-            if not insights:
-                print(f"[Email] {user.email} — no insights for subscribed sources, skipping")
-                continue
+    def _send_one(user):
+        source_ids = storage.get_user_subscribed_source_ids(user.user_id)
+        if not source_ids:
+            print(f"[Email] {user.email} — no subscriptions, skipping")
+            return
+        insights = storage.get_insights_by_date_and_sources(date_str, source_ids)
+        if not insights:
+            print(f"[Email] {user.email} — no insights for subscribed sources, skipping")
+            return
+        by_domain: dict[str, list] = defaultdict(list)
+        for ins in insights:
+            if user.digest_domains is None or ins.domain in user.digest_domains:
+                by_domain[ins.domain].append(ins)
+        ok = email.send_digest(user.email, date_str, dict(by_domain))
+        status = "sent" if ok else "failed"
+        print(f"[Email] {user.email} — {len(insights)} insight(s) — {status}")
 
-            by_domain: dict[str, list] = defaultdict(list)
-            for ins in insights:
-                if user.digest_domains is None or ins.domain in user.digest_domains:
-                    by_domain[ins.domain].append(ins)
-
-            ok = email.send_digest(user.email, date_str, dict(by_domain))
-            status = "sent" if ok else "failed"
-            print(f"[Email] {user.email} — {len(insights)} insight(s) — {status}")
-        except Exception as e:
-            print(f"[Email] {user.email} — error: {e}")
-            traceback.print_exc()
+    with ThreadPoolExecutor(max_workers=min(len(users), _EMAIL_WORKERS)) as ex:
+        futures = {ex.submit(_send_one, u): u for u in users}
+        for fut in as_completed(futures):
+            user = futures[fut]
+            exc = fut.exception()
+            if exc:
+                print(f"[Email] {user.email} — error: {exc}")
+                traceback.print_exc()
 
 
 def _revalidate_dashboard_cache(date_str: str) -> None:
