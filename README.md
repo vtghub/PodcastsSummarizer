@@ -61,7 +61,8 @@ PodcastsSummarizer/
 │   │       └── gmail_smtp.py        # Gmail App Password SMTP + HTML renderer
 │   └── jobs/
 │       ├── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → email fan-out; run_single_episode() for on-demand
-│       └── backfill_platform_links.py  # One-time job: discover platform URLs for all existing sources
+│       ├── backfill_platform_links.py  # One-time job: discover platform URLs for all existing sources
+│       └── backfill_published_at.py    # One-time job: backfill episode published dates from RSS feeds
 │
 ├── supabase/
 │   └── migrations/
@@ -94,7 +95,7 @@ PodcastsSummarizer/
 │   │       └── profile/             # GET/PUT user profile
 │   ├── components/
 │   │   ├── NavBar.tsx               # Sticky nav — user dropdown (Profile + Sign out) for authed users
-│   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud
+│   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud; shows episode published date
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client)
 │   │   ├── PodcastManager.tsx       # Catalog — optimistic subscribe toggles; admin add/delete/toggle
 │   │   ├── ProfileForm.tsx          # Display name, digest toggle, UTC hour picker
@@ -240,7 +241,7 @@ npm run dev      # http://localhost:3000
 
 | Feature | Details |
 |---|---|
-| **Daily Insights** | Summaries, key points, quotes, and action items per episode; instant loading skeleton while data fetches |
+| **Daily Insights** | Summaries, key points, quotes, and action items per episode; each card shows the episode's original release date (fetched from RSS `published_at`); instant loading skeleton while data fetches |
 | **Personalized view** | Signed-in users see only insights from their subscribed podcasts |
 | **Domain Tabs** | Filter by domain (Technology & AI, Business & Startups, etc.); auto-resets to first available tab on date change |
 | **Calendar Date Picker** | Month calendar replaces the date dropdown — available dates marked with an accent dot, selected date shown as filled circle, today highlighted with an outline ring; all available dates prefetched for instant navigation; **mobile**: full-width bottom sheet (fixed, slides up from bottom edge, backdrop overlay, drag handle + × close button, 44px touch targets); **desktop**: right-aligned popover |
