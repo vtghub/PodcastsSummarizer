@@ -517,3 +517,54 @@ sequenceDiagram
         NAV->>NAV: closeSearch() → searchOpen=false, query cleared
     end
 ```
+
+---
+
+## 16. Digest Email Preview
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant BTN as SendDigestButton.tsx
+    participant API as /api/digest/preview
+    participant DB as Supabase
+
+    B->>BTN: click "Preview"
+    BTN->>B: window.open("/api/digest/preview", "_blank")
+    B->>API: GET /api/digest/preview
+    API->>DB: getUser() → user {id, email}
+    alt not signed in
+        API-->>B: 401 Unauthorized
+    else signed in
+        API->>DB: getAvailableDates(user.id)
+        API->>DB: getInsightsByDate(date, user.id)
+        Note right of DB: same query as /api/digest/send\n— exact same HTML the email would render
+        API->>API: buildDigestHtml(date, byDomain)
+        API-->>B: 200 text/html — rendered email in browser tab
+    end
+```
+
+---
+
+## 17. Realtime Dashboard Update
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (dashboard open)
+    participant DIV as DomainInsightView.tsx
+    participant RT as Supabase Realtime (WebSocket)
+    participant DB as Supabase DB
+    participant PY as Python Pipeline (or on-demand)
+
+    Note over DIV,RT: useEffect on mount — subscribe to insights INSERT
+    DIV->>RT: supabase.channel("dashboard-insights")\n.on("postgres_changes", INSERT on insights)\n.subscribe()
+    RT-->>DIV: SUBSCRIBED
+
+    Note over PY,DB: Pipeline saves a new insight for today
+    PY->>DB: INSERT INTO insights (date=today, ...)
+    DB->>RT: logical replication event
+    RT-->>DIV: payload { new: { date, ... } }
+    DIV->>DIV: insightDate === currentDate? → router.refresh()
+    Note over B,DIV: Page re-fetches server data — new insight card appears\nwithout manual reload
+    DIV->>RT: removeChannel() on unmount
+```
