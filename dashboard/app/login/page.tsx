@@ -41,25 +41,30 @@ function LoginForm() {
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center px-4"
+      className="min-h-screen flex items-center justify-center px-4 py-12"
       style={{ background: "var(--bg-page)" }}
     >
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="text-4xl mb-3">🎙</div>
-          <h1 className="text-xl font-bold" style={{ color: "var(--txt-1)" }}>
+          <div
+            className="inline-flex items-center justify-center w-14 h-14 rounded-2xl text-2xl mb-4 shadow-sm"
+            style={{ background: "var(--acc-bg)", border: "1px solid var(--bdr)" }}
+          >
+            🎙
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--txt-1)" }}>
             Podcast Insights
           </h1>
-          <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>
+          <p className="text-sm mt-1.5" style={{ color: "var(--txt-3)" }}>
             Sign in to manage your podcasts
           </p>
         </div>
 
         {/* Card */}
         <div
-          className="rounded-2xl border p-6 shadow-sm"
-          style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)" }}
+          className="rounded-2xl border p-7"
+          style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)", boxShadow: "var(--shadow-card)" }}
         >
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email */}
@@ -125,7 +130,7 @@ function LoginForm() {
             <button
               type="submit"
               disabled={loading || !email || !password}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50 text-white"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-opacity disabled:opacity-50 text-white mt-1"
               style={{ background: "var(--acc)" }}
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}

@@ -57,7 +57,7 @@ export default function NavBar({
   return (
     <nav
       className="sticky top-0 z-40 border-b"
-      style={{ background: "var(--bg-nav)", borderColor: "var(--nav-bdr)" }}
+      style={{ background: "var(--bg-nav)", borderColor: "var(--nav-bdr)", boxShadow: "var(--shadow-nav)" }}
     >
       <div className="max-w-6xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between">
         {/* Logo */}

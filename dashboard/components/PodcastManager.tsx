@@ -541,19 +541,19 @@ function SourceCard({
 
   return (
     <div
-      className="rounded-xl border flex flex-col relative transition-all overflow-hidden"
+      className="card-lift rounded-2xl border flex flex-col relative overflow-hidden"
       style={{
         background: "var(--bg-surface)",
         borderColor: subscribed ? "var(--bdr-strong)" : "var(--bdr)",
-        boxShadow: subscribed ? "0 0 0 1px var(--bdr-strong)" : undefined,
+        boxShadow: subscribed ? "var(--shadow-card), 0 0 0 2px var(--acc)" : "var(--shadow-card)",
       }}
     >
-      {/* Domain color stripe — soft pastel tint */}
-      <div className="h-1 w-full flex-shrink-0" style={{ background: `var(--d-${dk}-bdr)` }} />
+      {/* Domain color stripe */}
+      <div className="h-1.5 w-full flex-shrink-0" style={{ background: `var(--d-${dk}-bdr)` }} />
 
       <div className="p-4 flex flex-col gap-3 flex-1">
         {busy && (
-          <div className="absolute inset-0 rounded-xl flex items-center justify-center" style={{ background: "var(--bg-quote)" }}>
+          <div className="absolute inset-0 rounded-2xl flex items-center justify-center" style={{ background: "var(--bg-quote)" }}>
             <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-3)" }} />
           </div>
         )}
@@ -567,7 +567,7 @@ function SourceCard({
             }
           </span>
           <span
-            className="font-semibold text-sm leading-snug"
+            className="font-semibold text-base leading-snug flex-1"
             style={{ color: "var(--txt-1)" }}
             title={source.url}
           >
@@ -575,8 +575,8 @@ function SourceCard({
           </span>
           {!source.enabled && isAdmin && (
             <span
-              className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded border mt-0.5"
-              style={{ color: "var(--txt-4)", borderColor: "var(--bdr)", fontSize: "0.65rem" }}
+              className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-md border mt-0.5"
+              style={{ color: "var(--txt-4)", borderColor: "var(--bdr)", fontSize: "0.65rem", background: "var(--bg-elevated)" }}
             >
               off
             </span>
@@ -587,7 +587,7 @@ function SourceCard({
         {hasLinks && <PlatformLinksMini links={links} />}
 
         {/* Footer */}
-        <div className="flex items-center justify-between mt-auto pt-1">
+        <div className="flex items-center justify-between mt-auto pt-2 border-t" style={{ borderColor: "var(--bdr)" }}>
           <button
             onClick={onSubscribe}
             className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors border"
