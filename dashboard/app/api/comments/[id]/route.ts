@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
-import { getSupabaseClient } from "@/lib/supabase";
+import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 
 // DELETE /api/comments/[id] — delete own comment
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (!isSupabaseConfigured()) return NextResponse.json({ error: "Not available" }, { status: 503 });
   const { id } = await params;
   const commentId = parseInt(id, 10);
   if (isNaN(commentId)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
