@@ -7,11 +7,11 @@ import { format, parseISO } from "date-fns";
 import Link from "next/link";
 
 interface Props {
-  searchParams: Promise<{ date?: string; domain?: string }>;
+  searchParams: Promise<{ date?: string; domain?: string; insight?: string }>;
 }
 
 export default async function DashboardPage({ searchParams }: Props) {
-  const { date, domain } = await searchParams;
+  const { date, domain, insight } = await searchParams;
   const today = format(new Date(), "yyyy-MM-dd");
   const selectedDate = date ?? today;
   const userId = await getUserId();
@@ -99,7 +99,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           hint={userId ? "Run the pipeline or select a date that has data." : "Run the pipeline or select a date that has data."}
         />
       ) : (
-        <DomainInsightView key={selectedDate} byDomain={byDomain} isAuthed={!!userId} initialDomain={domain} />
+        <DomainInsightView key={`${selectedDate}-${domain ?? ""}`} byDomain={byDomain} isAuthed={!!userId} initialDomain={domain} initialInsightId={insight} />
       )}
     </div>
   );
