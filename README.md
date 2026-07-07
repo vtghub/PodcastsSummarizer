@@ -11,7 +11,7 @@ Automatically extracts daily insights from podcasts and surfaces them via a pers
 | Layer | Technology | Role |
 |---|---|---|
 | **Scheduler** | GitHub Actions (cron) | Triggers pipeline daily at midnight UTC (8 PM EDT) |
-| **Source** | Python — RSS / yt-dlp | Fetches episode metadata and audio |
+| **Source** | Python — RSS / yt-dlp | Fetches episode metadata and audio (8 parallel RSS workers; 4 concurrent LLM/transcript workers; Gemini → Groq retry chain) |
 | **Transcription** | OpenAI Whisper (local, `tiny` model) | Converts audio to text when no caption available |
 | **LLM** | Gemini (primary) → Groq (quota fallback) | Extracts summary, key points, quotes, action items |
 | **Storage** | Supabase PostgreSQL (prod) / SQLite (dev) | Episodes, transcripts, insights, user profiles, subscriptions |
@@ -77,7 +77,7 @@ PodcastsSummarizer/
 │   │   ├── layout.tsx               # Root layout — async; fetches user server-side; passes to NavBar
 │   │   ├── dashboard/page.tsx       # Daily Insights — personalized when signed in, public preview for guests
 │   │   ├── dashboard/loading.tsx    # Instant skeleton shown by Next.js while the server fetches insight data
-│   │   ├── podcasts/page.tsx        # Podcast catalog — subscribe/unsubscribe; admin controls
+│   │   ├── podcasts/page.tsx        # Podcast catalog — public read-only for guests, full subscribe/unsubscribe for signed-in users; admin controls
 │   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, episode digest picker
 │   │   ├── login/page.tsx           # Email + password sign-in
 │   │   ├── register/page.tsx        # New user registration
@@ -261,7 +261,7 @@ npm run dev      # http://localhost:3000
 | **Calendar Date Picker** | Month calendar replaces the date dropdown — available dates marked with an accent dot, selected date shown as filled circle, today highlighted with an outline ring; all available dates prefetched for instant navigation; **mobile**: compact centred floating card (`min(320px, 100vw-32px)`), dimmed backdrop closes on tap, × button, 36px cells — no longer occupies full screen; **desktop**: right-aligned popover |
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes: **Parchment** (warm light), **Midnight** (deep blue slate), **Aurora** (ocean depths), **Cosmos** (violet nebula), **Forest** (deep emerald); picker shows two-tone swatches (bg + accent strip) with per-theme description subtitles |
-| **My Podcasts** | Catalog grouped by domain tabs (same canonical order as the Dashboard — Technology & AI, Business & Startups, etc.); subscribe/unsubscribe toggles; subscribed cards show an accent-coloured border + soft ring shadow, unsubscribed cards are borderless; admin controls for catalog management (add, delete, enable/disable, reclassify domain); domain reclassification uses an optimistic inline select — card moves to the new domain tab immediately and reverts on API failure; podcast name search with iTunes-powered dropdown |
+| **My Podcasts** | Catalog visible to all visitors (public read-only); subscribe/unsubscribe requires sign-in; grouped by domain tabs (same canonical order as the Dashboard — Technology & AI, Business & Startups, etc.); subscribed cards show an accent-coloured border + soft ring shadow, unsubscribed cards are borderless; admin controls for catalog management (add, delete, enable/disable, reclassify domain); domain reclassification uses an optimistic inline select — card moves to the new domain tab immediately and reverts on API failure; podcast name search with iTunes-powered dropdown |
 | **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); clicking "Process & Send Digest" on an unprocessed episode queues the pipeline **and automatically sends the digest email when processing completes** — no second click needed; button shows "Processing — will send when ready…" during the wait; queued episodes show ⏳ in the dropdown; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime (no page refresh); if pipeline fails, the `episode_queue` table receives a `failed` status row — Realtime pushes it to the browser instantly, resetting the episode to ○ with an error message (no polling) |
 | **Engagement** | Per-card: view count (auto-tracked, deduped per signed-in user), like/dislike with optimistic UI and toggle-off, share dropdown (Twitter/X, LinkedIn, Facebook, WhatsApp, Reddit, Telegram, Gmail, Copy link — share URL is a deep link encoding date + domain tab + card anchor so recipients land directly on the shared insight), collapsible comments panel with per-comment like/dislike and delete-own-comment; reactions and comments require sign-in; views tracked for all visitors |
