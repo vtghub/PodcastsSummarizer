@@ -28,8 +28,8 @@ export default async function ProfilePage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl font-bold mb-1" style={{ color: "var(--txt-1)" }}>Profile</h1>
-          <p className="text-sm" style={{ color: "var(--txt-3)" }}>{user.email}</p>
+          <h1 className="text-2xl font-bold tracking-tight mb-1" style={{ color: "var(--txt-1)" }}>Profile</h1>
+          <p className="text-sm" style={{ color: "var(--txt-4)" }}>{user.email}</p>
         </div>
         <SignOutButton />
       </div>
@@ -45,41 +45,45 @@ export default async function ProfilePage() {
         />
 
         {/* Right — Digest actions */}
-        <div className="space-y-6">
+        <div className="space-y-5">
           {/* Email Digest */}
           <div
-            className="rounded-xl border p-5 space-y-4"
-            style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)" }}
+            className="rounded-2xl border overflow-hidden"
+            style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)", boxShadow: "var(--shadow-card)" }}
           >
-            <div>
-              <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--txt-2)" }}>Email Digest</h2>
-              <p className="text-xs" style={{ color: "var(--txt-4)" }}>
+            <div className="px-5 py-4 border-b" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
+              <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--txt-4)" }}>Email Digest</h2>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm" style={{ color: "var(--txt-3)" }}>
                 Send your personalized digest right now based on your current subscriptions.
               </p>
+              <SendDigestButton />
             </div>
-            <SendDigestButton />
           </div>
 
           {/* Episode Digest */}
           <div
-            className="rounded-xl border p-5 space-y-4"
-            style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)" }}
+            className="rounded-2xl border overflow-hidden"
+            style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)", boxShadow: "var(--shadow-card)" }}
           >
-            <div>
-              <h2 className="text-sm font-semibold mb-1" style={{ color: "var(--txt-2)" }}>Episode Digest</h2>
-              <p className="text-xs" style={{ color: "var(--txt-4)" }}>
+            <div className="px-5 py-4 border-b" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
+              <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--txt-4)" }}>Episode Digest</h2>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm" style={{ color: "var(--txt-3)" }}>
                 Pick a specific podcast and episode to get a targeted digest email.
                 Episodes marked ✓ send instantly; unprocessed episodes (○) are queued for analysis first.
               </p>
+              {subscribedSources.length === 0 ? (
+                <p className="text-sm" style={{ color: "var(--txt-4)" }}>
+                  Subscribe to podcasts on the{" "}
+                  <a href="/podcasts" style={{ color: "var(--acc)" }}>My Podcasts</a> page first.
+                </p>
+              ) : (
+                <EpisodeDigestPicker subscribedSources={subscribedSources} />
+              )}
             </div>
-            {subscribedSources.length === 0 ? (
-              <p className="text-xs" style={{ color: "var(--txt-4)" }}>
-                Subscribe to podcasts on the{" "}
-                <a href="/podcasts" style={{ color: "var(--acc)" }}>My Podcasts</a> page first.
-              </p>
-            ) : (
-              <EpisodeDigestPicker subscribedSources={subscribedSources} />
-            )}
           </div>
         </div>
 
