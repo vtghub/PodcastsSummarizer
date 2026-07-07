@@ -124,7 +124,7 @@ graph TB
     ARFTS --> INSIGHTS
     ARDIGPREV --> INSIGHTS
     LLM -.->|POST after insights saved| ARREV
-    ARREV -.->|revalidateTag("insights")| CACHE
+    ARREV -.->|revalidateTag insights| CACHE
 
     LLM --> EPQUEUE
     INSIGHTS -.->|Realtime broadcast| RT
