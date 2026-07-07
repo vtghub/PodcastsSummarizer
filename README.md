@@ -74,6 +74,7 @@ PodcastsSummarizer/
 │   ├── app/
 │   │   ├── layout.tsx               # Root layout — async; fetches user server-side; passes to NavBar
 │   │   ├── dashboard/page.tsx       # Daily Insights — personalized when signed in, public preview for guests
+│   │   ├── dashboard/loading.tsx    # Instant skeleton shown by Next.js while the server fetches insight data
 │   │   ├── podcasts/page.tsx        # Podcast catalog — subscribe/unsubscribe; admin controls
 │   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, episode digest picker
 │   │   ├── login/page.tsx           # Email + password sign-in
@@ -100,7 +101,7 @@ PodcastsSummarizer/
 │   │   ├── SendDigestButton.tsx     # On-demand digest send — idle/sending/sent/error states
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
 │   │   ├── SignOutButton.tsx        # POST /api/auth/logout → redirect
-│   │   └── DateNav.tsx              # Date picker navigation
+│   │   └── DateNav.tsx              # Calendar date picker — popover month grid with available-date highlights; prefetches all dates
 │   ├── contexts/
 │   │   ├── ThemeContext.tsx          # 5 themes; CSS vars applied at runtime
 │   │   └── TTSContext.tsx            # Global read-aloud enable/disable
@@ -238,9 +239,10 @@ npm run dev      # http://localhost:3000
 
 | Feature | Details |
 |---|---|
-| **Daily Insights** | Summaries, key points, quotes, and action items per episode |
+| **Daily Insights** | Summaries, key points, quotes, and action items per episode; instant loading skeleton while data fetches |
 | **Personalized view** | Signed-in users see only insights from their subscribed podcasts |
-| **Domain Tabs** | Filter by domain (Technology & AI, Business & Startups, etc.) |
+| **Domain Tabs** | Filter by domain (Technology & AI, Business & Startups, etc.); auto-resets to first available tab on date change |
+| **Calendar Date Picker** | Popover month calendar replaces the date dropdown — available dates marked with an accent dot, selected date shown as filled circle, today highlighted with an outline ring; all available dates prefetched for instant navigation |
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
