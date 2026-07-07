@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import type { Insight } from "@/lib/db";
 import { getDomainColor, DOMAINS as DOMAIN_ORDER } from "@/lib/domain-colors";
 import InsightCard from "@/components/InsightCard";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 interface Props {
   byDomain: Record<string, Insight[]>;
@@ -17,12 +19,34 @@ export default function DomainInsightView({ byDomain, isAuthed, initialDomain, i
   const [selected, setSelected] = useState(
     initialDomain && domains.includes(initialDomain) ? initialDomain : domains[0]
   );
+  const router = useRouter();
 
   // Scroll to target insight card on mount — tab is already correct from initialDomain
   useEffect(() => {
     if (!initialInsightId) return;
     const el = document.getElementById(`insight-${initialInsightId}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Realtime: refresh when a new insight is inserted for the current date
+  useEffect(() => {
+    const currentDate = new URLSearchParams(window.location.search).get("date");
+    const supabase = getSupabaseBrowserClient();
+    const channel = supabase
+      .channel("dashboard-insights")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "insights" },
+        (payload) => {
+          const insightDate = (payload.new as { date?: string })?.date;
+          if (!currentDate || insightDate === currentDate) {
+            router.refresh();
+          }
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
