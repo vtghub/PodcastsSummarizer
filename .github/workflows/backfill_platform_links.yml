@@ -1,7 +1,12 @@
 name: Backfill Platform Links
 
 on:
-  workflow_dispatch:   # trigger manually from Actions tab
+  workflow_dispatch:
+    inputs:
+      source_id:
+        description: "Single source ID to backfill (leave empty to backfill all missing)"
+        required: false
+        default: ""
 
 jobs:
   backfill:
@@ -26,4 +31,9 @@ jobs:
           STORAGE_PROVIDER: supabase
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           PYTHONUTF8: "1"
-        run: python -m worker.jobs.backfill_platform_links
+        run: |
+          if [ -n "${{ inputs.source_id }}" ]; then
+            python -m worker.jobs.backfill_platform_links --source-id "${{ inputs.source_id }}"
+          else
+            python -m worker.jobs.backfill_platform_links
+          fi
