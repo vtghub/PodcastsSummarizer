@@ -94,7 +94,8 @@ PodcastsSummarizer/
 │   │       ├── digest/status/       # GET — poll DB for insights on a specific episode
 │   │       ├── podcasts/search/     # GET — proxy iTunes Search API for podcast name lookup
 │   │       ├── profile/             # GET/PUT user profile
-│   │       ├── insights/[id]/view/  # GET count · POST record view (deduped per user)
+│   │       ├── insights/[id]/engagement/ # GET ?view=1 — batched: record view + fetch views/likes/dislikes/commentCount in one round-trip (primary endpoint used by InsightCard)
+│   │       ├── insights/[id]/view/  # GET count · POST record view — superseded by /engagement (kept for compatibility)
 │   │       ├── insights/[id]/react/ # GET counts+mine · POST toggle like/dislike
 │   │       ├── insights/[id]/comments/ # GET list · POST add comment
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
