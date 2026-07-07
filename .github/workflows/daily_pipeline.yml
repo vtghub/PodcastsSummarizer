@@ -66,6 +66,8 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NEXT_APP_URL: ${{ secrets.NEXT_APP_URL }}
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
           SINCE_DAYS: ${{ github.event.inputs.since_days || '1' }}
           FORCE_EMAIL: ${{ github.event.inputs.force_email || 'false' }}
           EPISODE_AUDIO_URL: ${{ github.event.inputs.episode_audio_url || '' }}
