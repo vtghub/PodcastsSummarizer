@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
-import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
+import { getSupabaseClient } from "@/lib/supabase";
 
 // GET /api/insights/[id]/comments — list comments with reaction counts + display names
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!isSupabaseConfigured()) return NextResponse.json({ comments: [] });
   const { id: insightId } = await params;
   const userId = await getUserId().catch(() => null);
   const supabase = getSupabaseClient();
@@ -54,7 +53,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 // POST /api/insights/[id]/comments — post a comment
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!isSupabaseConfigured()) return NextResponse.json({ error: "Not available" }, { status: 503 });
   const { id: insightId } = await params;
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
