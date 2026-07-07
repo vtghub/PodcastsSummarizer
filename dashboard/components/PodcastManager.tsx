@@ -541,11 +541,11 @@ function SourceCard({
 
   return (
     <div
-      className="card-lift rounded-2xl border flex flex-col relative overflow-hidden"
+      className="card-lift rounded-2xl flex flex-col relative overflow-hidden"
       style={{
         background: "var(--bg-surface)",
-        borderColor: subscribed ? "var(--bdr-strong)" : "var(--bdr)",
-        boxShadow: subscribed ? "var(--shadow-card), 0 0 0 2px var(--acc)" : "var(--shadow-card)",
+        border: subscribed ? "1.5px solid var(--acc)" : "1.5px solid transparent",
+        boxShadow: subscribed ? "var(--shadow-card), 0 0 0 2px var(--acc-ring)" : "var(--shadow-card)",
       }}
     >
       {/* Domain color stripe */}
