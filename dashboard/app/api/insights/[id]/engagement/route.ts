@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
-import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
+import { getSupabaseClient } from "@/lib/supabase";
 
 // GET /api/insights/[id]/engagement?view=1
 // Returns views, likes, dislikes, my_reaction, comment_count in one round-trip.
 // Pass ?view=1 to also record a view (called on card mount).
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: insightId } = await params;
-
-  // Graceful no-op when Supabase isn't configured (SQLite local dev)
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json({ views: 0, likes: 0, dislikes: 0, mine: null, commentCount: 0 });
-  }
 
   const userId = await getUserId().catch(() => null);
   const supabase = getSupabaseClient();
