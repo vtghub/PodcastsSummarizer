@@ -147,12 +147,18 @@ auth.users  (Supabase Auth)
                             sources (global catalog, admin-managed, is_public=TRUE)
                                 │
                             insights (shared table — filtered per-user at query time)
+                                │
+                                ├── insight_views      view count (deduped per signed-in user; anon views stack)
+                                ├── insight_reactions  like/dislike per user (unique per insight+user)
+                                └── insight_comments   user comments
+                                        │
+                                        └── comment_reactions  like/dislike per comment per user
 ```
 
-- **Guests**: see all public insights (unfiltered preview)
-- **Signed-in users**: see only insights from their subscribed sources
+- **Guests**: see all public insights (unfiltered preview); views are tracked anonymously
+- **Signed-in users**: see only insights from their subscribed sources; can like, dislike, and comment
 - **Admins** (`is_admin=TRUE`): full catalog management (add/enable/disable/delete sources)
-- **RLS**: `user_profiles`, `user_subscriptions`, `sources` all have row-level security; `insights` are public-readable
+- **RLS**: `user_profiles`, `user_subscriptions`, `sources`, `insight_reactions`, `insight_comments`, `comment_reactions` all have row-level security; `insights` and `insight_views` are public-readable
 
 ---
 
