@@ -163,7 +163,7 @@ export default function NavBar({
 
             {pickerOpen && (
               <div
-                className="absolute right-0 top-full mt-2 w-52 rounded-xl shadow-2xl border p-2 z-50"
+                className="absolute right-0 top-full mt-2 w-64 rounded-xl shadow-2xl border p-2 z-50"
                 style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
               >
                 <p className="text-xs font-semibold px-2 pb-2 pt-1" style={{ color: "var(--txt-4)" }}>
@@ -189,29 +189,40 @@ export default function NavBar({
 function ThemeOption({
   meta, active, onSelect,
 }: {
-  meta: { key: ThemeKey; name: string; bg: string; accent: string };
+  meta: { key: ThemeKey; name: string; description: string; bg: string; accent: string; mid: string };
   active: boolean;
   onSelect: (k: ThemeKey) => void;
 }) {
   return (
     <button
       onClick={() => onSelect(meta.key)}
-      className="w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors text-left"
+      className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl transition-colors text-left"
       style={{
         background: active ? "var(--bg-elevated)" : "transparent",
         color: "var(--txt-2)",
+        outline: active ? `1.5px solid ${meta.accent}55` : "none",
       }}
       onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "var(--bg-surface-hov)"; }}
       onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
     >
+      {/* Two-tone swatch: left = background, right strip = accent */}
       <span
-        className="w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center border"
-        style={{ background: meta.bg, borderColor: meta.accent + "60" }}
+        className="flex-shrink-0 rounded-lg overflow-hidden border"
+        style={{ width: 40, height: 28, borderColor: meta.accent + "40", display: "flex" }}
       >
-        <span className="w-3 h-3 rounded-full" style={{ background: meta.accent }} />
+        <span style={{ flex: 2, background: meta.bg }} />
+        <span style={{ flex: 1, background: meta.mid }} />
+        <span style={{ width: 8, background: meta.accent }} />
       </span>
-      <span className="text-sm font-medium flex-1">{meta.name}</span>
-      {active && <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "var(--acc)" }} />}
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-semibold leading-tight" style={{ color: "var(--txt-1)" }}>
+          {meta.name}
+        </span>
+        <span className="block text-xs leading-tight mt-0.5" style={{ color: "var(--txt-4)" }}>
+          {meta.description}
+        </span>
+      </span>
+      {active && <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: meta.accent }} />}
     </button>
   );
 }
