@@ -70,7 +70,10 @@ PodcastsSummarizer/
 │       ├── 002_multi_user.sql       # user_profiles, user_subscriptions, RLS policies
 │       ├── 003_platform_links.sql   # platform_links JSONB column on sources
 │       ├── 004_episode_queue.sql    # episode_queue table for async pipeline status signalling
-│       └── 005_engagement.sql       # insight_views, insight_reactions, insight_comments, comment_reactions
+│       ├── 005_engagement.sql       # insight_views, insight_reactions, insight_comments, comment_reactions
+│       ├── 006_perf_indexes.sql     # Composite indexes on insights(date,source_id), (source_id,episode_id), (source_id,date)
+│       ├── 007_fts.sql              # search_vector tsvector + GIN index + trigger + backfill for full-text search
+│       └── 008_digest_domains.sql   # digest_domains text[] on user_profiles for per-user email domain filter
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
@@ -93,17 +96,19 @@ PodcastsSummarizer/
 │   │       ├── digest/process/      # POST — trigger workflow_dispatch for unprocessed episode
 │   │       ├── digest/status/       # GET — poll DB for insights on a specific episode
 │   │       ├── podcasts/search/     # GET — proxy iTunes Search API for podcast name lookup
-│   │       ├── profile/             # GET/PUT user profile
+│   │       ├── profile/             # GET/PUT user profile (display_name, digest_enabled, digest_hour, digest_domains)
+│   │       ├── revalidate/          # POST — on-demand Next.js cache bust (called by pipeline after new insights saved)
 │   │       ├── insights/[id]/engagement/ # GET ?view=1 — batched: record view + fetch views/likes/dislikes/commentCount in one round-trip
 │   │       ├── insights/[id]/react/ # GET counts+mine · POST toggle like/dislike
 │   │       ├── insights/[id]/comments/ # GET list · POST add comment
+│   │       ├── insights/search/     # GET ?q= — full-text websearch across summary, key_points, quotes, tags
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
-│   │   ├── NavBar.tsx               # Sticky nav — user dropdown (Profile + Sign out) for authed users
+│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), user dropdown, TTS toggle, theme picker
 │   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud; shows episode published date
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client)
 │   │   ├── PodcastManager.tsx       # Catalog — domain tab layout (matches Dashboard order); optimistic subscribe toggles; subscribed cards show accent border + ring, unsubscribed cards are borderless; admin add/delete/toggle/reclassify
-│   │   ├── ProfileForm.tsx          # Display name, digest toggle, UTC hour picker
+│   │   ├── ProfileForm.tsx          # Display name, digest toggle, UTC hour picker, per-domain digest filter chips
 │   │   ├── SendDigestButton.tsx     # On-demand digest send — idle/sending/sent/error states
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
 │   │   ├── SignOutButton.tsx        # POST /api/auth/logout → redirect
@@ -140,7 +145,7 @@ PodcastsSummarizer/
 ```
 auth.users  (Supabase Auth)
     │
-    ├── user_profiles       display_name, is_admin, digest_enabled, digest_hour
+    ├── user_profiles       display_name, is_admin, digest_enabled, digest_hour, digest_domains[]
     │
     └── user_subscriptions  user_id → source_id (many-to-many)
                                 │
@@ -168,8 +173,9 @@ The pipeline runs once and sends N personalized emails:
 
 1. Query `user_profiles JOIN auth.users` for all users with `digest_enabled=TRUE`
 2. For each user: fetch their `user_subscriptions` → filter today's insights to those source IDs
-3. Send one HTML email per user via Gmail SMTP
-4. Users with no subscriptions or no matching insights are skipped
+3. Apply per-user domain filter: if `digest_domains` is set, drop insights outside those domains (`NULL` = all domains)
+4. Send one HTML email per user via Gmail SMTP
+5. Users with no subscriptions or no matching insights are skipped
 
 ---
 
@@ -226,6 +232,8 @@ All providers are swapped via `.env` — no code changes needed:
 | `GROQ_API_KEY` | Groq API key (optional fallback) |
 | `GMAIL_SENDER` | Gmail sender address |
 | `GMAIL_APP_PASSWORD` | Gmail App Password |
+| `NEXT_APP_URL` | Vercel deployment URL — used to call `/api/revalidate` after pipeline runs |
+| `REVALIDATE_SECRET` | Shared secret for cache revalidation endpoint (must also be set in Vercel env vars) |
 
 ---
 
@@ -262,7 +270,8 @@ npm run dev      # http://localhost:3000
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes: **Parchment** (warm light), **Midnight** (deep blue slate), **Aurora** (ocean depths), **Cosmos** (violet nebula), **Forest** (deep emerald); compact swatch-grid picker (~196 px) — header shows "THEME / &lt;name&gt;" with the name updating live on hover; five 3-stripe colour chips (bg · mid · accent) in a single row; active chip glows in its accent colour |
 | **My Podcasts** | Catalog visible to all visitors (public read-only); subscribe/unsubscribe requires sign-in; grouped by domain tabs (same canonical order as the Dashboard — Technology & AI, Business & Startups, etc.); subscribed cards show an accent-coloured border + soft ring shadow, unsubscribed cards are borderless; admin controls for catalog management (add, delete, enable/disable, reclassify domain); domain reclassification uses an optimistic inline select — card moves to the new domain tab immediately and reverts on API failure; podcast name search with iTunes-powered dropdown |
-| **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
+| **Search** | Full-text search across all insight summaries, key points, quotes, and action items; triggered via Search button in the navbar or `Cmd/Ctrl+K`; opens a fixed overlay with a debounced input (300ms), domain-colour-badged results, episode title and date, and click-to-navigate deep links that land on the exact insight card |
+| **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour, **per-domain email filter** (chip toggles — faded chips are excluded from the daily digest; `null` means all domains); "Send Digest Now"; Episode Digest picker |
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); clicking "Process & Send Digest" on an unprocessed episode queues the pipeline **and automatically sends the digest email when processing completes** — no second click needed; button shows "Processing — will send when ready…" during the wait; queued episodes show ⏳ in the dropdown; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime (no page refresh); if pipeline fails, the `episode_queue` table receives a `failed` status row — Realtime pushes it to the browser instantly, resetting the episode to ○ with an error message (no polling) |
 | **Engagement** | Per-card: view count (auto-tracked, deduped per signed-in user), like/dislike with optimistic UI and toggle-off, **copy-to-clipboard** button (writes both `text/html` and `text/plain` via `ClipboardItem` — pasting into Notion/Docs/email produces rich formatting with headings, bullets, and blockquotes; pasting into plain text gives clean ASCII; falls back to `writeText` on older browsers; icon swaps to ✓ for 2 s on success), share dropdown (Twitter/X, LinkedIn, Facebook, WhatsApp, Reddit, Telegram, Gmail, Copy link — share URL is a deep link encoding date + domain tab + card anchor so recipients land directly on the shared insight), collapsible comments panel with per-comment like/dislike and delete-own-comment; reactions and comments require sign-in; views tracked for all visitors |
 | **Platform Links** | Each insight card shows a "Listen on" icon row — Spotify (green), Apple Podcasts (purple), YouTube (red), Website — linked to the correct platform; URLs auto-discovered by the pipeline: Apple via iTunes Search API (public, no key), Spotify + YouTube via Podcast 2.0 namespace tags in the RSS feed, Website from RSS `<channel><link>`; no API key required; when a new podcast is added to the catalog, a fire-and-forget `workflow_dispatch` to `backfill_platform_links.yml` runs automatically so icons appear without manual backfill |
