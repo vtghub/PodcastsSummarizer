@@ -1,4 +1,4 @@
-// Hand-maintained — reflects supabase/schema.sql + supabase/migrations/002_multi_user.sql
+// Hand-maintained — reflects supabase/schema.sql + supabase/migrations/002_multi_user.sql + 005_engagement.sql
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -187,6 +187,91 @@ export interface Database {
           user_id?: string;
           source_id?: string;
           enabled?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      insight_views: {
+        Row: {
+          id: number;
+          insight_id: string;
+          user_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          insight_id: string;
+          user_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          insight_id?: string;
+          user_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      insight_reactions: {
+        Row: {
+          id: number;
+          insight_id: string;
+          user_id: string;
+          type: string;
+          created_at: string;
+        };
+        Insert: {
+          insight_id: string;
+          user_id: string;
+          type: string;
+          created_at?: string;
+        };
+        Update: {
+          insight_id?: string;
+          user_id?: string;
+          type?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      insight_comments: {
+        Row: {
+          id: number;
+          insight_id: string;
+          user_id: string;
+          body: string;
+          created_at: string;
+        };
+        Insert: {
+          insight_id: string;
+          user_id: string;
+          body: string;
+          created_at?: string;
+        };
+        Update: {
+          insight_id?: string;
+          user_id?: string;
+          body?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      comment_reactions: {
+        Row: {
+          id: number;
+          comment_id: number;
+          user_id: string;
+          type: string;
+          created_at: string;
+        };
+        Insert: {
+          comment_id: number;
+          user_id: string;
+          type: string;
+          created_at?: string;
+        };
+        Update: {
+          comment_id?: number;
+          user_id?: string;
+          type?: string;
           created_at?: string;
         };
         Relationships: [];
