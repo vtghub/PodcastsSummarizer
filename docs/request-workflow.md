@@ -109,7 +109,7 @@ sequenceDiagram
     PAGE->>DB: getUser() [React cache — 1 req/render]
     DB-->>PAGE: user {id, email}
     PAGE->>DB: sbGetInsightsByDateForUser(date, userId)
-    Note right of DB: JOIN user_subscriptions ON source_id\nWHERE user_id = userId
+    Note right of DB: JOIN user_subscriptions ON source_id WHERE user_id = userId
     DB-->>PAGE: insights for subscribed sources only
     PAGE->>DB: sbGetAvailableDatesForUser(userId)
     DB-->>PAGE: dates with insights for user's sources
@@ -198,7 +198,7 @@ sequenceDiagram
 
     B->>FORM: edit display_name / digest_enabled / digest_hour / digest_domains chips
     FORM->>API: PUT {display_name, digest_enabled, digest_hour, digest_domains}
-    Note right of API: digest_domains: string[] | null\n(null = all domains; [] coerced → null)
+    Note right of API: digest_domains is string[] or null; empty array coerced to null
     API->>API: validate: user authed, digest_hour 0-23
     API->>DB: UPDATE user_profiles SET ... WHERE user_id=?
     DB-->>API: ok
@@ -229,7 +229,7 @@ sequenceDiagram
         API->>DB: getAvailableDates(user.id)
         DB-->>API: ["2026-07-05", ...]
         API->>DB: getInsightsByDate(date, user.id)
-        Note right of DB: JOIN user_subscriptions\nWHERE user_id = userId
+        Note right of DB: JOIN user_subscriptions WHERE user_id = userId
         DB-->>API: insights for subscribed sources
         alt no insights
             API-->>BTN: 404 "No insights found"
@@ -312,7 +312,6 @@ sequenceDiagram
         PY->>DB: save_insight(insight)
         PY->>DB: upsert episode_queue(status=done)
         PY->>MAIL: send_digest(target_email, date, insights)
-        Note over B,MAIL: User receives email; clicks "View Dashboard" to see new insights
     else failure
         PY->>DB: upsert episode_queue(status=failed, error_msg)
     end
@@ -427,7 +426,7 @@ sequenceDiagram
 
     Note over CARD,EAPI: On mount — single batched call records view + fetches all counts
     CARD->>EAPI: GET ?view=1 — user_id from cookie if signed in
-    EAPI->>DB: UPSERT insight_views (deduped per signed-in user; anonymous inserts freely)
+    EAPI->>DB: UPSERT insight_views (deduped per user, anonymous inserts freely)
     EAPI->>DB: Promise.all — COUNT insight_views, SELECT insight_reactions, COUNT insight_comments
     EAPI-->>CARD: { views, likes, dislikes, mine, commentCount }
     CARD->>CARD: render engagement bar (eye, thumbs, comment count, share)
@@ -507,7 +506,7 @@ sequenceDiagram
     NAV->>API: GET /api/insights/search?q=<query>
     API->>API: q.length < 2 → return {results:[]}
     API->>DB: .textSearch("search_vector", q, {type:"websearch", config:"english"})
-    Note right of DB: GIN index on tsvector\n(summary + key_points + key_quotes\n+ action_items + tags)
+    Note right of DB: GIN index on tsvector (summary, key_points, quotes, actions, tags)
     DB-->>API: top 20 rows (id, date, domain, summary, source_name, episode_title)
     API-->>NAV: {results: [...summary truncated to 160 chars]}
     NAV->>NAV: render results list with domain color badges
@@ -541,7 +540,7 @@ sequenceDiagram
     else signed in
         API->>DB: getAvailableDates(user.id)
         API->>DB: getInsightsByDate(date, user.id)
-        Note right of DB: same query as /api/digest/send\n— exact same HTML the email would render
+        Note right of DB: same query as /api/digest/send; same HTML the email renders
         API->>API: buildDigestHtml(date, byDomain)
         API-->>B: 200 text/html — rendered email in browser tab
     end
@@ -569,6 +568,6 @@ sequenceDiagram
     DB->>RT: logical replication event
     RT-->>DIV: payload { new: { date, ... } }
     DIV->>DIV: insightDate === currentDate? → router.refresh()
-    Note over B,DIV: Page re-fetches server data — new insight card appears\nwithout manual reload
+    Note over B,DIV: New insight card appears without manual reload
     DIV->>RT: removeChannel() on unmount
 ```
