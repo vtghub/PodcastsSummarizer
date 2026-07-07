@@ -7,16 +7,18 @@ export type ThemeKey = "anthropic-light" | "midnight" | "aurora" | "dusk" | "for
 export interface ThemeMeta {
   key: ThemeKey;
   name: string;
+  description: string;
   bg: string;
   accent: string;
+  mid: string; // mid-tone for richer swatch preview
 }
 
 export const THEMES: ThemeMeta[] = [
-  { key: "anthropic-light", name: "Light",           bg: "#FAF9F6", accent: "#C2410C" },
-  { key: "midnight",        name: "Midnight",        bg: "#0A0D14", accent: "#6366F1" },
-  { key: "aurora",          name: "Aurora",          bg: "#020B18", accent: "#06B6D4" },
-  { key: "dusk",            name: "Dusk",            bg: "#0D0816", accent: "#A855F7" },
-  { key: "forest",          name: "Forest",          bg: "#040D08", accent: "#10B981" },
+  { key: "anthropic-light", name: "Parchment",  description: "Warm & natural",    bg: "#FAF9F6", accent: "#C2410C", mid: "#F0EDE8" },
+  { key: "midnight",        name: "Midnight",   description: "Deep blue slate",    bg: "#0A0D14", accent: "#6366F1", mid: "#0F172A" },
+  { key: "aurora",          name: "Aurora",     description: "Ocean depths",       bg: "#020B18", accent: "#06B6D4", mid: "#06182A" },
+  { key: "dusk",            name: "Cosmos",     description: "Violet nebula",      bg: "#0D0816", accent: "#A855F7", mid: "#160F26" },
+  { key: "forest",          name: "Forest",     description: "Deep emerald",       bg: "#040D08", accent: "#10B981", mid: "#09150F" },
 ];
 
 const THEME_VARS: Record<ThemeKey, Record<string, string>> = {
