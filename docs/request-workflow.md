@@ -403,25 +403,24 @@ sequenceDiagram
 
 ## 14. Insight Card Engagement — Views, Reactions, Comments, Share
 
+> Supabase is required for all engagement features in both local dev and production.
+
 ```mermaid
 sequenceDiagram
     participant B as Browser
     participant CARD as InsightCard.tsx
-    participant VAPI as /api/insights/[id]/view
+    participant EAPI as /api/insights/[id]/engagement
     participant RAPI as /api/insights/[id]/react
     participant CAPI as /api/insights/[id]/comments
     participant CRAPI as /api/comments/[id]/react
     participant DB as Supabase
 
-    Note over CARD,VAPI: On mount — record view + fetch reaction counts
-    CARD->>VAPI: POST (view) — user_id from cookie if signed in
-    VAPI->>DB: UPSERT insight_views (deduped per user_id)
-    VAPI->>DB: COUNT insight_views WHERE insight_id
-    VAPI-->>CARD: { views: N }
-    CARD->>RAPI: GET reaction counts + my reaction
-    RAPI->>DB: SELECT insight_reactions WHERE insight_id
-    RAPI-->>CARD: { likes, dislikes, mine }
-    CARD->>CARD: render engagement bar (eye, thumbs, comment, share)
+    Note over CARD,EAPI: On mount — single batched call records view + fetches all counts
+    CARD->>EAPI: GET ?view=1 — user_id from cookie if signed in
+    EAPI->>DB: UPSERT insight_views (deduped per signed-in user; anonymous inserts freely)
+    EAPI->>DB: Promise.all — COUNT insight_views, SELECT insight_reactions, COUNT insight_comments
+    EAPI-->>CARD: { views, likes, dislikes, mine, commentCount }
+    CARD->>CARD: render engagement bar (eye, thumbs, comment count, share)
 
     Note over B,CARD: Like / Dislike (requires sign-in)
     B->>CARD: click Like
