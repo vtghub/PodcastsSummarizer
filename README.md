@@ -119,7 +119,8 @@ PodcastsSummarizer/
 │
 ├── .github/workflows/
 │   ├── daily_pipeline.yml           # Cron at midnight UTC; workflow_dispatch with since_days + force_email
-│   └── backfill_platform_links.yml  # Manual workflow_dispatch — backfills platform URLs for existing sources
+│   ├── backfill_platform_links.yml  # Manual workflow_dispatch — backfills platform URLs; optional source_id input
+│   └── backfill_published_at.yml    # Manual workflow_dispatch — backfills episode published dates; optional source_id input
 │
 ├── .env.example                     # Template — copy to .env and fill values
 └── requirements.txt
@@ -260,6 +261,8 @@ npm run dev      # http://localhost:3000
   - `since_days` input: look-back window (default: 1)
   - `force_email` input: send digest from existing DB insights even if no new episodes (for testing)
   - `episode_audio_url` + `source_id` + `target_email` inputs: single-episode on-demand mode (triggered by `/api/digest/process`)
+- **Backfill platform links**: `backfill_platform_links.yml` — manual `workflow_dispatch`; optional `source_id` input to run for a single source (leave blank to backfill all).
+- **Backfill published dates**: `backfill_published_at.yml` — manual `workflow_dispatch`; optional `source_id` input to run per-source and stay within the 30-minute job timeout (leave blank to process all sources).
 - **Dashboard**: Vercel auto-deploys on every push to `main`.
 - **Branching**: `main` ← `develop` ← `feature/*`. PRs merged via GitHub; develop promoted to main after each feature.
 
