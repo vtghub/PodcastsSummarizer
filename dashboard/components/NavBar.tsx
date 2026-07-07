@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Volume2, VolumeX, Palette, Check, UserCircle, LogOut, User } from "lucide-react";
+import { Volume2, VolumeX, Palette, UserCircle, LogOut, User } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useTTS } from "@/contexts/TTSContext";
-import { useTheme, THEMES, type ThemeKey } from "@/contexts/ThemeContext";
+import { useTheme, THEMES } from "@/contexts/ThemeContext";
 
 export default function NavBar({
   userEmail,
@@ -17,8 +17,9 @@ export default function NavBar({
   const { enabled, toggle } = useTTS();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
-  const [pickerOpen, setPickerOpen]   = useState(false);
+  const [pickerOpen, setPickerOpen]     = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [hoveredTheme, setHoveredTheme] = useState<typeof THEMES[0] | null>(null);
   const pickerRef  = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
@@ -163,20 +164,58 @@ export default function NavBar({
 
             {pickerOpen && (
               <div
-                className="absolute right-0 top-full mt-2 w-64 rounded-xl shadow-2xl border p-2 z-50"
-                style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
+                className="absolute right-0 top-full mt-2 rounded-2xl shadow-2xl border z-50"
+                style={{
+                  background: "var(--bg-nav)",
+                  borderColor: "var(--bdr-hov)",
+                  padding: "12px 14px 14px",
+                  minWidth: 196,
+                }}
               >
-                <p className="text-xs font-semibold px-2 pb-2 pt-1" style={{ color: "var(--txt-4)" }}>
-                  THEME
-                </p>
-                {THEMES.map((t) => (
-                  <ThemeOption
-                    key={t.key}
-                    meta={t}
-                    active={theme === t.key}
-                    onSelect={(k) => { setTheme(k); setPickerOpen(false); }}
-                  />
-                ))}
+                {/* Header: label + active/hovered name */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--txt-4)", letterSpacing: "0.1em" }}>
+                    Theme
+                  </span>
+                  <span className="text-xs font-semibold transition-all" style={{ color: "var(--txt-2)" }}>
+                    {(hoveredTheme ?? THEMES.find((t) => t.key === theme))?.name}
+                  </span>
+                </div>
+
+                {/* Swatch row */}
+                <div className="flex items-center gap-2">
+                  {THEMES.map((t) => {
+                    const isActive = theme === t.key;
+                    return (
+                      <button
+                        key={t.key}
+                        onClick={() => { setTheme(t.key); setPickerOpen(false); }}
+                        onMouseEnter={() => setHoveredTheme(t)}
+                        onMouseLeave={() => setHoveredTheme(null)}
+                        title={t.name}
+                        className="transition-transform hover:scale-110"
+                        style={{
+                          width: 30,
+                          height: 22,
+                          borderRadius: 7,
+                          overflow: "hidden",
+                          display: "flex",
+                          padding: 0,
+                          border: "none",
+                          cursor: "pointer",
+                          outline: isActive ? `2.5px solid ${t.accent}` : `1.5px solid ${t.accent}30`,
+                          outlineOffset: isActive ? 2 : 1,
+                          boxShadow: isActive ? `0 0 8px ${t.accent}50` : "none",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span style={{ flex: 2, background: t.bg }} />
+                        <span style={{ flex: 1, background: t.mid }} />
+                        <span style={{ width: 6, flexShrink: 0, background: t.accent }} />
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -186,43 +225,3 @@ export default function NavBar({
   );
 }
 
-function ThemeOption({
-  meta, active, onSelect,
-}: {
-  meta: { key: ThemeKey; name: string; description: string; bg: string; accent: string; mid: string };
-  active: boolean;
-  onSelect: (k: ThemeKey) => void;
-}) {
-  return (
-    <button
-      onClick={() => onSelect(meta.key)}
-      className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl transition-colors text-left"
-      style={{
-        background: active ? "var(--bg-elevated)" : "transparent",
-        color: "var(--txt-2)",
-        outline: active ? `1.5px solid ${meta.accent}55` : "none",
-      }}
-      onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "var(--bg-surface-hov)"; }}
-      onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-    >
-      {/* Two-tone swatch: left = background, right strip = accent */}
-      <span
-        className="flex-shrink-0 rounded-lg overflow-hidden border"
-        style={{ width: 40, height: 28, borderColor: meta.accent + "40", display: "flex" }}
-      >
-        <span style={{ flex: 2, background: meta.bg }} />
-        <span style={{ flex: 1, background: meta.mid }} />
-        <span style={{ width: 8, background: meta.accent }} />
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="block text-sm font-semibold leading-tight" style={{ color: "var(--txt-1)" }}>
-          {meta.name}
-        </span>
-        <span className="block text-xs leading-tight mt-0.5" style={{ color: "var(--txt-4)" }}>
-          {meta.description}
-        </span>
-      </span>
-      {active && <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: meta.accent }} />}
-    </button>
-  );
-}
