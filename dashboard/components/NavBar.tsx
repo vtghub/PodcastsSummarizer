@@ -72,7 +72,7 @@ export default function NavBar({
 
   function handleResultClick(result: SearchResult) {
     closeSearch();
-    router.push(`/dashboard?date=${result.date}&domain=${encodeURIComponent(result.domain)}#insight-${result.id}`);
+    router.push(`/dashboard?date=${result.date}&domain=${encodeURIComponent(result.domain)}&insight=${result.id}`);
   }
 
   useEffect(() => {
