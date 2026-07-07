@@ -9,9 +9,10 @@ const DEFAULT_DOMAIN = "Business & Startups";
 
 interface Props {
   byDomain: Record<string, Insight[]>;
+  isAuthed: boolean;
 }
 
-export default function DomainInsightView({ byDomain }: Props) {
+export default function DomainInsightView({ byDomain, isAuthed }: Props) {
   const domains = DOMAIN_ORDER.filter((d) => byDomain[d]);
   const initialDomain =
     domains.includes(DEFAULT_DOMAIN) ? DEFAULT_DOMAIN : domains[0];
@@ -65,7 +66,7 @@ export default function DomainInsightView({ byDomain }: Props) {
       {/* Cards */}
       <div className="grid gap-5 lg:grid-cols-2">
         {insights.map((insight) => (
-          <InsightCard key={insight.id} insight={insight} domainColor={color} />
+          <InsightCard key={insight.id} insight={insight} domainColor={color} isAuthed={isAuthed} />
         ))}
       </div>
     </div>
