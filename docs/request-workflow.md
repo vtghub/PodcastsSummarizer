@@ -369,3 +369,28 @@ sequenceDiagram
         API-->>B: 403 Forbidden
     end
 ```
+
+## 13. Admin Domain Reclassification
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (admin)
+    participant PM as PodcastManager (client)
+    participant API as /api/sources/[id]
+    participant DB as Supabase
+
+    B->>PM: change domain select for a source card
+    PM->>PM: optimistic update — move card to new domain tab immediately
+    PM->>API: PATCH /api/sources/:id { domain: "new domain" }
+    API->>DB: isAdmin() → user_profiles.is_admin
+    alt is_admin = true
+        API->>DB: validate domain in DOMAIN_ORDER
+        API->>DB: UPDATE sources SET domain = new domain
+        API-->>PM: 200 OK
+        PM->>PM: router.refresh() to sync server state
+    else not admin
+        API-->>PM: 403 Forbidden
+        PM->>PM: revert card to original domain tab
+    end
+    Note over PM: On any API error, card reverts to original domain
+```
