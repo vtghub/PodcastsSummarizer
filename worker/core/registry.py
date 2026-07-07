@@ -11,13 +11,19 @@ from worker.core.interfaces import (
 )
 
 
+_transcription_provider: TranscriptionProvider | None = None
+
+
 def get_transcription_provider() -> TranscriptionProvider:
-    match TRANSCRIPTION_PROVIDER:
-        case "local_whisper":
-            from worker.providers.transcription.local_whisper import LocalWhisperProvider
-            return LocalWhisperProvider()
-        case _:
-            raise ValueError(f"Unknown TRANSCRIPTION_PROVIDER: {TRANSCRIPTION_PROVIDER!r}")
+    global _transcription_provider
+    if _transcription_provider is None:
+        match TRANSCRIPTION_PROVIDER:
+            case "local_whisper":
+                from worker.providers.transcription.local_whisper import LocalWhisperProvider
+                _transcription_provider = LocalWhisperProvider()
+            case _:
+                raise ValueError(f"Unknown TRANSCRIPTION_PROVIDER: {TRANSCRIPTION_PROVIDER!r}")
+    return _transcription_provider
 
 
 def get_llm_provider() -> LLMProvider:
