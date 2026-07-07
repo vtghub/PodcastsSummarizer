@@ -58,6 +58,7 @@ export interface Insight {
   created_at: string;
   source_name?: string;
   episode_title?: string;
+  episode_published_at?: string;
   platform_links?: PlatformLinks;
 }
 
@@ -173,16 +174,17 @@ async function sbGetInsightsByDateForUser(date: string, userId: string): Promise
   if (sourceIds.length === 0) return [];
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name, platform_links), episodes(title)")
+    .select("*, sources(name, platform_links), episodes(title, published_at)")
     .eq("date", date)
     .in("source_id", sourceIds)
     .order("domain").order("created_at");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
-    source_name:    (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.name,
-    episode_title:  (r.episodes as { title: string } | null)?.title,
-    platform_links: (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
+    source_name:           (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.name,
+    episode_title:         (r.episodes as { title: string; published_at?: string } | null)?.title,
+    episode_published_at:  (r.episodes as { title: string; published_at?: string } | null)?.published_at,
+    platform_links:        (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
   })) as Insight[];
 }
 
@@ -269,14 +271,15 @@ async function sbGetInsightsByEpisode(episodeId: string): Promise<Insight[]> {
   const sb = getSupabaseClient();
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name, platform_links), episodes(title)")
+    .select("*, sources(name, platform_links), episodes(title, published_at)")
     .eq("episode_id", episodeId)
     .order("domain");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
-    source_name:   (r.sources  as { name: string }  | null)?.name,
-    episode_title: (r.episodes as { title: string } | null)?.title,
+    source_name:          (r.sources  as { name: string } | null)?.name,
+    episode_title:        (r.episodes as { title: string; published_at?: string } | null)?.title,
+    episode_published_at: (r.episodes as { title: string; published_at?: string } | null)?.published_at,
   })) as Insight[];
 }
 
@@ -285,15 +288,16 @@ async function sbGetInsightsByDate(date: string): Promise<Insight[]> {
   const sb = getSupabaseClient();
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name, platform_links), episodes(title)")
+    .select("*, sources(name, platform_links), episodes(title, published_at)")
     .eq("date", date)
     .order("domain").order("created_at");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
-    source_name:    (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.name,
-    episode_title:  (r.episodes as { title: string } | null)?.title,
-    platform_links: (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
+    source_name:           (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.name,
+    episode_title:         (r.episodes as { title: string; published_at?: string } | null)?.title,
+    episode_published_at:  (r.episodes as { title: string; published_at?: string } | null)?.published_at,
+    platform_links:        (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
   })) as Insight[];
 }
 
@@ -391,7 +395,7 @@ export async function getInsightsByDate(date: string, userId?: string | null): P
   }
   const db = getSqliteDb();
   const rows = db.prepare(`
-    SELECT i.*, s.name AS source_name, e.title AS episode_title
+    SELECT i.*, s.name AS source_name, e.title AS episode_title, e.published_at AS episode_published_at
     FROM insights i
     LEFT JOIN sources  s ON s.id = i.source_id
     LEFT JOIN episodes e ON e.id = i.episode_id
@@ -440,7 +444,7 @@ export async function getInsightsByEpisode(episodeId: string): Promise<Insight[]
   if (useSupabase()) return sbGetInsightsByEpisode(episodeId);
   const db = getSqliteDb();
   const rows = db.prepare(`
-    SELECT i.*, s.name AS source_name, e.title AS episode_title
+    SELECT i.*, s.name AS source_name, e.title AS episode_title, e.published_at AS episode_published_at
     FROM insights i
     LEFT JOIN sources  s ON s.id = i.source_id
     LEFT JOIN episodes e ON e.id = i.episode_id
@@ -456,19 +460,20 @@ export async function getRecentInsights(limit = 20): Promise<Insight[]> {
     const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("insights")
-      .select("*, sources(name, platform_links), episodes(title)")
+      .select("*, sources(name, platform_links), episodes(title, published_at)")
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error) throw error;
     return (data ?? []).map((r: Record<string, unknown>) => ({
       ...r,
-      source_name:   (r.sources as { name: string } | null)?.name,
-      episode_title: (r.episodes as { title: string } | null)?.title,
+      source_name:          (r.sources  as { name: string } | null)?.name,
+      episode_title:        (r.episodes as { title: string; published_at?: string } | null)?.title,
+      episode_published_at: (r.episodes as { title: string; published_at?: string } | null)?.published_at,
     })) as Insight[];
   }
   const db = getSqliteDb();
   const rows = db.prepare(`
-    SELECT i.*, s.name AS source_name, e.title AS episode_title
+    SELECT i.*, s.name AS source_name, e.title AS episode_title, e.published_at AS episode_published_at
     FROM insights i
     LEFT JOIN sources  s ON s.id = i.source_id
     LEFT JOIN episodes e ON e.id = i.episode_id

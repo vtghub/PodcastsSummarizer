@@ -168,6 +168,10 @@ class StorageProvider(ABC):
     ) -> None:
         """Write pipeline status (pending/done/failed) to episode_queue. Default: no-op (local dev)."""
 
+    def update_episode_published_at(self, episode_id: str, published_at: str) -> int:
+        """Set published_at on an episode (only if currently null). Returns rows updated. Default: no-op."""
+        return 0
+
     def get_insights_by_date_and_sources(self, date: str, source_ids: list[str]) -> list[Insight]:
         """Return insights for a specific date filtered to the given source IDs."""
         all_insights = self.get_insights_by_date(date)
