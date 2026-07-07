@@ -68,7 +68,7 @@ export default function NavBar({
 
         {/* Right controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <span className="hidden sm:inline">{navLink("/", "Dashboard")}</span>
+          <span className="hidden sm:inline">{navLink("/dashboard", "Dashboard")}</span>
           {navLink("/podcasts", "My Podcasts")}
 
           {/* User menu */}
