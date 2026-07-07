@@ -137,6 +137,10 @@ def run_pipeline(
                 with stats_lock:
                     stats["errors"] += 1
 
+    # ── Post-Phase 2: invalidate the dashboard's public cache ───────────────
+    if stats["insights"] > 0 and not dry_run:
+        _revalidate_dashboard_cache(date_str)
+
     # ── Phase 3: digest email ────────────────────────────────────────────────
     should_email = send_email and not dry_run and (stats["insights"] > 0 or force_email)
     if should_email:
@@ -386,6 +390,27 @@ def _send_per_user_digests(storage, date_str: str):
         except Exception as e:
             print(f"[Email] {user.email} — error: {e}")
             traceback.print_exc()
+
+
+def _revalidate_dashboard_cache(date_str: str) -> None:
+    """Call the Next.js on-demand revalidation endpoint so public guests see fresh insights."""
+    import requests as _requests
+    url = os.getenv("NEXT_APP_URL", "").rstrip("/")
+    secret = os.getenv("REVALIDATE_SECRET", "")
+    if not url or not secret:
+        return
+    try:
+        resp = _requests.post(
+            f"{url}/api/revalidate",
+            headers={"x-revalidate-secret": secret},
+            timeout=10,
+        )
+        if resp.ok:
+            print(f"[Pipeline] Dashboard cache revalidated ({date_str})")
+        else:
+            print(f"[Pipeline] Revalidation failed: HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"[Pipeline] Revalidation error (non-fatal): {e}")
 
 
 def _send_single_digest(storage, date_str: str, email):
