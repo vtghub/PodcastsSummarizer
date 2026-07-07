@@ -9,19 +9,19 @@ interface Props {
   byDomain: Record<string, Insight[]>;
   isAuthed: boolean;
   initialDomain?: string;
+  initialInsightId?: string;
 }
 
-export default function DomainInsightView({ byDomain, isAuthed, initialDomain }: Props) {
+export default function DomainInsightView({ byDomain, isAuthed, initialDomain, initialInsightId }: Props) {
   const domains = DOMAIN_ORDER.filter((d) => byDomain[d]);
   const [selected, setSelected] = useState(
     initialDomain && domains.includes(initialDomain) ? initialDomain : domains[0]
   );
 
-  // Scroll to #hash on mount — correct tab is already selected from initialDomain
+  // Scroll to target insight card on mount — tab is already correct from initialDomain
   useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash) return;
-    const el = document.querySelector(hash);
+    if (!initialInsightId) return;
+    const el = document.getElementById(`insight-${initialInsightId}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
