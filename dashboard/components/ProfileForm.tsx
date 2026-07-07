@@ -3,6 +3,7 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Check } from "lucide-react";
+import { DOMAINS, getDomainColor } from "@/lib/domain-colors";
 
 const UTC_HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -16,18 +17,33 @@ export default function ProfileForm({
   initialDisplayName,
   initialDigestEnabled,
   initialDigestHour,
+  initialDigestDomains,
 }: {
   initialDisplayName: string;
   initialDigestEnabled: boolean;
   initialDigestHour: number;
+  initialDigestDomains: string[] | null;
 }) {
   const router = useRouter();
-  const [displayName, setDisplayName]     = useState(initialDisplayName);
-  const [digestEnabled, setDigestEnabled] = useState(initialDigestEnabled);
-  const [digestHour, setDigestHour]       = useState(initialDigestHour);
-  const [saving, setSaving]               = useState(false);
-  const [saved, setSaved]                 = useState(false);
-  const [error, setError]                 = useState("");
+  const [displayName, setDisplayName]         = useState(initialDisplayName);
+  const [digestEnabled, setDigestEnabled]     = useState(initialDigestEnabled);
+  const [digestHour, setDigestHour]           = useState(initialDigestHour);
+  const [digestDomains, setDigestDomains]     = useState<string[] | null>(initialDigestDomains);
+  const [saving, setSaving]                   = useState(false);
+  const [saved, setSaved]                     = useState(false);
+  const [error, setError]                     = useState("");
+
+  function toggleDomain(domain: string) {
+    setDigestDomains((prev) => {
+      const current = prev ?? DOMAINS;
+      if (current.includes(domain)) {
+        const next = current.filter((d) => d !== domain);
+        return next.length === DOMAINS.length ? null : next.length === 0 ? [domain] : next;
+      }
+      const next = [...current, domain];
+      return next.length === DOMAINS.length ? null : next;
+    });
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -38,7 +54,7 @@ export default function ProfileForm({
       const res = await fetch("/api/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ display_name: displayName, digest_enabled: digestEnabled, digest_hour: digestHour }),
+        body: JSON.stringify({ display_name: displayName, digest_enabled: digestEnabled, digest_hour: digestHour, digest_domains: digestDomains }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -108,22 +124,62 @@ export default function ProfileForm({
             </button>
           </div>
 
-          {/* Hour picker */}
+          {/* Hour picker + domain filter */}
           {digestEnabled && (
-            <div className="space-y-1.5 pt-1 border-t" style={{ borderColor: "var(--bdr)" }}>
-              <label className="text-xs font-medium pt-3 block" style={{ color: "var(--txt-3)" }}>Send time (your local time)</label>
-              <select
-                value={digestHour}
-                onChange={(e) => setDigestHour(Number(e.target.value))}
-                className="input"
-              >
-                {UTC_HOURS.map((h) => (
-                  <option key={h} value={h}>{utcHourLabel(h)}</option>
-                ))}
-              </select>
-              <p className="text-xs" style={{ color: "var(--txt-4)" }}>
-                The pipeline runs once daily — your digest arrives after that run completes.
-              </p>
+            <div className="space-y-4 pt-1 border-t" style={{ borderColor: "var(--bdr)" }}>
+              <div className="space-y-1.5 pt-3">
+                <label className="text-xs font-medium block" style={{ color: "var(--txt-3)" }}>Send time (your local time)</label>
+                <select
+                  value={digestHour}
+                  onChange={(e) => setDigestHour(Number(e.target.value))}
+                  className="input"
+                >
+                  {UTC_HOURS.map((h) => (
+                    <option key={h} value={h}>{utcHourLabel(h)}</option>
+                  ))}
+                </select>
+                <p className="text-xs" style={{ color: "var(--txt-4)" }}>
+                  The pipeline runs once daily — your digest arrives after that run completes.
+                </p>
+              </div>
+
+              {/* Domain filter */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>Email domains</label>
+                  <button
+                    type="button"
+                    onClick={() => setDigestDomains(null)}
+                    className="text-xs underline"
+                    style={{ color: digestDomains === null ? "var(--acc)" : "var(--txt-4)" }}
+                  >
+                    All domains
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {DOMAINS.map((domain) => {
+                    const active = digestDomains === null || digestDomains.includes(domain);
+                    const colors = getDomainColor(domain);
+                    return (
+                      <button
+                        key={domain}
+                        type="button"
+                        onClick={() => toggleDomain(domain)}
+                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-all ${colors.bg} ${colors.text} ${colors.border}`}
+                        style={{ opacity: active ? 1 : 0.35 }}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${colors.dot}`} />
+                        {domain}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs" style={{ color: "var(--txt-4)" }}>
+                  {digestDomains === null
+                    ? "All domains included in your digest."
+                    : `Only ${digestDomains.length} domain${digestDomains.length !== 1 ? "s" : ""} included.`}
+                </p>
+              </div>
             </div>
           )}
         </div>

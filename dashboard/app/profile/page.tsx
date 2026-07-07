@@ -14,7 +14,7 @@ export default async function ProfilePage() {
   const sb = getSupabaseClient();
   const [{ data: profile }, subscribedIds, allSources] = await Promise.all([
     sb.from("user_profiles")
-      .select("display_name, digest_enabled, digest_hour")
+      .select("display_name, digest_enabled, digest_hour, digest_domains")
       .eq("user_id", user.id)
       .single(),
     getUserSubscriptions(user.id),
@@ -42,6 +42,7 @@ export default async function ProfilePage() {
           initialDisplayName={profile?.display_name ?? ""}
           initialDigestEnabled={profile?.digest_enabled ?? true}
           initialDigestHour={profile?.digest_hour ?? 19}
+          initialDigestDomains={(profile as { digest_domains?: string[] | null })?.digest_domains ?? null}
         />
 
         {/* Right — Digest actions */}

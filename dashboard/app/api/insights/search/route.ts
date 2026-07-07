@@ -1,0 +1,29 @@
+import { NextResponse } from "next/server";
+import { getSupabaseClient } from "@/lib/supabase";
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const q = searchParams.get("q")?.trim() ?? "";
+  if (q.length < 2) return NextResponse.json({ results: [] });
+
+  const sb = getSupabaseClient();
+  const { data, error } = await sb
+    .from("insights")
+    .select("id, date, domain, summary, sources!inner(name), episodes(title)")
+    .textSearch("search_vector", q, { type: "websearch", config: "english" })
+    .order("date", { ascending: false })
+    .limit(20);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const results = (data ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id,
+    date: r.date,
+    domain: r.domain,
+    summary: (r.summary as string)?.slice(0, 160),
+    source_name: (r.sources as { name: string } | null)?.name,
+    episode_title: (r.episodes as { title: string } | null)?.title,
+  }));
+
+  return NextResponse.json({ results });
+}

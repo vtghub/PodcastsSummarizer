@@ -382,7 +382,8 @@ def _send_per_user_digests(storage, date_str: str):
 
             by_domain: dict[str, list] = defaultdict(list)
             for ins in insights:
-                by_domain[ins.domain].append(ins)
+                if user.digest_domains is None or ins.domain in user.digest_domains:
+                    by_domain[ins.domain].append(ins)
 
             ok = email.send_digest(user.email, date_str, dict(by_domain))
             status = "sent" if ok else "failed"

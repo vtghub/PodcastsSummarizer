@@ -12,7 +12,7 @@ export async function GET() {
   const sb = getSupabaseClient();
   const { data, error } = await sb
     .from("user_profiles")
-    .select("display_name, is_admin, digest_enabled, digest_hour")
+    .select("display_name, is_admin, digest_enabled, digest_hour, digest_domains")
     .eq("user_id", userId)
     .single();
 
@@ -35,6 +35,10 @@ export async function PUT(req: Request) {
   }
   if (typeof body.digest_hour === "number" && body.digest_hour >= 0 && body.digest_hour <= 23) {
     update.digest_hour = body.digest_hour;
+  }
+  if ("digest_domains" in body) {
+    const dd = body.digest_domains;
+    update.digest_domains = (Array.isArray(dd) && dd.length > 0) ? dd : null;
   }
 
   if (Object.keys(update).length === 0) {

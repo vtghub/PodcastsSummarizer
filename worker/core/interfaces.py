@@ -51,6 +51,7 @@ class UserDigestProfile:
     email: str
     display_name: str
     digest_hour: int = 19  # UTC hour to send digest
+    digest_domains: list[str] | None = None  # None = all domains
 
 
 @dataclass
