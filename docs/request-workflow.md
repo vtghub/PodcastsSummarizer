@@ -438,15 +438,19 @@ sequenceDiagram
     RAPI-->>CARD: { likes, dislikes, mine }
     CARD->>CARD: reconcile with server counts
 
-    Note over B,CARD: Share
+    Note over B,CARD: Share — deep link encodes date + domain + card anchor
     B->>CARD: click Share button
+    CARD->>CARD: build shareUrl = /dashboard?date=YYYY-MM-DD&domain=...#insight-{id}
     CARD->>CARD: open dropdown (X, LinkedIn, Facebook, WhatsApp, Reddit, Telegram, Gmail, Copy link)
     B->>CARD: select platform
     alt copy link
-        CARD->>CARD: navigator.clipboard.writeText(url) → "Copied!" feedback
+        CARD->>CARD: navigator.clipboard.writeText(shareUrl) → "Copied!" feedback
     else social platform
-        CARD->>B: window.open(platform share URL, _blank)
+        CARD->>B: window.open(platform share URL with shareUrl encoded, _blank)
     end
+    Note over B,CARD: Recipient opens deep link
+    B->>B: DomainInsightView reads ?domain= → selects correct tab
+    B->>B: scrolls to #insight-{id} → card centred in viewport
 
     Note over B,CARD: Comments (requires sign-in to post)
     B->>CARD: click Comments toggle
