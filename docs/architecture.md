@@ -241,7 +241,7 @@ Providers are resolved from environment variables at runtime — no code changes
 
 | Env var | Options |
 |---|---|
-| `STORAGE_PROVIDER` | `sqlite` (dev) · `supabase` (prod) |
+| `STORAGE_PROVIDER` | `sqlite` (dev) · `supabase` (prod) — controls content storage only; Supabase is always required for auth and engagement |
 | `LLM_PROVIDER` | `gemini` · `groq` · `ollama` |
 | `TRANSCRIPTION_PROVIDER` | `local_whisper` |
 | `EMAIL_PROVIDER` | `console` (dev) · `gmail_smtp` (prod) |

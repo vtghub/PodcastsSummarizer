@@ -197,6 +197,8 @@ All providers are swapped via `.env` — no code changes needed:
 
 ### Dashboard (`dashboard/.env.local`)
 
+> **Supabase is required in all environments** — auth and engagement features (views, likes, comments) always use Supabase directly. Point your local `.env.local` at the same Supabase project you use in production.
+
 | Variable | Required | Description |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
