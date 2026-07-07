@@ -104,6 +104,10 @@ def run_pipeline(
         for source, provider, episodes in source_batches
         for ep in episodes
     ]
+    # Pre-load Whisper model in the main thread before workers start so no
+    # episode worker pays the model-load cost while holding _WHISPER_LOCK.
+    if all_work and not dry_run:
+        get_transcription_provider()
 
     def _process(source: PodcastSource, provider, episode) -> tuple[str, str | None]:
         """Returns (stat_key, optional_error_message)."""
@@ -298,8 +302,8 @@ def _process_episode(
         except Exception as e:
             return "errors", f"  {tag} [ERROR] audio download: {e}"
         try:
+            transcriber = get_transcription_provider()  # singleton — no I/O after first call
             with _WHISPER_LOCK:
-                transcriber = get_transcription_provider()
                 result = transcriber.transcribe(audio_path)
             transcript_text = result.text
             transcript_source = "whisper"
