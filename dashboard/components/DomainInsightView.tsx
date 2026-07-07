@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Insight } from "@/lib/db";
 import { getDomainColor, DOMAINS as DOMAIN_ORDER } from "@/lib/domain-colors";
 import InsightCard from "@/components/InsightCard";
@@ -17,6 +17,24 @@ export default function DomainInsightView({ byDomain, isAuthed }: Props) {
   const initialDomain =
     domains.includes(DEFAULT_DOMAIN) ? DEFAULT_DOMAIN : domains[0];
   const [selected, setSelected] = useState(initialDomain);
+
+  // On mount: select domain from ?domain= param, then scroll to #insight-{id}
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const domainParam = params.get("domain");
+    if (domainParam && domains.includes(domainParam)) {
+      setSelected(domainParam);
+    }
+    const hash = window.location.hash;
+    if (hash) {
+      // Wait one tick for the selected domain's cards to render
+      setTimeout(() => {
+        const el = document.querySelector(hash);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const insights = byDomain[selected] ?? [];
   const color = getDomainColor(selected);
