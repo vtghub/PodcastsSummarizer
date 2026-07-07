@@ -286,6 +286,27 @@ npm run dev      # http://localhost:3000
 
 ## Running Tests
 
+### Dashboard (TypeScript — Vitest + React Testing Library)
+
+```bash
+cd dashboard
+npm test            # single run (CI)
+npm run test:watch  # watch mode (development)
+```
+
+64 tests across 8 files covering all layers:
+
+| Layer | Files | What's tested |
+|---|---|---|
+| **lib** | `domain-colors` | DOMAINS order, `getDomainColor` key mapping, fallback |
+| **API routes** | `engagement`, `react`, `comments` | Auth gating, count tallying, reaction toggle, dedup guard, validation, CRUD |
+| **Components** | `DomainInsightView`, `InsightCard` | Domain tab default, `?domain=` deep-link, tab switching, rendering, copy button, engagement state |
+| **Contexts** | `ThemeContext`, `TTSContext` | CSS variable application, localStorage persist/restore, toggle behaviour |
+
+Test infrastructure: `dashboard/vitest.config.ts` (Vitest 2, happy-dom, `@/` alias), `dashboard/vitest.setup.ts` (global mocks for `next/headers`, `next/navigation`, Clipboard API, `speechSynthesis`), and shared helpers in `dashboard/__tests__/helpers/`.
+
+### Worker (Python — pytest)
+
 ```bash
 pytest worker/tests/ -v
 ```
