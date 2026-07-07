@@ -97,7 +97,7 @@ PodcastsSummarizer/
 │   │   ├── NavBar.tsx               # Sticky nav — user dropdown (Profile + Sign out) for authed users
 │   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud; shows episode published date
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client)
-│   │   ├── PodcastManager.tsx       # Catalog — optimistic subscribe toggles; admin add/delete/toggle
+│   │   ├── PodcastManager.tsx       # Catalog — domain tab layout (matches Dashboard order); optimistic subscribe toggles; admin add/delete/toggle/reclassify
 │   │   ├── ProfileForm.tsx          # Display name, digest toggle, UTC hour picker
 │   │   ├── SendDigestButton.tsx     # On-demand digest send — idle/sending/sent/error states
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
@@ -109,6 +109,7 @@ PodcastsSummarizer/
 │   ├── lib/
 │   │   ├── auth.ts                  # React-cached getUser(), getUserId(), isAdmin(), getDisplayName()
 │   │   ├── db.ts                    # Supabase / SQLite queries; unstable_cache for public views
+│   │   ├── domain-colors.ts         # Canonical DOMAINS order + per-domain Tailwind colour tokens (shared by Dashboard and My Podcasts)
 │   │   ├── email.ts                 # nodemailer Gmail SMTP sender — HTML + plain text digest renderer
 │   │   ├── supabase.ts              # Service-role Supabase client (server-only)
 │   │   └── supabase-browser.ts      # Anon-key Supabase client singleton (browser — Realtime)
@@ -247,7 +248,7 @@ npm run dev      # http://localhost:3000
 | **Calendar Date Picker** | Month calendar replaces the date dropdown — available dates marked with an accent dot, selected date shown as filled circle, today highlighted with an outline ring; all available dates prefetched for instant navigation; **mobile**: full-width bottom sheet (fixed, slides up from bottom edge, backdrop overlay, drag handle + × close button, 44px touch targets); **desktop**: right-aligned popover |
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
-| **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management (add, delete, enable/disable, reclassify domain); domain reclassification uses an optimistic inline select — card moves to the new domain tab immediately and reverts on API failure; podcast name search with iTunes-powered dropdown |
+| **My Podcasts** | Catalog grouped by domain tabs (same canonical order as the Dashboard — Technology & AI, Business & Startups, etc.); subscribe/unsubscribe toggles; admin controls for catalog management (add, delete, enable/disable, reclassify domain); domain reclassification uses an optimistic inline select — card moves to the new domain tab immediately and reverts on API failure; podcast name search with iTunes-powered dropdown |
 | **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); clicking "Process & Send Digest" on an unprocessed episode queues the pipeline **and automatically sends the digest email when processing completes** — no second click needed; button shows "Processing — will send when ready…" during the wait; queued episodes show ⏳ in the dropdown; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime (no page refresh); if pipeline fails, the `episode_queue` table receives a `failed` status row — Realtime pushes it to the browser instantly, resetting the episode to ○ with an error message (no polling) |
 | **Platform Links** | Each insight card shows a "Listen on" icon row — Spotify (green), Apple Podcasts (purple), YouTube (red), Website — linked to the correct platform; URLs auto-discovered by the pipeline: Apple via iTunes Search API (public, no key), Spotify + YouTube via Podcast 2.0 namespace tags in the RSS feed, Website from RSS `<channel><link>`; no API key required; when a new podcast is added to the catalog, a fire-and-forget `workflow_dispatch` to `backfill_platform_links.yml` runs automatically so icons appear without manual backfill |
