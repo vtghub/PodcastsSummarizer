@@ -53,15 +53,16 @@ export default function ProfileForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Display name */}
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Account card */}
       <div
-        className="rounded-xl border p-5 space-y-4"
-        style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)" }}
+        className="rounded-2xl border overflow-hidden"
+        style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)", boxShadow: "var(--shadow-card)" }}
       >
-        <h2 className="text-sm font-semibold" style={{ color: "var(--txt-2)" }}>Account</h2>
-
-        <div className="space-y-1.5">
+        <div className="px-5 py-4 border-b" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
+          <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--txt-4)" }}>Account</h2>
+        </div>
+        <div className="p-5 space-y-1.5">
           <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>Display name</label>
           <input
             type="text"
@@ -70,82 +71,85 @@ export default function ProfileForm({
             placeholder="Your name"
             className="input"
           />
-          <p className="text-xs" style={{ color: "var(--txt-4)" }}>
+          <p className="text-xs pt-0.5" style={{ color: "var(--txt-4)" }}>
             Shown in the navbar when you&apos;re signed in.
           </p>
         </div>
       </div>
 
-      {/* Digest preferences */}
+      {/* Daily Digest card */}
       <div
-        className="rounded-xl border p-5 space-y-4"
-        style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)" }}
+        className="rounded-2xl border overflow-hidden"
+        style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)", boxShadow: "var(--shadow-card)" }}
       >
-        <h2 className="text-sm font-semibold" style={{ color: "var(--txt-2)" }}>Daily Digest</h2>
-
-        {/* Toggle */}
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium" style={{ color: "var(--txt-2)" }}>Email digest</p>
-            <p className="text-xs mt-0.5" style={{ color: "var(--txt-4)" }}>
-              Receive a daily summary of your subscribed podcasts.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setDigestEnabled((v) => !v)}
-            className="relative flex-shrink-0 w-11 h-6 rounded-full transition-colors"
-            style={{ background: digestEnabled ? "var(--acc)" : "var(--bdr-hov)" }}
-            aria-pressed={digestEnabled}
-          >
-            <span
-              className="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform"
-              style={{ left: digestEnabled ? "calc(100% - 1.25rem)" : "0.25rem" }}
-            />
-          </button>
+        <div className="px-5 py-4 border-b" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
+          <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--txt-4)" }}>Daily Digest</h2>
         </div>
-
-        {/* Hour picker */}
-        {digestEnabled && (
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>Send time (your local time)</label>
-            <select
-              value={digestHour}
-              onChange={(e) => setDigestHour(Number(e.target.value))}
-              className="input"
+        <div className="p-5 space-y-4">
+          {/* Toggle row */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium" style={{ color: "var(--txt-1)" }}>Email digest</p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--txt-4)" }}>
+                Receive a daily summary of your subscribed podcasts.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDigestEnabled((v) => !v)}
+              className="relative flex-shrink-0 w-11 h-6 rounded-full transition-colors"
+              style={{ background: digestEnabled ? "var(--acc)" : "var(--bdr-hov)" }}
+              aria-pressed={digestEnabled}
             >
-              {UTC_HOURS.map((h) => (
-                <option key={h} value={h}>{utcHourLabel(h)}</option>
-              ))}
-            </select>
-            <p className="text-xs" style={{ color: "var(--txt-4)" }}>
-              The pipeline runs once daily — your digest arrives after that run completes.
-            </p>
+              <span
+                className="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                style={{ left: digestEnabled ? "calc(100% - 1.25rem)" : "0.25rem" }}
+              />
+            </button>
           </div>
-        )}
+
+          {/* Hour picker */}
+          {digestEnabled && (
+            <div className="space-y-1.5 pt-1 border-t" style={{ borderColor: "var(--bdr)" }}>
+              <label className="text-xs font-medium pt-3 block" style={{ color: "var(--txt-3)" }}>Send time (your local time)</label>
+              <select
+                value={digestHour}
+                onChange={(e) => setDigestHour(Number(e.target.value))}
+                className="input"
+              >
+                {UTC_HOURS.map((h) => (
+                  <option key={h} value={h}>{utcHourLabel(h)}</option>
+                ))}
+              </select>
+              <p className="text-xs" style={{ color: "var(--txt-4)" }}>
+                The pipeline runs once daily — your digest arrives after that run completes.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {error && (
         <p
-          className="text-sm px-3 py-2 rounded-lg"
+          className="text-sm px-4 py-3 rounded-xl"
           style={{ color: "#F87171", background: "rgba(127,29,29,0.25)", border: "1px solid rgba(185,28,28,0.3)" }}
         >
           {error}
         </p>
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 pt-1">
         <button
           type="submit"
           disabled={saving}
-          className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-50 text-white transition-opacity"
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 text-white transition-opacity"
           style={{ background: "var(--acc)" }}
         >
           {saving && <Loader2 className="w-4 h-4 animate-spin" />}
           {saving ? "Saving…" : "Save changes"}
         </button>
         {saved && (
-          <span className="flex items-center gap-1.5 text-sm" style={{ color: "#34D399" }}>
+          <span className="flex items-center gap-1.5 text-sm font-medium" style={{ color: "#34D399" }}>
             <Check className="w-4 h-4" /> Saved
           </span>
         )}
