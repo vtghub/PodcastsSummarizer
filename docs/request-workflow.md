@@ -10,6 +10,7 @@ sequenceDiagram
     participant W as Whisper STT
     participant LLM as Gemini/Groq
     participant DB as Supabase DB
+    participant NEXT as Next.js /api/revalidate
     participant MAIL as Gmail SMTP
 
     GH->>PY: trigger (cron or workflow_dispatch)
@@ -44,13 +45,19 @@ sequenceDiagram
         PY->>DB: mark_episode_done(episode_id)
     end
 
+    Note over PY,MAIL: Cache revalidation (before email fan-out)
+    PY->>PY: _revalidate_dashboard_cache(date)
+    PY->>NEXT: POST /api/revalidate (x-revalidate-secret header)
+    NEXT-->>PY: 200 revalidated=true (guests see fresh insights immediately)
+
     Note over PY,MAIL: Email fan-out (send_email=True)
     PY->>DB: get_users_with_digest_enabled()
-    DB-->>PY: [user1, user2, ...]
+    DB-->>PY: [user1{digest_domains=[...]}, user2{digest_domains=null}, ...]
     loop per user
         PY->>DB: get_user_subscribed_source_ids(user_id)
         PY->>DB: get_insights_by_date_and_sources(date, source_ids)
-        alt has insights for subscriptions
+        PY->>PY: filter by user.digest_domains (null = all domains)
+        alt has insights after domain filter
             PY->>MAIL: send_digest(user.email, date, insights_by_domain)
         end
     end
@@ -189,12 +196,13 @@ sequenceDiagram
     participant FORM as ProfileForm.tsx
     participant API as /api/profile
 
-    B->>FORM: edit display_name / digest_enabled / digest_hour
-    FORM->>API: PUT {display_name, digest_enabled, digest_hour}
+    B->>FORM: edit display_name / digest_enabled / digest_hour / digest_domains chips
+    FORM->>API: PUT {display_name, digest_enabled, digest_hour, digest_domains}
+    Note right of API: digest_domains: string[] | null\n(null = all domains; [] coerced → null)
     API->>API: validate: user authed, digest_hour 0-23
     API->>DB: UPDATE user_profiles SET ... WHERE user_id=?
     DB-->>API: ok
-    API-->>FORM: 200 {display_name, digest_enabled, digest_hour}
+    API-->>FORM: 200 {display_name, digest_enabled, digest_hour, digest_domains}
     FORM->>FORM: show green checkmark, router.refresh()
 ```
 
@@ -475,4 +483,37 @@ sequenceDiagram
     CARD->>DB: DELETE /api/comments/[id]
     DB-->>CARD: 200 OK
     CARD->>CARD: remove comment from list
+```
+
+---
+
+## 15. Full-Text Search (Cmd+K / Ctrl+K overlay)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant NAV as NavBar.tsx
+    participant API as /api/insights/search
+    participant DB as Supabase (search_vector GIN index)
+
+    B->>NAV: press Cmd+K (or click 🔍)
+    NAV->>NAV: openSearch() → searchOpen=true, focus input
+
+    B->>NAV: type query (≥2 chars, 300ms debounce)
+    NAV->>NAV: runSearch(query)
+    NAV->>API: GET /api/insights/search?q=<query>
+    API->>API: q.length < 2 → return {results:[]}
+    API->>DB: .textSearch("search_vector", q, {type:"websearch", config:"english"})
+    Note right of DB: GIN index on tsvector\n(summary + key_points + key_quotes\n+ action_items + tags)
+    DB-->>API: top 20 rows (id, date, domain, summary, source_name, episode_title)
+    API-->>NAV: {results: [...summary truncated to 160 chars]}
+    NAV->>NAV: render results list with domain color badges
+
+    alt user clicks result
+        NAV->>NAV: handleResultClick() → closeSearch()
+        NAV->>B: router.push("/dashboard?date=YYYY-MM-DD&domain=...#insight-{id}")
+        B->>B: navigate to date, domain tab auto-selected, card scrolled into view
+    else user presses Escape
+        NAV->>NAV: closeSearch() → searchOpen=false, query cleared
+    end
 ```

@@ -27,7 +27,7 @@ graph TB
         REACTIONS[("insight_reactions\ninsight_id, user_id, type")]
         COMMENTS[("insight_comments\ninsight_id, user_id, body")]
         CREACTIONS[("comment_reactions\ncomment_id, user_id, type")]
-        PROFILES[("user_profiles\nis_admin, digest_enabled\ndigest_hour")]
+        PROFILES[("user_profiles\nis_admin, digest_enabled\ndigest_hour, digest_domains[]")]
         SUBS[("user_subscriptions\nuser_id → source_id")]
         AUTHUSERS[("auth.users\nSupabase Auth")]
     end
@@ -63,6 +63,8 @@ graph TB
         ARDIGSTAT["/api/digest/status\npoll for insights"]
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
         ARENG["/api/insights/[id]/engagement\n/react · /comments\n/api/comments/[id]\n/react · DELETE"]
+        ARFTS["/api/insights/search\nGET ?q= — websearch FTS"]
+        ARREV["/api/revalidate\nPOST — bust public insight cache"]
     end
 
     CRON --> SRC
@@ -118,6 +120,9 @@ graph TB
     ARENG --> REACTIONS
     ARENG --> COMMENTS
     ARENG --> CREACTIONS
+    ARFTS --> INSIGHTS
+    LLM -.->|POST after insights saved| ARREV
+    ARREV -.->|revalidateTag("insights")| CACHE
 
     LLM --> EPQUEUE
     INSIGHTS -.->|Realtime broadcast| RT
@@ -142,6 +147,7 @@ erDiagram
         bool is_admin
         bool digest_enabled
         int  digest_hour
+        text[] digest_domains
     }
     user_subscriptions {
         uuid user_id PK
@@ -183,6 +189,7 @@ erDiagram
         jsonb key_quotes
         jsonb action_items
         jsonb tags
+        tsvector search_vector
     }
 
     episode_queue {
