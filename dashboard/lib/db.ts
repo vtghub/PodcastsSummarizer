@@ -237,33 +237,28 @@ async function sbSetSourceDomain(id: string, domain: string): Promise<void> {
   if (error) throw error;
 }
 
-async function sbGetEpisodesWithInsights(userId: string, sourceId: string): Promise<{ id: string; title: string; published_at: string }[]> {
+async function sbGetEpisodesWithInsights(_userId: string, sourceId: string): Promise<{ id: string; title: string; published_at: string }[]> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
 
-  // Get distinct episode_ids that have insights for this source
-  const { data: insightRows, error: iErr } = await sb
+  // Single JOIN: insights → episodes (replaces the previous two-query approach)
+  const { data, error } = await sb
     .from("insights")
-    .select("episode_id")
+    .select("episode_id, episodes!inner(id, title, published_at)")
     .eq("source_id", sourceId);
-  if (iErr) throw iErr;
+  if (error) throw error;
 
-  const episodeIds = [...new Set((insightRows ?? []).map((r: { episode_id: string }) => r.episode_id))];
-  if (episodeIds.length === 0) return [];
-
-  // Fetch episode details
-  const { data: epRows, error: eErr } = await sb
-    .from("episodes")
-    .select("id, title, published_at")
-    .in("id", episodeIds)
-    .order("published_at", { ascending: false });
-  if (eErr) throw eErr;
-
-  return (epRows ?? []).map((r: { id: string; title: string; published_at: string }) => ({
-    id: r.id,
-    title: r.title ?? "Untitled",
-    published_at: r.published_at ?? "",
-  }));
+  // Deduplicate — multiple insights may share the same episode
+  const seen = new Set<string>();
+  const episodes: { id: string; title: string; published_at: string }[] = [];
+  for (const row of (data ?? [])) {
+    const ep = (row as { episode_id: string; episodes: { id: string; title: string; published_at: string } }).episodes;
+    if (ep && !seen.has(ep.id)) {
+      seen.add(ep.id);
+      episodes.push({ id: ep.id, title: ep.title ?? "Untitled", published_at: ep.published_at ?? "" });
+    }
+  }
+  return episodes.sort((a, b) => b.published_at.localeCompare(a.published_at));
 }
 
 async function sbGetInsightsByEpisode(episodeId: string): Promise<Insight[]> {
