@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2, Send, CheckCircle, AlertCircle, Zap, Clock } from "lucide-react";
 import type { Source, EpisodeItem } from "@/lib/db";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -50,13 +50,42 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   const [message, setMessage]       = useState("");
   const [queuedIds, setQueuedIds]   = useState<Set<string>>(new Set());
 
+  // Tracks which episode ID should be auto-sent once processing completes.
+  // Using a ref avoids stale-closure issues inside the Realtime useEffect.
+  const pendingSendRef = useRef<string | null>(null);
+
   // Load queued IDs from localStorage on mount
   useEffect(() => { setQueuedIds(readQueuedIds()); }, []);
 
+  // Core send logic — shared by manual send and auto-send after processing
+  const sendDigestForEpisode = useCallback(async (epId: string) => {
+    setState("sending");
+    setMessage("");
+    try {
+      const res = await fetch("/api/digest/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ episodeId: epId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setState("error");
+        setMessage(data.error ?? "Failed to send digest");
+      } else {
+        setState("sent");
+        setMessage(`Digest sent — ${data.count} insight${data.count !== 1 ? "s" : ""} from ${data.date}`);
+        setTimeout(() => { setState("idle"); setMessage(""); }, 8000);
+      }
+    } catch {
+      setState("error");
+      setMessage("Network error — please try again");
+    }
+  }, []);
+
   // Subscribe to Supabase Realtime for queued episodes.
   // Watches two tables:
-  //   - insights INSERT  → pipeline succeeded, mark episode processed (✓)
-  //   - episode_queue INSERT/UPDATE → pipeline wrote done/failed status
+  //   - insights INSERT  → pipeline succeeded, mark episode processed + auto-send if pending
+  //   - episode_queue INSERT/UPDATE → done or failed status
   useEffect(() => {
     const visibleQueued = episodes
       .filter((ep) => queuedIds.has(ep.id) && !ep.processed)
@@ -69,6 +98,12 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
       );
       setQueuedIds((prev) => { const next = new Set(prev); next.delete(epId); return next; });
       removeQueuedId(epId);
+
+      // Auto-send if user originally clicked "Process & Send Digest" for this episode
+      if (pendingSendRef.current === epId) {
+        pendingSendRef.current = null;
+        sendDigestForEpisode(epId);
+      }
     }
 
     function markFailed(epId: string, errMsg?: string) {
@@ -77,6 +112,7 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
       );
       setQueuedIds((prev) => { const next = new Set(prev); next.delete(epId); return next; });
       removeQueuedId(epId);
+      pendingSendRef.current = null;
       setMessage(errMsg ?? "Processing failed — you can try again.");
       setState("error");
     }
@@ -108,7 +144,7 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [queuedIds, episodes]);
+  }, [queuedIds, episodes, sendDigestForEpisode]);
 
   const selectedEpisode = episodes.find((e) => e.id === episodeId);
 
@@ -141,27 +177,7 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
 
   async function handleSend() {
     if (!selectedEpisode) return;
-    setState("sending");
-    setMessage("");
-    try {
-      const res = await fetch("/api/digest/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ episodeId: selectedEpisode.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setState("error");
-        setMessage(data.error ?? "Failed to send digest");
-      } else {
-        setState("sent");
-        setMessage(`Digest sent — ${data.count} insight${data.count !== 1 ? "s" : ""} from ${data.date}`);
-        setTimeout(() => { setState("idle"); setMessage(""); }, 8000);
-      }
-    } catch {
-      setState("error");
-      setMessage("Network error — please try again");
-    }
+    await sendDigestForEpisode(selectedEpisode.id);
   }
 
   async function handleProcess() {
@@ -185,13 +201,14 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
         setMessage(data.error ?? "Failed to queue processing");
         return;
       }
-      // Persist queued state so re-selecting this episode shows it as queued
+      // Mark this episode for auto-send when processing completes
+      pendingSendRef.current = selectedEpisode.id;
+
       persistQueuedId(selectedEpisode.id);
       setQueuedIds(readQueuedIds());
 
       setState("queued");
       setMessage("");
-      setTimeout(() => { setState("idle"); setMessage(""); }, 12000);
     } catch {
       setState("error");
       setMessage("Network error — please try again");
@@ -206,6 +223,9 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
     const date = ep.publishedAt ? ` (${formatDate(ep.publishedAt)})` : "";
     return `${prefix}${ep.title}${date}`;
   }
+
+  // Is the currently-selected episode the one pending auto-send?
+  const isAutoSendPending = selectedEpisode && pendingSendRef.current === selectedEpisode.id;
 
   return (
     <div className="space-y-3">
@@ -285,8 +305,8 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-60 text-white"
               style={{ background: "#6b7280" }}
             >
-              <Clock className="w-4 h-4" />
-              Processing Queued
+              <Clock className="w-4 h-4 animate-pulse" />
+              {isAutoSendPending ? "Processing — will send when ready…" : "Processing Queued"}
             </button>
           )}
 
@@ -306,14 +326,12 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
             </button>
           )}
 
-          {/* Queued confirmation message with dashboard link */}
+          {/* Status / help messages */}
           {(state === "queued" || selectedStatus === "queued") && state !== "error" && (
             <p className="text-xs" style={{ color: "var(--txt-4)" }}>
-              Processing in background — you&apos;ll receive an email when ready (~3–5 min).{" "}
-              <a href="/dashboard" style={{ color: "var(--acc)", textDecoration: "underline" }}>
-                View Dashboard
-              </a>{" "}
-              after processing to see the new insights.
+              {isAutoSendPending
+                ? "Processing in background (~3–5 min) — digest will be emailed to you automatically when done."
+                : "Processing in background — select this episode again and click \"Send Episode Digest\" when the ⏳ turns to ✓."}
             </p>
           )}
 
