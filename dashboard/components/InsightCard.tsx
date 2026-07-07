@@ -186,7 +186,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   }, [insight.id, isAuthed, myReaction, reacting]);
 
   const shareUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/dashboard?date=${insight.date}`
+    ? `${window.location.origin}/dashboard?date=${insight.date}&domain=${encodeURIComponent(insight.domain)}#insight-${insight.id}`
     : "";
   const shareText = `${insight.episode_title ?? insight.source_name ?? "Podcast Insight"} — ${insight.summary?.slice(0, 100)}…`;
 
@@ -261,6 +261,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
 
   return (
     <article
+      id={`insight-${insight.id}`}
       className="card-lift rounded-2xl overflow-hidden border flex flex-col"
       style={{
         background: "var(--bg-surface)",
