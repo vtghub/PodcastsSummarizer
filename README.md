@@ -69,7 +69,8 @@ PodcastsSummarizer/
 │       ├── 001_initial.sql          # Core tables: sources, episodes, transcripts, insights
 │       ├── 002_multi_user.sql       # user_profiles, user_subscriptions, RLS policies
 │       ├── 003_platform_links.sql   # platform_links JSONB column on sources
-│       └── 004_episode_queue.sql    # episode_queue table for async pipeline status signalling
+│       ├── 004_episode_queue.sql    # episode_queue table for async pipeline status signalling
+│       └── 005_engagement.sql       # insight_views, insight_reactions, insight_comments, comment_reactions
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
@@ -92,7 +93,11 @@ PodcastsSummarizer/
 │   │       ├── digest/process/      # POST — trigger workflow_dispatch for unprocessed episode
 │   │       ├── digest/status/       # GET — poll DB for insights on a specific episode
 │   │       ├── podcasts/search/     # GET — proxy iTunes Search API for podcast name lookup
-│   │       └── profile/             # GET/PUT user profile
+│   │       ├── profile/             # GET/PUT user profile
+│   │       ├── insights/[id]/view/  # GET count · POST record view (deduped per user)
+│   │       ├── insights/[id]/react/ # GET counts+mine · POST toggle like/dislike
+│   │       ├── insights/[id]/comments/ # GET list · POST add comment
+│   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
 │   │   ├── NavBar.tsx               # Sticky nav — user dropdown (Profile + Sign out) for authed users
 │   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud; shows episode published date
@@ -251,6 +256,7 @@ npm run dev      # http://localhost:3000
 | **My Podcasts** | Catalog grouped by domain tabs (same canonical order as the Dashboard — Technology & AI, Business & Startups, etc.); subscribe/unsubscribe toggles; admin controls for catalog management (add, delete, enable/disable, reclassify domain); domain reclassification uses an optimistic inline select — card moves to the new domain tab immediately and reverts on API failure; podcast name search with iTunes-powered dropdown |
 | **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour; "Send Digest Now"; Episode Digest picker |
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); clicking "Process & Send Digest" on an unprocessed episode queues the pipeline **and automatically sends the digest email when processing completes** — no second click needed; button shows "Processing — will send when ready…" during the wait; queued episodes show ⏳ in the dropdown; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime (no page refresh); if pipeline fails, the `episode_queue` table receives a `failed` status row — Realtime pushes it to the browser instantly, resetting the episode to ○ with an error message (no polling) |
+| **Engagement** | Per-card: view count (auto-tracked, deduped per signed-in user), like/dislike with optimistic UI and toggle-off, share dropdown (Twitter/X, LinkedIn, Facebook, WhatsApp, Reddit, Telegram, Gmail, Copy link), collapsible comments panel with per-comment like/dislike and delete-own-comment; reactions and comments require sign-in; views tracked for all visitors |
 | **Platform Links** | Each insight card shows a "Listen on" icon row — Spotify (green), Apple Podcasts (purple), YouTube (red), Website — linked to the correct platform; URLs auto-discovered by the pipeline: Apple via iTunes Search API (public, no key), Spotify + YouTube via Podcast 2.0 namespace tags in the RSS feed, Website from RSS `<channel><link>`; no API key required; when a new podcast is added to the catalog, a fire-and-forget `workflow_dispatch` to `backfill_platform_links.yml` runs automatically so icons appear without manual backfill |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
