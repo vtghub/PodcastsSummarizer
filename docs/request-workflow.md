@@ -398,3 +398,78 @@ sequenceDiagram
     end
     Note over PM: On any API error, card reverts to original domain
 ```
+
+---
+
+## 14. Insight Card Engagement — Views, Reactions, Comments, Share
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant CARD as InsightCard.tsx
+    participant VAPI as /api/insights/[id]/view
+    participant RAPI as /api/insights/[id]/react
+    participant CAPI as /api/insights/[id]/comments
+    participant CRAPI as /api/comments/[id]/react
+    participant DB as Supabase
+
+    Note over CARD,VAPI: On mount — record view + fetch reaction counts
+    CARD->>VAPI: POST (view) — user_id from cookie if signed in
+    VAPI->>DB: UPSERT insight_views (deduped per user_id)
+    VAPI->>DB: COUNT insight_views WHERE insight_id
+    VAPI-->>CARD: { views: N }
+    CARD->>RAPI: GET reaction counts + my reaction
+    RAPI->>DB: SELECT insight_reactions WHERE insight_id
+    RAPI-->>CARD: { likes, dislikes, mine }
+    CARD->>CARD: render engagement bar (eye, thumbs, comment, share)
+
+    Note over B,CARD: Like / Dislike (requires sign-in)
+    B->>CARD: click Like
+    CARD->>CARD: optimistic update (increment like, set active)
+    CARD->>RAPI: POST { type: "like" }
+    RAPI->>DB: check existing reaction for user
+    alt no existing reaction
+        RAPI->>DB: INSERT insight_reactions (like)
+    else same type — toggle off
+        RAPI->>DB: DELETE insight_reactions
+    else different type — switch
+        RAPI->>DB: UPDATE insight_reactions SET type
+    end
+    RAPI->>DB: SELECT counts
+    RAPI-->>CARD: { likes, dislikes, mine }
+    CARD->>CARD: reconcile with server counts
+
+    Note over B,CARD: Share
+    B->>CARD: click Share button
+    CARD->>CARD: open dropdown (X, LinkedIn, Facebook, WhatsApp, Reddit, Telegram, Gmail, Copy link)
+    B->>CARD: select platform
+    alt copy link
+        CARD->>CARD: navigator.clipboard.writeText(url) → "Copied!" feedback
+    else social platform
+        CARD->>B: window.open(platform share URL, _blank)
+    end
+
+    Note over B,CARD: Comments (requires sign-in to post)
+    B->>CARD: click Comments toggle
+    CARD->>CAPI: GET comments
+    CAPI->>DB: SELECT insight_comments WHERE insight_id + display_names + reaction counts
+    CAPI-->>CARD: { comments: [...] }
+    CARD->>CARD: render comments list + input box
+
+    B->>CARD: type and submit comment
+    CARD->>CAPI: POST { body }
+    CAPI->>DB: INSERT insight_comments
+    CAPI-->>CARD: { comment: { id, body, display_name, likes:0, dislikes:0 } }
+    CARD->>CARD: append comment optimistically
+
+    B->>CARD: like/dislike a comment
+    CARD->>CRAPI: POST { type: "like" | "dislike" }
+    CRAPI->>DB: upsert/delete comment_reactions
+    CRAPI-->>CARD: { likes, dislikes, mine }
+    CARD->>CARD: update comment row counts
+
+    B->>CARD: delete own comment → confirm
+    CARD->>DB: DELETE /api/comments/[id]
+    DB-->>CARD: 200 OK
+    CARD->>CARD: remove comment from list
+```
