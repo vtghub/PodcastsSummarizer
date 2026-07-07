@@ -23,6 +23,10 @@ graph TB
         TRANSCRIPTS[("transcripts")]
         INSIGHTS[("insights\ndate, domain, source_id")]
         EPQUEUE[("episode_queue\nepisode_id, status\ndone·failed·pending")]
+        VIEWS[("insight_views\ninsight_id, user_id")]
+        REACTIONS[("insight_reactions\ninsight_id, user_id, type")]
+        COMMENTS[("insight_comments\ninsight_id, user_id, body")]
+        CREACTIONS[("comment_reactions\ncomment_id, user_id, type")]
         PROFILES[("user_profiles\nis_admin, digest_enabled\ndigest_hour")]
         SUBS[("user_subscriptions\nuser_id → source_id")]
         AUTHUSERS[("auth.users\nSupabase Auth")]
@@ -58,6 +62,7 @@ graph TB
         ARDIGPROC["/api/digest/process\ntriggers workflow_dispatch"]
         ARDIGSTAT["/api/digest/status\npoll for insights"]
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
+        ARENG["/api/insights/[id]/view\n/react · /comments\n/api/comments/[id]\n/react · DELETE"]
     end
 
     CRON --> SRC
@@ -109,6 +114,10 @@ graph TB
     ARDIGPROC -.->|workflow_dispatch| CI
     ARDIGSTAT --> INSIGHTS
     ARSEARCH -.->|iTunes API| SOURCES
+    ARENG --> VIEWS
+    ARENG --> REACTIONS
+    ARENG --> COMMENTS
+    ARENG --> CREACTIONS
 
     LLM --> EPQUEUE
     INSIGHTS -.->|Realtime broadcast| RT
@@ -183,6 +192,33 @@ erDiagram
         text error_msg
         timestamptz updated_at
     }
+    insight_views {
+        bigint id PK
+        text insight_id FK
+        uuid user_id FK
+        timestamptz viewed_at
+    }
+    insight_reactions {
+        bigint id PK
+        text insight_id FK
+        uuid user_id FK
+        text type
+        timestamptz created_at
+    }
+    insight_comments {
+        bigint id PK
+        text insight_id FK
+        uuid user_id FK
+        text body
+        timestamptz created_at
+    }
+    comment_reactions {
+        bigint id PK
+        bigint comment_id FK
+        uuid user_id FK
+        text type
+        timestamptz created_at
+    }
 
     auth_users ||--|| user_profiles : "has"
     auth_users ||--o{ user_subscriptions : "subscribes"
@@ -191,6 +227,10 @@ erDiagram
     episodes ||--o| transcripts : "has"
     episodes ||--o| insights : "has"
     episodes ||--o| episode_queue : "queued in"
+    insights ||--o{ insight_views : "tracked by"
+    insights ||--o{ insight_reactions : "reacted to"
+    insights ||--o{ insight_comments : "commented on"
+    insight_comments ||--o{ comment_reactions : "reacted to"
 ```
 
 ---
