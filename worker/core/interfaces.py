@@ -23,6 +23,9 @@ class PodcastSource:
     enabled: bool = True
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     platform_links: dict = field(default_factory=dict)  # {spotify, apple, youtube, website}
+    backoff_until: datetime | None = None               # skip fetch until this time (429/503)
+    fetch_error_count: int = 0                          # consecutive fetch failures
+    platform_links_attempted_at: datetime | None = None # last platform-link discovery attempt
 
 
 @dataclass
@@ -172,6 +175,22 @@ class StorageProvider(ABC):
     def update_episode_published_at(self, episode_id: str, published_at: str) -> int:
         """Set published_at on an episode (only if currently null). Returns rows updated. Default: no-op."""
         return 0
+
+    def get_episodes_for_retry(self, max_retries: int = 3) -> list[tuple["Episode", "PodcastSource"]]:
+        """Return (Episode, PodcastSource) pairs whose pipeline run failed and are due for retry."""
+        return []
+
+    def increment_episode_retry(self, episode_id: str, source_id: str, retry_after: "datetime", error_msg: str | None = None) -> None:
+        """Increment retry_count, set retry_after, keep status=failed. Default: no-op (local dev)."""
+
+    def update_source_backoff(self, source_id: str, backoff_until: "datetime", error_count: int) -> None:
+        """Set backoff_until and fetch_error_count after a 429/503. Default: no-op."""
+
+    def reset_source_backoff(self, source_id: str) -> None:
+        """Clear backoff_until and reset fetch_error_count after a successful fetch. Default: no-op."""
+
+    def mark_platform_links_attempted(self, source_id: str) -> None:
+        """Set platform_links_attempted_at=NOW() after a discovery attempt. Default: no-op."""
 
     def get_insights_by_date_and_sources(self, date: str, source_ids: list[str]) -> list[Insight]:
         """Return insights for a specific date filtered to the given source IDs."""

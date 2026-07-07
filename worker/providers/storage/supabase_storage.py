@@ -83,7 +83,12 @@ class SupabaseStorageProvider(StorageProvider):
         with self._conn() as conn:
             with conn.cursor() as cur:
                 if enabled_only:
-                    cur.execute("SELECT * FROM sources WHERE enabled = TRUE AND deleted = FALSE ORDER BY domain, name")
+                    cur.execute("""
+                        SELECT * FROM sources
+                        WHERE enabled = TRUE AND deleted = FALSE
+                          AND (backoff_until IS NULL OR backoff_until <= NOW())
+                        ORDER BY domain, name
+                    """)
                 else:
                     cur.execute("SELECT * FROM sources WHERE deleted = FALSE ORDER BY domain, name")
                 return [self._row_to_source(r) for r in cur.fetchall()]
@@ -230,6 +235,80 @@ class SupabaseStorageProvider(StorageProvider):
                 return [r["date"] for r in cur.fetchall()]
 
     # ------------------------------------------------------------------
+    # Pipeline resilience helpers
+    # ------------------------------------------------------------------
+    def get_episodes_for_retry(self, max_retries: int = 3) -> list[tuple]:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT e.*, s.*,
+                           eq.retry_count, eq.error_msg AS eq_error_msg
+                    FROM episode_queue eq
+                    JOIN episodes e ON e.id = eq.episode_id
+                    JOIN sources  s ON s.id = eq.source_id
+                    WHERE eq.status = 'failed'
+                      AND eq.retry_count < %s
+                      AND (eq.retry_after IS NULL OR eq.retry_after <= NOW())
+                      AND e.status != 'done'
+                """, (max_retries,))
+                rows = cur.fetchall()
+        result = []
+        for r in rows:
+            from worker.core.interfaces import Episode as _Ep
+            ep = _Ep(
+                id=r["episode_id"], source_id=r["source_id"],
+                title=r["title"] or "(Untitled)", url=r["url"] or "",
+                published_at=r["published_at"] or datetime.now(timezone.utc),
+                duration_seconds=r.get("duration_seconds") or 0,
+                description=r.get("description") or "",
+            )
+            src = self._row_to_source(r)
+            result.append((ep, src))
+        return result
+
+    def increment_episode_retry(
+        self, episode_id: str, source_id: str,
+        retry_after: datetime, error_msg: str | None = None,
+    ) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO episode_queue
+                      (episode_id, source_id, status, retry_count, retry_after, error_msg, updated_at)
+                    VALUES (%s, %s, 'failed', 1, %s, %s, NOW())
+                    ON CONFLICT (episode_id) DO UPDATE
+                      SET status      = 'failed',
+                          retry_count = episode_queue.retry_count + 1,
+                          retry_after = EXCLUDED.retry_after,
+                          error_msg   = EXCLUDED.error_msg,
+                          updated_at  = NOW()
+                """, (episode_id, source_id, retry_after, error_msg))
+
+    def update_source_backoff(self, source_id: str, backoff_until: datetime, error_count: int) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE sources SET backoff_until=%s, fetch_error_count=%s WHERE id=%s",
+                    (backoff_until, error_count, source_id),
+                )
+
+    def reset_source_backoff(self, source_id: str) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE sources SET backoff_until=NULL, fetch_error_count=0 WHERE id=%s",
+                    (source_id,),
+                )
+
+    def mark_platform_links_attempted(self, source_id: str) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE sources SET platform_links_attempted_at=NOW() WHERE id=%s",
+                    (source_id,),
+                )
+
+    # ------------------------------------------------------------------
     # Per-user digest helpers
     # ------------------------------------------------------------------
     def get_users_with_digest_enabled(self) -> list[UserDigestProfile]:
@@ -286,6 +365,11 @@ class SupabaseStorageProvider(StorageProvider):
                 raw_links = json.loads(raw_links)
             except Exception:
                 raw_links = {}
+        def _maybe_dt(val) -> datetime | None:
+            if val is None:
+                return None
+            return val if isinstance(val, datetime) else datetime.fromisoformat(str(val))
+
         return PodcastSource(
             id=row["id"], name=row["name"], url=row["url"],
             source_type=row["source_type"], domain=row["domain"],
@@ -293,6 +377,9 @@ class SupabaseStorageProvider(StorageProvider):
             created_at=row["created_at"] if isinstance(row["created_at"], datetime)
                        else datetime.fromisoformat(str(row["created_at"])),
             platform_links=raw_links,
+            backoff_until=_maybe_dt(row.get("backoff_until")),
+            fetch_error_count=int(row.get("fetch_error_count") or 0),
+            platform_links_attempted_at=_maybe_dt(row.get("platform_links_attempted_at")),
         )
 
     @staticmethod
