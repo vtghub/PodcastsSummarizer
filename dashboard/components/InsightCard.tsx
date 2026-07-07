@@ -5,7 +5,7 @@ import type { Insight, PlatformLinks } from "@/lib/db";
 import {
   ChevronDown, ChevronUp, Quote, Zap, Tag, Volume2, VolumeX, Globe,
   CalendarDays, ThumbsUp, ThumbsDown, Share2, Eye, MessageCircle,
-  Link2, Check, Send, Trash2, X,
+  Link2, Check, Send, Trash2, X, Copy,
 } from "lucide-react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useSpeech } from "@/hooks/useSpeech";
@@ -82,6 +82,64 @@ function fmtCount(n: number): string {
   return String(n);
 }
 
+function buildCopyHTML(insight: Insight, shareUrl: string): string {
+  const lines: string[] = [];
+  if (insight.source_name)
+    lines.push(`<p style="color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin:0 0 4px">${insight.source_name}</p>`);
+  if (insight.episode_title)
+    lines.push(`<h2 style="font-size:15px;font-weight:600;margin:0 0 6px;line-height:1.3">${insight.episode_title}</h2>`);
+  if (insight.episode_published_at)
+    lines.push(`<p style="color:#9ca3af;font-size:11px;margin:0 0 14px">${formatPublishedDate(insight.episode_published_at)}</p>`);
+  if (insight.summary)
+    lines.push(`<p style="margin:0 0 16px;line-height:1.65">${insight.summary}</p>`);
+  if (insight.key_points.length > 0) {
+    lines.push(`<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin:0 0 8px">Key Points</p>`);
+    lines.push(`<ul style="margin:0 0 16px;padding-left:18px">${insight.key_points.map((p) => `<li style="margin-bottom:5px;line-height:1.5">${p}</li>`).join("")}</ul>`);
+  }
+  if (insight.key_quotes.length > 0) {
+    lines.push(`<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin:0 0 8px">Key Quotes</p>`);
+    insight.key_quotes.forEach((q) =>
+      lines.push(`<blockquote style="border-left:3px solid #d1d5db;margin:0 0 10px;padding:6px 0 6px 14px;color:#4b5563"><em>&ldquo;${q}&rdquo;</em></blockquote>`)
+    );
+    lines.push(`<p style="margin:0 0 6px"></p>`);
+  }
+  if (insight.action_items.length > 0) {
+    lines.push(`<p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin:0 0 8px">Action Items</p>`);
+    lines.push(`<ul style="margin:0 0 16px;padding-left:18px">${insight.action_items.map((a) => `<li style="margin-bottom:5px;line-height:1.5">${a}</li>`).join("")}</ul>`);
+  }
+  if (insight.tags.length > 0)
+    lines.push(`<p style="font-size:11px;color:#9ca3af;margin:0 0 12px">Tags: ${insight.tags.join(" · ")}</p>`);
+  lines.push(`<p style="font-size:11px;color:#9ca3af;margin:0"><a href="${shareUrl}" style="color:#6366f1">View on Podcast Insights →</a></p>`);
+  return `<article style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;color:#111827;line-height:1.6">${lines.join("\n")}</article>`;
+}
+
+function buildCopyPlain(insight: Insight, shareUrl: string): string {
+  const lines: string[] = [];
+  if (insight.source_name) lines.push(insight.source_name.toUpperCase());
+  if (insight.episode_title) lines.push(insight.episode_title);
+  if (insight.episode_published_at) lines.push(formatPublishedDate(insight.episode_published_at));
+  lines.push("");
+  if (insight.summary) { lines.push(insight.summary); lines.push(""); }
+  if (insight.key_points.length > 0) {
+    lines.push("KEY POINTS");
+    insight.key_points.forEach((p) => lines.push(`• ${p}`));
+    lines.push("");
+  }
+  if (insight.key_quotes.length > 0) {
+    lines.push("KEY QUOTES");
+    insight.key_quotes.forEach((q) => lines.push(`"${q}"`));
+    lines.push("");
+  }
+  if (insight.action_items.length > 0) {
+    lines.push("ACTION ITEMS");
+    insight.action_items.forEach((a) => lines.push(`→ ${a}`));
+    lines.push("");
+  }
+  if (insight.tags.length > 0) lines.push(`Tags: ${insight.tags.join(" · ")}`);
+  lines.push(shareUrl);
+  return lines.join("\n");
+}
+
 export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { enabled: ttsEnabled } = useTTS();
@@ -99,6 +157,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
 
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [contentCopied, setContentCopied] = useState(false);
   const shareRef = useRef<HTMLDivElement>(null);
 
   const [showComments, setShowComments] = useState(false);
@@ -250,6 +309,23 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
       ));
     }
   }, [isAuthed]);
+
+  const handleCopyContent = useCallback(async () => {
+    const plain = buildCopyPlain(insight, shareUrl);
+    const html = buildCopyHTML(insight, shareUrl);
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        }),
+      ]);
+    } catch {
+      await navigator.clipboard.writeText(plain);
+    }
+    setContentCopied(true);
+    setTimeout(() => setContentCopied(false), 2000);
+  }, [insight, shareUrl]);
 
   const handleDeleteComment = useCallback(async (commentId: number) => {
     const res = await fetch(`/api/comments/${commentId}`, { method: "DELETE" });
@@ -464,8 +540,18 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
           {commentCount !== null && commentCount > 0 && <span>{fmtCount(commentCount)}</span>}
         </EngagementButton>
 
-        {/* Share */}
-        <div className="relative ml-auto" ref={shareRef}>
+        {/* Copy + Share (right-aligned) */}
+        <div className="flex items-center gap-1 ml-auto">
+          <EngagementButton
+            onClick={handleCopyContent}
+            active={contentCopied}
+            title="Copy insight"
+            activeColor="#10B981"
+          >
+            {contentCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          </EngagementButton>
+
+          <div className="relative" ref={shareRef}>
           <EngagementButton
             onClick={() => setShowShare((v) => !v)}
             active={showShare}
@@ -495,6 +581,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
               />
             </div>
           )}
+          </div>
         </div>
       </div>
 
