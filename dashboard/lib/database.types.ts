@@ -150,6 +150,7 @@ export interface Database {
           is_admin: boolean;
           digest_enabled: boolean;
           digest_hour: number;
+          digest_domains: string[] | null;
           created_at: string;
         };
         Insert: {
@@ -158,6 +159,7 @@ export interface Database {
           is_admin?: boolean;
           digest_enabled?: boolean;
           digest_hour?: number;
+          digest_domains?: string[] | null;
           created_at?: string;
         };
         Update: {
@@ -166,6 +168,7 @@ export interface Database {
           is_admin?: boolean;
           digest_enabled?: boolean;
           digest_hour?: number;
+          digest_domains?: string[] | null;
           created_at?: string;
         };
         Relationships: [];
