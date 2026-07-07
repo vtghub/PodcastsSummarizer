@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, X } from "lucide-react";
 import {
   format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, isToday,
@@ -16,6 +16,7 @@ interface Props {
 export default function DateNav({ selectedDate, availableDates }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [viewDate, setViewDate] = useState(() => {
     try { return startOfMonth(parseISO(selectedDate)); }
     catch { return startOfMonth(new Date()); }
@@ -26,8 +27,15 @@ export default function DateNav({ selectedDate, availableDates }: Props) {
   const currentIdx = sortedDates.indexOf(selectedDate);
   const prevDate = currentIdx > 0 ? sortedDates[currentIdx - 1] : null;
   const nextDate = currentIdx < sortedDates.length - 1 ? sortedDates[currentIdx + 1] : null;
-
   const availableSet = new Set(availableDates);
+
+  // Detect mobile viewport
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const navigate = (date: string) => {
     setOpen(false);
@@ -39,9 +47,9 @@ export default function DateNav({ selectedDate, availableDates }: Props) {
     availableDates.forEach((d) => router.prefetch(`/dashboard?date=${d}`));
   }, [availableDates, router]);
 
-  // Close on outside click
+  // Close desktop popover on outside click
   useEffect(() => {
-    if (!open) return;
+    if (!open || isMobile) return;
     const handler = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -49,9 +57,19 @@ export default function DateNav({ selectedDate, availableDates }: Props) {
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
+  }, [open, isMobile]);
 
-  // Keep viewDate in sync when navigating via arrows
+  // Lock body scroll when mobile sheet is open
+  useEffect(() => {
+    if (isMobile && open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [isMobile, open]);
+
+  // Sync viewDate when selectedDate changes externally
   useEffect(() => {
     try { setViewDate(startOfMonth(parseISO(selectedDate))); }
     catch { /* ignore */ }
@@ -63,61 +81,121 @@ export default function DateNav({ selectedDate, availableDates }: Props) {
   })();
 
   return (
-    <div className="flex items-center gap-1.5">
-      {/* Prev arrow */}
-      <NavArrow
-        onClick={() => prevDate && navigate(prevDate)}
-        disabled={!prevDate}
-        title={prevDate ? `Go to ${prevDate}` : "No earlier dates"}
-        icon={<ChevronLeft className="w-4 h-4" />}
-      />
+    <>
+      <div className="flex items-center gap-1.5">
+        {/* Prev arrow */}
+        <NavArrow
+          onClick={() => prevDate && navigate(prevDate)}
+          disabled={!prevDate}
+          title={prevDate ? `Go to ${prevDate}` : "No earlier dates"}
+          icon={<ChevronLeft className="w-4 h-4" />}
+        />
 
-      {/* Date trigger */}
-      <div className="relative" ref={popoverRef}>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-sm font-medium transition-all select-none"
-          style={{
-            background: open ? "var(--bg-elevated)" : "var(--bg-input)",
-            borderColor: open ? "var(--acc)" : "var(--bdr)",
-            color: "var(--txt-1)",
-            boxShadow: open ? "0 0 0 3px var(--acc-ring)" : "none",
-            minWidth: 140,
-          }}
-        >
-          <CalendarDays
-            className="w-4 h-4 flex-shrink-0"
-            style={{ color: open ? "var(--acc)" : "var(--txt-4)" }}
-          />
-          <span>{availableDates.length > 0 ? formattedSelected : <span style={{ color: "var(--txt-4)" }}>{formattedSelected}</span>}</span>
-          <ChevronLeft
-            className="w-3 h-3 ml-auto flex-shrink-0 transition-transform"
+        {/* Date trigger */}
+        <div className="relative" ref={popoverRef}>
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all select-none"
             style={{
-              color: "var(--txt-4)",
-              transform: open ? "rotate(90deg)" : "rotate(-90deg)",
+              background: open ? "var(--bg-elevated)" : "var(--bg-input)",
+              borderColor: open ? "var(--acc)" : "var(--bdr)",
+              color: "var(--txt-1)",
+              boxShadow: open ? "0 0 0 3px var(--acc-ring)" : "none",
+              minWidth: 130,
             }}
-          />
-        </button>
+          >
+            <CalendarDays
+              className="w-4 h-4 flex-shrink-0"
+              style={{ color: open ? "var(--acc)" : "var(--txt-4)" }}
+            />
+            <span className="flex-1 text-left">
+              {availableDates.length > 0
+                ? formattedSelected
+                : <span style={{ color: "var(--txt-4)" }}>{formattedSelected}</span>}
+            </span>
+            <ChevronLeft
+              className="w-3 h-3 flex-shrink-0 transition-transform"
+              style={{
+                color: "var(--txt-4)",
+                transform: open ? "rotate(90deg)" : "rotate(-90deg)",
+              }}
+            />
+          </button>
 
-        {open && availableDates.length > 0 && (
-          <CalendarPopover
-            selectedDate={selectedDate}
-            availableSet={availableSet}
-            viewDate={viewDate}
-            onViewChange={setViewDate}
-            onSelect={navigate}
-          />
-        )}
+          {/* Desktop popover */}
+          {open && !isMobile && availableDates.length > 0 && (
+            <CalendarPanel
+              selectedDate={selectedDate}
+              availableSet={availableSet}
+              viewDate={viewDate}
+              onViewChange={setViewDate}
+              onSelect={navigate}
+              mode="popover"
+            />
+          )}
+        </div>
+
+        {/* Next arrow */}
+        <NavArrow
+          onClick={() => nextDate && navigate(nextDate)}
+          disabled={!nextDate}
+          title={nextDate ? `Go to ${nextDate}` : "No later dates"}
+          icon={<ChevronRight className="w-4 h-4" />}
+        />
       </div>
 
-      {/* Next arrow */}
-      <NavArrow
-        onClick={() => nextDate && navigate(nextDate)}
-        disabled={!nextDate}
-        title={nextDate ? `Go to ${nextDate}` : "No later dates"}
-        icon={<ChevronRight className="w-4 h-4" />}
-      />
-    </div>
+      {/* Mobile bottom sheet + backdrop */}
+      {isMobile && open && availableDates.length > 0 && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40"
+            style={{ background: "rgba(0,0,0,0.45)" }}
+            onClick={() => setOpen(false)}
+          />
+          {/* Sheet */}
+          <div
+            className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl overflow-hidden"
+            style={{
+              background: "var(--bg-surface)",
+              boxShadow: "0 -4px 32px rgba(0,0,0,0.18)",
+              maxHeight: "90dvh",
+            }}
+          >
+            {/* Sheet handle + header */}
+            <div
+              className="flex items-center justify-between px-5 pt-4 pb-2 border-b"
+              style={{ borderColor: "var(--bdr)" }}
+            >
+              <div className="flex-1" />
+              <div
+                className="w-10 h-1 rounded-full absolute top-2 left-1/2 -translate-x-1/2"
+                style={{ background: "var(--bdr-hov)" }}
+              />
+              <span className="text-sm font-semibold flex-1 text-center" style={{ color: "var(--txt-1)" }}>
+                Select Date
+              </span>
+              <button
+                onClick={() => setOpen(false)}
+                className="flex-1 flex justify-end p-1 rounded-lg"
+                style={{ color: "var(--txt-4)" }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <CalendarPanel
+              selectedDate={selectedDate}
+              availableSet={availableSet}
+              viewDate={viewDate}
+              onViewChange={setViewDate}
+              onSelect={navigate}
+              mode="sheet"
+            />
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -149,150 +227,133 @@ function NavArrow({ onClick, disabled, title, icon }: {
   );
 }
 
-interface CalendarPopoverProps {
+interface CalendarPanelProps {
   selectedDate: string;
   availableSet: Set<string>;
   viewDate: Date;
   onViewChange: (d: Date) => void;
   onSelect: (date: string) => void;
+  mode: "popover" | "sheet";
 }
 
-function CalendarPopover({ selectedDate, availableSet, viewDate, onViewChange, onSelect }: CalendarPopoverProps) {
+function CalendarPanel({ selectedDate, availableSet, viewDate, onViewChange, onSelect, mode }: CalendarPanelProps) {
   const start = startOfWeek(startOfMonth(viewDate));
   const end = endOfWeek(endOfMonth(viewDate));
   const days = eachDayOfInterval({ start, end });
-
   const selectedParsed = (() => { try { return parseISO(selectedDate); } catch { return null; } })();
 
-  return (
-    <div
-      className="absolute right-0 z-50 mt-2 rounded-2xl border overflow-hidden"
-      style={{
-        background: "var(--bg-surface)",
-        borderColor: "var(--bdr)",
-        width: 288,
-        boxShadow: "0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)",
-      }}
-    >
-      {/* Month navigation header */}
-      <div
-        className="flex items-center justify-between px-4 py-3 border-b"
-        style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}
-      >
+  const isSheet = mode === "sheet";
+  const cellSize = isSheet ? 44 : 36;
+
+  const inner = (
+    <div className={isSheet ? "px-4 pb-6 pt-2" : "p-3"}>
+      {/* Month navigation */}
+      <div className="flex items-center justify-between mb-3">
         <button
           onClick={() => onViewChange(subMonths(viewDate, 1))}
-          className="p-1.5 rounded-lg transition-colors"
+          className="p-2 rounded-xl transition-colors"
           style={{ color: "var(--txt-3)" }}
           onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--txt-1)")}
           onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--txt-3)")}
         >
-          <ChevronLeft className="w-4 h-4" />
+          <ChevronLeft className={isSheet ? "w-5 h-5" : "w-4 h-4"} />
         </button>
-
-        <span className="text-sm font-semibold tracking-wide" style={{ color: "var(--txt-1)" }}>
+        <span
+          className={`font-semibold tracking-wide ${isSheet ? "text-base" : "text-sm"}`}
+          style={{ color: "var(--txt-1)" }}
+        >
           {format(viewDate, "MMMM yyyy")}
         </span>
-
         <button
           onClick={() => onViewChange(addMonths(viewDate, 1))}
-          className="p-1.5 rounded-lg transition-colors"
+          className="p-2 rounded-xl transition-colors"
           style={{ color: "var(--txt-3)" }}
           onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--txt-1)")}
           onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--txt-3)")}
         >
-          <ChevronRight className="w-4 h-4" />
+          <ChevronRight className={isSheet ? "w-5 h-5" : "w-4 h-4"} />
         </button>
       </div>
 
-      <div className="p-3">
-        {/* Weekday labels */}
-        <div className="grid grid-cols-7 mb-1">
-          {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-            <div
-              key={d}
-              className="text-center text-xs font-semibold uppercase tracking-wider py-1.5"
-              style={{ color: "var(--txt-4)" }}
-            >
-              {d}
-            </div>
-          ))}
-        </div>
-
-        {/* Day cells */}
-        <div className="grid grid-cols-7 gap-y-1">
-          {days.map((day) => {
-            const dateStr = format(day, "yyyy-MM-dd");
-            const isAvailable = availableSet.has(dateStr);
-            const isSelected = selectedParsed ? isSameDay(day, selectedParsed) : false;
-            const isCurrentMonth = isSameMonth(day, viewDate);
-            const isTodayDate = isToday(day);
-
-            return (
-              <div key={dateStr} className="flex items-center justify-center">
-                <button
-                  disabled={!isAvailable}
-                  onClick={() => isAvailable && onSelect(dateStr)}
-                  className="relative flex flex-col items-center justify-center rounded-xl transition-all"
-                  style={{
-                    width: 36,
-                    height: 36,
-                    cursor: isAvailable ? "pointer" : "default",
-                    background: isSelected
-                      ? "var(--acc)"
-                      : "transparent",
-                    color: isSelected
-                      ? "#fff"
-                      : isAvailable && isCurrentMonth
-                      ? "var(--txt-1)"
-                      : isAvailable
-                      ? "var(--txt-3)"
-                      : "var(--txt-4)",
-                    opacity: isCurrentMonth ? 1 : 0.35,
-                    fontWeight: isSelected ? 700 : isAvailable ? 500 : 400,
-                    fontSize: 13,
-                    outline: isTodayDate && !isSelected ? "2px solid var(--acc)" : "none",
-                    outlineOffset: -2,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (isAvailable && !isSelected) {
-                      (e.currentTarget as HTMLElement).style.background = "var(--acc-bg)";
-                      (e.currentTarget as HTMLElement).style.color = "var(--acc)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) {
-                      (e.currentTarget as HTMLElement).style.background = "transparent";
-                      (e.currentTarget as HTMLElement).style.color = isAvailable && isCurrentMonth
-                        ? "var(--txt-1)"
-                        : isAvailable ? "var(--txt-3)" : "var(--txt-4)";
-                    }
-                  }}
-                  title={isAvailable ? `View insights for ${format(day, "MMMM d, yyyy")}` : undefined}
-                >
-                  <span className="leading-none">{format(day, "d")}</span>
-                  {/* Dot for available dates (shown only when not selected) */}
-                  {isAvailable && !isSelected && (
-                    <span
-                      className="absolute rounded-full"
-                      style={{
-                        width: 4,
-                        height: 4,
-                        bottom: 4,
-                        background: "var(--acc)",
-                      }}
-                    />
-                  )}
-                </button>
-              </div>
-            );
-          })}
-        </div>
+      {/* Weekday labels */}
+      <div className="grid grid-cols-7 mb-1">
+        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+          <div
+            key={d}
+            className={`text-center font-semibold uppercase tracking-wider py-1.5 ${isSheet ? "text-sm" : "text-xs"}`}
+            style={{ color: "var(--txt-4)" }}
+          >
+            {d}
+          </div>
+        ))}
       </div>
 
-      {/* Footer legend */}
+      {/* Day cells */}
+      <div className="grid grid-cols-7 gap-y-1">
+        {days.map((day) => {
+          const dateStr = format(day, "yyyy-MM-dd");
+          const isAvailable = availableSet.has(dateStr);
+          const isSelected = selectedParsed ? isSameDay(day, selectedParsed) : false;
+          const isCurrentMonth = isSameMonth(day, viewDate);
+          const isTodayDate = isToday(day);
+
+          return (
+            <div key={dateStr} className="flex items-center justify-center">
+              <button
+                disabled={!isAvailable}
+                onClick={() => isAvailable && onSelect(dateStr)}
+                className="relative flex flex-col items-center justify-center rounded-xl transition-all"
+                style={{
+                  width: cellSize,
+                  height: cellSize,
+                  cursor: isAvailable ? "pointer" : "default",
+                  background: isSelected ? "var(--acc)" : "transparent",
+                  color: isSelected
+                    ? "#fff"
+                    : isAvailable && isCurrentMonth
+                    ? "var(--txt-1)"
+                    : isAvailable
+                    ? "var(--txt-3)"
+                    : "var(--txt-4)",
+                  opacity: isCurrentMonth ? 1 : 0.35,
+                  fontWeight: isSelected ? 700 : isAvailable ? 500 : 400,
+                  fontSize: isSheet ? 15 : 13,
+                  outline: isTodayDate && !isSelected ? "2px solid var(--acc)" : "none",
+                  outlineOffset: -2,
+                }}
+                onMouseEnter={(e) => {
+                  if (isAvailable && !isSelected) {
+                    (e.currentTarget as HTMLElement).style.background = "var(--acc-bg)";
+                    (e.currentTarget as HTMLElement).style.color = "var(--acc)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) {
+                    (e.currentTarget as HTMLElement).style.background = "transparent";
+                    (e.currentTarget as HTMLElement).style.color = isAvailable && isCurrentMonth
+                      ? "var(--txt-1)"
+                      : isAvailable ? "var(--txt-3)" : "var(--txt-4)";
+                  }
+                }}
+                title={isAvailable ? `View insights for ${format(day, "MMMM d, yyyy")}` : undefined}
+              >
+                <span className="leading-none">{format(day, "d")}</span>
+                {isAvailable && !isSelected && (
+                  <span
+                    className="absolute rounded-full"
+                    style={{ width: 4, height: 4, bottom: isSheet ? 5 : 4, background: "var(--acc)" }}
+                  />
+                )}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
       <div
-        className="flex items-center gap-4 px-4 py-2.5 border-t text-xs"
-        style={{ borderColor: "var(--bdr)", color: "var(--txt-4)", background: "var(--bg-elevated)" }}
+        className={`flex items-center gap-4 mt-3 pt-3 border-t ${isSheet ? "text-sm" : "text-xs"}`}
+        style={{ borderColor: "var(--bdr)", color: "var(--txt-4)" }}
       >
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full" style={{ background: "var(--acc)" }} />
@@ -300,12 +361,38 @@ function CalendarPopover({ selectedDate, availableSet, viewDate, onViewChange, o
         </span>
         <span className="flex items-center gap-1.5">
           <span
-            className="inline-block w-4 h-4 rounded-lg border-2 text-center leading-3 text-xs"
-            style={{ borderColor: "var(--acc)", color: "var(--txt-3)" }}
+            className="inline-block rounded-lg border-2"
+            style={{ width: isSheet ? 18 : 14, height: isSheet ? 18 : 14, borderColor: "var(--acc)" }}
           />
           Today
         </span>
       </div>
     </div>
   );
+
+  if (mode === "popover") {
+    return (
+      <div
+        className="absolute right-0 z-50 mt-2 rounded-2xl border overflow-hidden"
+        style={{
+          background: "var(--bg-surface)",
+          borderColor: "var(--bdr)",
+          width: 288,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)",
+        }}
+      >
+        <div
+          className="flex items-center justify-between px-4 py-2.5 border-b"
+          style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}
+        >
+          <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--txt-4)" }}>
+            Select a date
+          </span>
+        </div>
+        {inner}
+      </div>
+    );
+  }
+
+  return inner;
 }
