@@ -90,12 +90,12 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   const dk = domainColorKey(insight.domain ?? "");
 
   // ── Engagement state ───────────────────────────────────────────────────────
-  const [views, setViews] = useState(0);
-  const [likes, setLikes] = useState(0);
-  const [dislikes, setDislikes] = useState(0);
+  const [views, setViews] = useState<number | null>(null);
+  const [likes, setLikes] = useState<number | null>(null);
+  const [dislikes, setDislikes] = useState<number | null>(null);
   const [myReaction, setMyReaction] = useState<"like" | "dislike" | null>(null);
   const [reacting, setReacting] = useState(false);
-  const [commentCount, setCommentCount] = useState(0);
+  const [commentCount, setCommentCount] = useState<number | null>(null);
 
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -152,16 +152,16 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
     const prev = myReaction;
     if (myReaction === type) {
       setMyReaction(null);
-      setLikes((l) => type === "like" ? l - 1 : l);
-      setDislikes((d) => type === "dislike" ? d - 1 : d);
+      setLikes((l) => type === "like" ? (l ?? 0) - 1 : l);
+      setDislikes((d) => type === "dislike" ? (d ?? 0) - 1 : d);
     } else {
       if (myReaction) {
-        setLikes((l) => myReaction === "like" ? l - 1 : l);
-        setDislikes((d) => myReaction === "dislike" ? d - 1 : d);
+        setLikes((l) => myReaction === "like" ? (l ?? 0) - 1 : l);
+        setDislikes((d) => myReaction === "dislike" ? (d ?? 0) - 1 : d);
       }
       setMyReaction(type);
-      setLikes((l) => type === "like" ? l + 1 : l);
-      setDislikes((d) => type === "dislike" ? d + 1 : d);
+      setLikes((l) => type === "like" ? (l ?? 0) + 1 : l);
+      setDislikes((d) => type === "dislike" ? (d ?? 0) + 1 : d);
     }
     try {
       const res = await fetch(`/api/insights/${insight.id}/react`, {
@@ -226,7 +226,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
       const data = await res.json();
       if (res.ok) {
         setComments((prev) => [...prev, data.comment]);
-        setCommentCount((n) => n + 1);
+        setCommentCount((n) => (n ?? 0) + 1);
         setCommentBody("");
       }
     } catch { /* ignore */ } finally {
@@ -255,7 +255,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
     const res = await fetch(`/api/comments/${commentId}`, { method: "DELETE" });
     if (res.ok) {
       setComments((prev) => prev.filter((c) => c.id !== commentId));
-      setCommentCount((n) => Math.max(0, n - 1));
+      setCommentCount((n) => Math.max(0, (n ?? 1) - 1));
     }
   }, []);
 
@@ -426,7 +426,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
         {/* Views */}
         <span className="flex items-center gap-1 text-xs mr-2" style={{ color: "var(--txt-4)" }}>
           <Eye className="w-3.5 h-3.5" />
-          {fmtCount(views)}
+          {views === null ? <span style={{ opacity: 0.35 }}>—</span> : fmtCount(views)}
         </span>
 
         {/* Like */}
@@ -438,7 +438,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
           activeColor="var(--acc)"
         >
           <ThumbsUp className="w-3.5 h-3.5" />
-          {likes > 0 && <span>{fmtCount(likes)}</span>}
+          {likes !== null && likes > 0 && <span>{fmtCount(likes)}</span>}
         </EngagementButton>
 
         {/* Dislike */}
@@ -450,7 +450,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
           activeColor="#EF4444"
         >
           <ThumbsDown className="w-3.5 h-3.5" />
-          {dislikes > 0 && <span>{fmtCount(dislikes)}</span>}
+          {dislikes !== null && dislikes > 0 && <span>{fmtCount(dislikes)}</span>}
         </EngagementButton>
 
         {/* Comments toggle */}
@@ -461,7 +461,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
           activeColor="var(--acc)"
         >
           <MessageCircle className="w-3.5 h-3.5" />
-          {commentCount > 0 && <span>{fmtCount(commentCount)}</span>}
+          {commentCount !== null && commentCount > 0 && <span>{fmtCount(commentCount)}</span>}
         </EngagementButton>
 
         {/* Share */}
