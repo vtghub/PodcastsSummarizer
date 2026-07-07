@@ -2,10 +2,20 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Volume2, VolumeX, Palette, UserCircle, LogOut, User } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
+import { getDomainColor } from "@/lib/domain-colors";
+
+interface SearchResult {
+  id: string;
+  date: string;
+  domain: string;
+  summary: string;
+  source_name: string;
+  episode_title: string;
+}
 
 export default function NavBar({
   userEmail,
@@ -17,20 +27,69 @@ export default function NavBar({
   const { enabled, toggle } = useTTS();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
-  const [pickerOpen, setPickerOpen]     = useState(false);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [hoveredTheme, setHoveredTheme] = useState<typeof THEMES[0] | null>(null);
-  const pickerRef  = useRef<HTMLDivElement>(null);
-  const userMenuRef = useRef<HTMLDivElement>(null);
+  const [pickerOpen, setPickerOpen]         = useState(false);
+  const [userMenuOpen, setUserMenuOpen]     = useState(false);
+  const [hoveredTheme, setHoveredTheme]     = useState<typeof THEMES[0] | null>(null);
+  const [searchOpen, setSearchOpen]         = useState(false);
+  const [searchQuery, setSearchQuery]       = useState("");
+  const [searchResults, setSearchResults]   = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading]   = useState(false);
+  const pickerRef    = useRef<HTMLDivElement>(null);
+  const userMenuRef  = useRef<HTMLDivElement>(null);
+  const searchRef    = useRef<HTMLDivElement>(null);
+  const searchInput  = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
+
+  const runSearch = useCallback(async (q: string) => {
+    if (q.length < 2) { setSearchResults([]); return; }
+    setSearchLoading(true);
+    try {
+      const res = await fetch(`/api/insights/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      setSearchResults(data.results ?? []);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => runSearch(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, runSearch]);
+
+  function openSearch() {
+    setSearchOpen(true);
+    setTimeout(() => searchInput.current?.focus(), 50);
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+  }
+
+  function handleResultClick(result: SearchResult) {
+    closeSearch();
+    router.push(`/dashboard?date=${result.date}&domain=${encodeURIComponent(result.domain)}#insight-${result.id}`);
+  }
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false);
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
     }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") closeSearch();
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); openSearch(); }
+    }
     document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, []);
 
   async function handleSignOut() {
@@ -71,6 +130,18 @@ export default function NavBar({
         <div className="flex items-center gap-2 sm:gap-3">
           <span className="hidden sm:inline">{navLink("/dashboard", "Dashboard")}</span>
           {navLink("/podcasts", "My Podcasts")}
+
+          {/* Search */}
+          <button
+            onClick={openSearch}
+            title="Search insights (⌘K)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={{ background: "var(--bg-elevated)", color: "var(--txt-4)", border: "1px solid var(--bdr)" }}
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Search</span>
+            <span className="hidden sm:inline text-xs opacity-50 font-mono ml-0.5">⌘K</span>
+          </button>
 
           {/* User menu */}
           {userEmail ? (
@@ -221,6 +292,89 @@ export default function NavBar({
           </div>
         </div>
       </div>
+
+      {/* Search overlay — position:fixed so it doesn't affect nav layout */}
+      {searchOpen && (
+      <div
+        className="fixed inset-0 z-50 flex flex-col items-center pt-20 px-4"
+        style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+        onClick={(e) => { if (e.target === e.currentTarget) closeSearch(); }}
+      >
+        <div
+          ref={searchRef}
+          className="w-full max-w-2xl rounded-2xl shadow-2xl border overflow-hidden"
+          style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
+        >
+          {/* Input row */}
+          <div className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: "var(--bdr)" }}>
+            <Search className="w-4 h-4 flex-shrink-0" style={{ color: "var(--txt-4)" }} />
+            <input
+              ref={searchInput}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search insights…"
+              className="flex-1 bg-transparent outline-none text-sm"
+              style={{ color: "var(--txt-1)" }}
+            />
+            {searchLoading && (
+              <span className="text-xs" style={{ color: "var(--txt-4)" }}>Searching…</span>
+            )}
+            <button onClick={closeSearch} style={{ color: "var(--txt-4)" }}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Results */}
+          {searchResults.length > 0 && (
+            <ul className="max-h-96 overflow-y-auto divide-y" style={{ borderColor: "var(--bdr)" }}>
+              {searchResults.map((r) => {
+                const colors = getDomainColor(r.domain);
+                return (
+                  <li key={r.id}>
+                    <button
+                      onClick={() => handleResultClick(r)}
+                      className="w-full text-left px-4 py-3 transition-colors"
+                      style={{ color: "var(--txt-1)" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span
+                          className={`text-xs font-medium px-2 py-0.5 rounded-full ${colors.bg} ${colors.text}`}
+                        >
+                          {r.domain}
+                        </span>
+                        <span className="text-xs" style={{ color: "var(--txt-4)" }}>{r.source_name}</span>
+                        <span className="text-xs ml-auto" style={{ color: "var(--txt-4)" }}>{r.date}</span>
+                      </div>
+                      {r.episode_title && (
+                        <p className="text-xs font-medium mb-0.5 truncate" style={{ color: "var(--txt-3)" }}>
+                          {r.episode_title}
+                        </p>
+                      )}
+                      <p className="text-xs line-clamp-2" style={{ color: "var(--txt-3)" }}>{r.summary}</p>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {searchQuery.length >= 2 && !searchLoading && searchResults.length === 0 && (
+            <p className="px-4 py-6 text-sm text-center" style={{ color: "var(--txt-4)" }}>
+              No insights found for &ldquo;{searchQuery}&rdquo;
+            </p>
+          )}
+
+          {searchQuery.length < 2 && (
+            <p className="px-4 py-4 text-xs" style={{ color: "var(--txt-4)" }}>
+              Type at least 2 characters to search across all insight summaries, key points, quotes, and tags.
+            </p>
+          )}
+        </div>
+      </div>
+    )}
     </nav>
   );
 }
