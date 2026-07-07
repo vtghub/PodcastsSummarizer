@@ -357,6 +357,7 @@ sequenceDiagram
     participant MW as middleware.ts
     participant API as /api/sources
     participant DB as Supabase
+    participant GH as GitHub Actions
 
     B->>MW: POST /api/sources (with JWT cookie)
     MW->>MW: verify session → user present
@@ -365,6 +366,9 @@ sequenceDiagram
     alt is_admin = true
         API->>DB: INSERT sources (is_public=true)
         API-->>B: 201 Created
+        Note over API,GH: fire-and-forget (does not block response)
+        API->>GH: workflow_dispatch backfill_platform_links.yml { source_id }
+        GH->>DB: discover & store platform URLs for new source
     else not admin
         API-->>B: 403 Forbidden
     end
