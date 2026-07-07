@@ -95,6 +95,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   const [dislikes, setDislikes] = useState(0);
   const [myReaction, setMyReaction] = useState<"like" | "dislike" | null>(null);
   const [reacting, setReacting] = useState(false);
+  const [commentCount, setCommentCount] = useState(0);
 
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -106,21 +107,16 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   const [commentBody, setCommentBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // ── Load engagement data on mount ─────────────────────────────────────────
+  // ── Load engagement data on mount (single call) ───────────────────────────
   useEffect(() => {
-    // Record view + get count
-    fetch(`/api/insights/${insight.id}/view`, { method: "POST" })
-      .then((r) => r.json())
-      .then((d) => setViews(d.views ?? 0))
-      .catch(() => {});
-
-    // Get reaction counts + my reaction
-    fetch(`/api/insights/${insight.id}/react`)
+    fetch(`/api/insights/${insight.id}/engagement?view=1`)
       .then((r) => r.json())
       .then((d) => {
+        setViews(d.views ?? 0);
         setLikes(d.likes ?? 0);
         setDislikes(d.dislikes ?? 0);
         setMyReaction(d.mine ?? null);
+        setCommentCount(d.commentCount ?? 0);
       })
       .catch(() => {});
   }, [insight.id]);
@@ -230,6 +226,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
       const data = await res.json();
       if (res.ok) {
         setComments((prev) => [...prev, data.comment]);
+        setCommentCount((n) => n + 1);
         setCommentBody("");
       }
     } catch { /* ignore */ } finally {
@@ -256,7 +253,10 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
 
   const handleDeleteComment = useCallback(async (commentId: number) => {
     const res = await fetch(`/api/comments/${commentId}`, { method: "DELETE" });
-    if (res.ok) setComments((prev) => prev.filter((c) => c.id !== commentId));
+    if (res.ok) {
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
+      setCommentCount((n) => Math.max(0, n - 1));
+    }
   }, []);
 
   return (
@@ -460,7 +460,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
           activeColor="var(--acc)"
         >
           <MessageCircle className="w-3.5 h-3.5" />
-          {comments.length > 0 && <span>{fmtCount(comments.length)}</span>}
+          {commentCount > 0 && <span>{fmtCount(commentCount)}</span>}
         </EngagementButton>
 
         {/* Share */}
