@@ -5,8 +5,6 @@ import type { Insight } from "@/lib/db";
 import { getDomainColor, DOMAINS as DOMAIN_ORDER } from "@/lib/domain-colors";
 import InsightCard from "@/components/InsightCard";
 
-const DEFAULT_DOMAIN = "Business & Startups";
-
 interface Props {
   byDomain: Record<string, Insight[]>;
   isAuthed: boolean;
@@ -14,9 +12,7 @@ interface Props {
 
 export default function DomainInsightView({ byDomain, isAuthed }: Props) {
   const domains = DOMAIN_ORDER.filter((d) => byDomain[d]);
-  const initialDomain =
-    domains.includes(DEFAULT_DOMAIN) ? DEFAULT_DOMAIN : domains[0];
-  const [selected, setSelected] = useState(initialDomain);
+  const [selected, setSelected] = useState(domains[0]);
 
   // On mount: select domain from ?domain= param, then scroll to #insight-{id}
   useEffect(() => {
