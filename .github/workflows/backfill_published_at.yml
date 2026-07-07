@@ -2,6 +2,11 @@ name: Backfill Episode Published Dates
 
 on:
   workflow_dispatch:
+    inputs:
+      source_id:
+        description: "Single source ID to backfill (leave empty to backfill all sources)"
+        required: false
+        default: ""
 
 jobs:
   backfill:
@@ -26,4 +31,9 @@ jobs:
           STORAGE_PROVIDER: supabase
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           PYTHONUTF8: "1"
-        run: python -m worker.jobs.backfill_published_at
+        run: |
+          if [ -n "${{ inputs.source_id }}" ]; then
+            python -m worker.jobs.backfill_published_at --source-id "${{ inputs.source_id }}"
+          else
+            python -m worker.jobs.backfill_published_at
+          fi

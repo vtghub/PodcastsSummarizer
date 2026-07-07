@@ -11,6 +11,7 @@ Or trigger via GitHub Actions:
     Actions → Backfill Episode Published Dates → Run workflow
 """
 
+import argparse
 import hashlib
 import urllib.parse
 
@@ -19,9 +20,17 @@ import feedparser
 from worker.core.registry import get_storage_provider
 
 
-def backfill_published_at() -> None:
+def backfill_published_at(source_id: str | None = None) -> None:
     storage = get_storage_provider()
-    sources = storage.get_sources(enabled_only=False)
+    all_sources = storage.get_sources(enabled_only=False)
+
+    if source_id:
+        sources = [s for s in all_sources if s.id == source_id]
+        if not sources:
+            print(f"[Backfill] No source found with id={source_id}")
+            return
+    else:
+        sources = all_sources
 
     total_updated = 0
 
@@ -93,4 +102,7 @@ def _parse_date(entry) -> str | None:
 
 
 if __name__ == "__main__":
-    backfill_published_at()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source-id", default=None, help="Backfill a single source by ID")
+    args = parser.parse_args()
+    backfill_published_at(source_id=args.source_id)
