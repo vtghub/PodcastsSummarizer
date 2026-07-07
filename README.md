@@ -107,7 +107,7 @@ PodcastsSummarizer/
 │   │   ├── SendDigestButton.tsx     # On-demand digest send — idle/sending/sent/error states
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
 │   │   ├── SignOutButton.tsx        # POST /api/auth/logout → redirect
-│   │   └── DateNav.tsx              # Calendar date picker — popover month grid with available-date highlights; prefetches all dates
+│   │   └── DateNav.tsx              # Calendar date picker — popover (desktop) / compact centred modal (mobile); available-date highlights; prefetches all dates
 │   ├── contexts/
 │   │   ├── ThemeContext.tsx          # 5 themes; CSS vars applied at runtime
 │   │   └── TTSContext.tsx            # Global read-aloud enable/disable
@@ -258,7 +258,7 @@ npm run dev      # http://localhost:3000
 | **Daily Insights** | Summaries, key points, quotes, and action items per episode; each card shows the episode's original release date (fetched from RSS `published_at`); instant loading skeleton while data fetches |
 | **Personalized view** | Signed-in users see only insights from their subscribed podcasts |
 | **Domain Tabs** | Filter by domain (Technology & AI, Business & Startups, etc.); auto-resets to first available tab on date change |
-| **Calendar Date Picker** | Month calendar replaces the date dropdown — available dates marked with an accent dot, selected date shown as filled circle, today highlighted with an outline ring; all available dates prefetched for instant navigation; **mobile**: full-width bottom sheet (fixed, slides up from bottom edge, backdrop overlay, drag handle + × close button, 44px touch targets); **desktop**: right-aligned popover |
+| **Calendar Date Picker** | Month calendar replaces the date dropdown — available dates marked with an accent dot, selected date shown as filled circle, today highlighted with an outline ring; all available dates prefetched for instant navigation; **mobile**: compact centred floating card (`min(320px, 100vw-32px)`), dimmed backdrop closes on tap, × button, 36px cells — no longer occupies full screen; **desktop**: right-aligned popover |
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes: **Parchment** (warm light), **Midnight** (deep blue slate), **Aurora** (ocean depths), **Cosmos** (violet nebula), **Forest** (deep emerald); picker shows two-tone swatches (bg + accent strip) with per-theme description subtitles |
 | **My Podcasts** | Catalog grouped by domain tabs (same canonical order as the Dashboard — Technology & AI, Business & Startups, etc.); subscribe/unsubscribe toggles; admin controls for catalog management (add, delete, enable/disable, reclassify domain); domain reclassification uses an optimistic inline select — card moves to the new domain tab immediately and reverts on API failure; podcast name search with iTunes-powered dropdown |
