@@ -67,11 +67,36 @@ def run_pipeline(
     # ── Phase 1: fetch all source episode lists in parallel ─────────────────
     source_batches: list[tuple] = []  # (source, provider, episodes)
 
+    _PLATFORM_LINKS_RETRY_DAYS = 7
+
     def _fetch(src: PodcastSource):
         prov = _get_source_provider(src)
-        eps = prov.fetch_latest_episodes(src, since=since)
-        # Discover platform links once when the column is still empty
-        if not src.platform_links and hasattr(prov, "fetch_platform_links"):
+        try:
+            eps = prov.fetch_latest_episodes(src, since=since)
+        except Exception as exc:
+            # Detect rate-limit / service-unavailable from feedparser status codes
+            status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+            raise exc  # re-raise; 429/503 handled in the outer except below
+        # Check if feedparser itself flagged a rate-limit or server error
+        # (fetch_latest_episodes may surface these via the returned feed object)
+        http_status = getattr(prov, "_last_feed_status", None)
+        if http_status in (429, 503):
+            from datetime import timedelta
+            error_count = (src.fetch_error_count or 0) + 1
+            delay_hours = min(2 ** (error_count - 1), 24)  # 1h, 2h, 4h, … 24h cap
+            backoff_until = datetime.now(timezone.utc) + timedelta(hours=delay_hours)
+            storage.update_source_backoff(src.id, backoff_until, error_count)
+            raise RuntimeError(f"HTTP {http_status} — backing off {delay_hours}h (attempt {error_count})")
+        # Successful fetch — clear any previous backoff
+        if src.fetch_error_count > 0 or src.backoff_until:
+            storage.reset_source_backoff(src.id)
+        # Discover platform links: attempt if never tried or last attempt > 7 days ago
+        from datetime import timedelta
+        platform_stale = (
+            src.platform_links_attempted_at is None
+            or (datetime.now(timezone.utc) - src.platform_links_attempted_at).days >= _PLATFORM_LINKS_RETRY_DAYS
+        )
+        if platform_stale and hasattr(prov, "fetch_platform_links"):
             try:
                 links = prov.fetch_platform_links(src)
                 if links:
@@ -80,6 +105,7 @@ def run_pipeline(
                     print(f"[{src.name}] platform links: {list(links.keys())}")
             except Exception as e:
                 print(f"[{src.name}] [warn] platform link discovery failed: {e}")
+            storage.mark_platform_links_attempted(src.id)
         return src, prov, eps
 
     with ThreadPoolExecutor(max_workers=min(len(sources), _FETCH_WORKERS)) as ex:
@@ -104,6 +130,20 @@ def run_pipeline(
         for source, provider, episodes in source_batches
         for ep in episodes
     ]
+
+    # Re-queue previously-failed episodes that are due for retry (max 3 attempts)
+    if not dry_run:
+        try:
+            retry_pairs = storage.get_episodes_for_retry(max_retries=3)
+            if retry_pairs:
+                print(f"[Pipeline] Retrying {len(retry_pairs)} previously-failed episode(s)")
+            for ep, src in retry_pairs:
+                # Skip if already in this run's work list
+                if not any(e.id == ep.id for _, _, e in all_work):
+                    all_work.append((src, _get_source_provider(src), ep))
+        except Exception as e:
+            print(f"[Pipeline] [warn] Could not load retry queue: {e}")
+
     # Pre-load Whisper model in the main thread before workers start so no
     # episode worker pays the model-load cost while holding _WHISPER_LOCK.
     if all_work and not dry_run:
@@ -123,6 +163,7 @@ def run_pipeline(
             for src, prov, ep in all_work
         }
         for f in as_completed(ep_futures):
+            src, ep = ep_futures[f]
             try:
                 status, error_msg = f.result()
                 with stats_lock:
@@ -133,6 +174,14 @@ def run_pipeline(
                     print(error_msg)
                     with errors_lock:
                         errors.append(error_msg)
+                # Queue failed episodes for retry on the next pipeline run
+                if status == "errors" and not dry_run:
+                    from datetime import timedelta
+                    retry_after = datetime.now(timezone.utc) + timedelta(hours=1)
+                    try:
+                        storage.increment_episode_retry(ep.id, src.id, retry_after, error_msg)
+                    except Exception as re:
+                        print(f"[Pipeline] [warn] Could not queue retry for {ep.id[:8]}: {re}")
             except Exception as e:
                 msg = f"[ERROR] Unexpected worker error: {e}"
                 print(msg)
