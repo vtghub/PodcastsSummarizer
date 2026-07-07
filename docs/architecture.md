@@ -62,7 +62,7 @@ graph TB
         ARDIGPROC["/api/digest/process\ntriggers workflow_dispatch"]
         ARDIGSTAT["/api/digest/status\npoll for insights"]
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
-        ARENG["/api/insights/[id]/view\n/react · /comments\n/api/comments/[id]\n/react · DELETE"]
+        ARENG["/api/insights/[id]/engagement\n/react · /comments\n/api/comments/[id]\n/react · DELETE"]
     end
 
     CRON --> SRC
