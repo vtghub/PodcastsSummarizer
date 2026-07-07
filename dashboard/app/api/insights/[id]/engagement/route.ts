@@ -12,13 +12,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const supabase = getSupabaseClient();
   const shouldRecordView = new URL(req.url).searchParams.get("view") === "1";
 
-  // Record view (upsert for signed-in users, insert for anon)
+  // Record view — avoid upsert because the unique index on (insight_id, user_id)
+  // is a partial index (WHERE user_id IS NOT NULL), which Supabase's onConflict
+  // cannot reference directly. Use select-then-insert instead.
   if (shouldRecordView) {
     if (userId) {
-      await supabase.from("insight_views").upsert(
-        { insight_id: insightId, user_id: userId },
-        { onConflict: "insight_id,user_id", ignoreDuplicates: true }
-      );
+      const { data: existing } = await supabase
+        .from("insight_views")
+        .select("id")
+        .eq("insight_id", insightId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!existing) {
+        await supabase
+          .from("insight_views")
+          .insert({ insight_id: insightId, user_id: userId });
+      }
     } else {
       await supabase.from("insight_views").insert({ insight_id: insightId });
     }
