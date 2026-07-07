@@ -8,34 +8,23 @@ import InsightCard from "@/components/InsightCard";
 interface Props {
   byDomain: Record<string, Insight[]>;
   isAuthed: boolean;
+  initialDomain?: string;
 }
 
-export default function DomainInsightView({ byDomain, isAuthed }: Props) {
+export default function DomainInsightView({ byDomain, isAuthed, initialDomain }: Props) {
   const domains = DOMAIN_ORDER.filter((d) => byDomain[d]);
-  const [selected, setSelected] = useState(domains[0]);
-  const [pendingHash, setPendingHash] = useState<string | null>(null);
+  const [selected, setSelected] = useState(
+    initialDomain && domains.includes(initialDomain) ? initialDomain : domains[0]
+  );
 
-  // On mount: read ?domain= and #hash from URL
+  // Scroll to #hash on mount — correct tab is already selected from initialDomain
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const domainParam = params.get("domain");
-    if (domainParam && domains.includes(domainParam)) {
-      setSelected(domainParam);
-    }
     const hash = window.location.hash;
-    if (hash) setPendingHash(hash);
+    if (!hash) return;
+    const el = document.querySelector(hash);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Scroll to target card after selected tab has rendered
-  useEffect(() => {
-    if (!pendingHash) return;
-    const el = document.querySelector(pendingHash);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      setPendingHash(null);
-    }
-  }, [selected, pendingHash]);
 
   const insights = byDomain[selected] ?? [];
   const color = getDomainColor(selected);
