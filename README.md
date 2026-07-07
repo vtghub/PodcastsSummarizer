@@ -242,7 +242,7 @@ npm run dev      # http://localhost:3000
 | **Daily Insights** | Summaries, key points, quotes, and action items per episode; instant loading skeleton while data fetches |
 | **Personalized view** | Signed-in users see only insights from their subscribed podcasts |
 | **Domain Tabs** | Filter by domain (Technology & AI, Business & Startups, etc.); auto-resets to first available tab on date change |
-| **Calendar Date Picker** | Popover month calendar replaces the date dropdown — available dates marked with an accent dot, selected date shown as filled circle, today highlighted with an outline ring; all available dates prefetched for instant navigation |
+| **Calendar Date Picker** | Month calendar replaces the date dropdown — available dates marked with an accent dot, selected date shown as filled circle, today highlighted with an outline ring; all available dates prefetched for instant navigation; **mobile**: full-width bottom sheet (fixed, slides up from bottom edge, backdrop overlay, drag handle + × close button, 44px touch targets); **desktop**: right-aligned popover |
 | **Read Aloud** | Per-card TTS via Web Speech API; global toggle in navbar |
 | **Themes** | 5 built-in themes (Light, Midnight, Aurora, Dusk, Forest) |
 | **My Podcasts** | Catalog with subscribe/unsubscribe toggles; admin controls for catalog management; podcast name search with iTunes-powered dropdown |
