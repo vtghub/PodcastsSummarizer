@@ -297,7 +297,8 @@ sequenceDiagram
     B->>PICKER: click Process & Send Digest
     PICKER->>PAPI: POST {sourceId, audioUrl, episodeTitle}
     PAPI->>PAPI: verify user subscription
-    PAPI->>GH: POST /actions/workflows/daily_pipeline.yml/dispatches\n{episode_audio_url, source_id, target_email}
+    PAPI->>GH: POST /actions/workflows/daily_pipeline.yml/dispatches
+    Note right of GH: body: episode_audio_url, source_id, target_email
     GH-->>PAPI: 204 No Content
     PAPI-->>PICKER: 200 {queued: true}
     PICKER->>PICKER: setState("queued") — show "Queued!" + "View Dashboard" link
@@ -332,7 +333,8 @@ sequenceDiagram
     participant PY as Python Pipeline
 
     Note over PICKER,RT: useEffect fires when queuedIds is non-empty
-    PICKER->>RT: supabase.channel("queued-episode-updates")\n.on("postgres_changes", INSERT on insights)\n.on("postgres_changes", INSERT/UPDATE on episode_queue)\n.subscribe()
+    PICKER->>RT: subscribe to insights INSERT and episode_queue INSERT/UPDATE
+    Note right of RT: channel: queued-episode-updates
     RT-->>PICKER: SUBSCRIBED
 
     Note over PY,DB: GitHub Actions pipeline completes (~3–5 min later)
@@ -480,8 +482,9 @@ sequenceDiagram
     CARD->>CARD: update comment row counts
 
     B->>CARD: delete own comment → confirm
-    CARD->>DB: DELETE /api/comments/[id]
-    DB-->>CARD: 200 OK
+    CARD->>CRAPI: DELETE /api/comments/[id]
+    CRAPI->>DB: DELETE insight_comments WHERE id AND user_id
+    CRAPI-->>CARD: 200 OK
     CARD->>CARD: remove comment from list
 ```
 
@@ -557,7 +560,8 @@ sequenceDiagram
     participant PY as Python Pipeline (or on-demand)
 
     Note over DIV,RT: useEffect on mount — subscribe to insights INSERT
-    DIV->>RT: supabase.channel("dashboard-insights")\n.on("postgres_changes", INSERT on insights)\n.subscribe()
+    DIV->>RT: subscribe to insights INSERT
+    Note right of RT: channel: dashboard-insights
     RT-->>DIV: SUBSCRIBED
 
     Note over PY,DB: Pipeline saves a new insight for today
