@@ -34,6 +34,10 @@ export async function sendDigestEmail(
   });
 }
 
+export function buildDigestHtml(date: string, insightsByDomain: Record<string, Insight[]>): string {
+  return renderHtml(date, insightsByDomain);
+}
+
 function renderHtml(date: string, insightsByDomain: Record<string, Insight[]>): string {
   const sections = Object.entries(insightsByDomain).map(([domain, insights]) => {
     const color = DOMAIN_COLORS[domain] ?? "#6b7280";

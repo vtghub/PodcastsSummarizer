@@ -42,6 +42,15 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
   const [localSubs, setLocalSubs] = useState<Set<string>>(new Set(subscribedIds));
   const [localSources, setLocalSources] = useState<Source[]>(sources);
 
+  const [toast, setToast] = useState<{ msg: string; type: "error" | "success" } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showToast(msg: string, type: "error" | "success" = "error") {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg, type });
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }
+
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PodcastSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -186,10 +195,10 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         body: JSON.stringify({ domain: newDomain }),
       });
       if (!res.ok) {
-        // revert on failure
         setLocalSources((prev) =>
           prev.map((s) => s.id === source.id ? { ...s, domain: source.domain } : s)
         );
+        showToast("Failed to reclassify — changes reverted");
       } else {
         refresh();
       }
@@ -197,6 +206,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
       setLocalSources((prev) =>
         prev.map((s) => s.id === source.id ? { ...s, domain: source.domain } : s)
       );
+      showToast("Network error — changes reverted");
     }
   }
 
@@ -458,6 +468,20 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium shadow-lg border"
+          style={{
+            background: toast.type === "error" ? "rgba(127,29,29,0.95)" : "rgba(6,78,59,0.95)",
+            borderColor: toast.type === "error" ? "rgba(185,28,28,0.6)" : "rgba(6,95,70,0.6)",
+            color: "#fff",
+          }}
+        >
+          {toast.msg}
         </div>
       )}
     </>
