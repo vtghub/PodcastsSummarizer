@@ -4,7 +4,7 @@ import { useState, useTransition, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Rss, Video, Plus, Trash2, PowerOff, Power, X, Loader2,
-  Lock, Bell, BellOff, Search,
+  Lock, Bell, BellOff, Search, Tag,
 } from "lucide-react";
 import type { Source, PlatformLinks } from "@/lib/db";
 import type { PodcastSearchResult } from "@/app/api/podcasts/search/route";
@@ -40,6 +40,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
   const [error, setError] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
   const [localSubs, setLocalSubs] = useState<Set<string>>(new Set(subscribedIds));
+  const [localSources, setLocalSources] = useState<Source[]>(sources);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PodcastSearchResult[]>([]);
@@ -173,9 +174,35 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
     }
   }
 
+  async function handleClassify(source: Source, newDomain: string) {
+    if (newDomain === source.domain) return;
+    setLocalSources((prev) =>
+      prev.map((s) => s.id === source.id ? { ...s, domain: newDomain } : s)
+    );
+    try {
+      const res = await fetch(`/api/sources/${source.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain: newDomain }),
+      });
+      if (!res.ok) {
+        // revert on failure
+        setLocalSources((prev) =>
+          prev.map((s) => s.id === source.id ? { ...s, domain: source.domain } : s)
+        );
+      } else {
+        refresh();
+      }
+    } catch {
+      setLocalSources((prev) =>
+        prev.map((s) => s.id === source.id ? { ...s, domain: source.domain } : s)
+      );
+    }
+  }
+
   // Group sources by domain, preserving canonical order
   const domainGroups = DOMAIN_ORDER.reduce<Record<string, Source[]>>((acc, domain) => {
-    const inDomain = sources.filter((s) => s.domain === domain);
+    const inDomain = localSources.filter((s) => s.domain === domain);
     if (inDomain.length > 0) acc[domain] = inDomain;
     return acc;
   }, {});
@@ -183,6 +210,13 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
   const activeDomains = DOMAIN_ORDER.filter((d) => domainGroups[d]);
 
   const [selectedDomain, setSelectedDomain] = useState<string>(() => activeDomains[0] ?? "");
+
+  // Keep selectedDomain valid when a reclassify empties the current tab
+  useEffect(() => {
+    if (selectedDomain && !activeDomains.includes(selectedDomain)) {
+      setSelectedDomain(activeDomains[0] ?? "");
+    }
+  }, [activeDomains, selectedDomain]);
 
   return (
     <>
@@ -280,6 +314,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
               onSubscribe={handleSubscribe}
               onToggle={handleToggle}
               onDelete={handleDelete}
+              onClassify={handleClassify}
             />
           )}
         </>
@@ -433,11 +468,12 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
 
 function DomainSection({
   domain, sources, subscribedIds, actionId, isAuthed, isAdmin,
-  onSubscribe, onToggle, onDelete,
+  onSubscribe, onToggle, onDelete, onClassify,
 }: {
   domain: string; sources: Source[]; subscribedIds: Set<string>;
   actionId: string | null; isAuthed: boolean; isAdmin: boolean;
   onSubscribe: (s: Source) => void; onToggle: (s: Source) => void; onDelete: (s: Source) => void;
+  onClassify: (s: Source, domain: string) => void;
 }) {
   const dk = DOMAIN_KEY[domain] ?? "oth";
   // Subscribed sources float to the top within each domain
@@ -479,6 +515,7 @@ function DomainSection({
             onSubscribe={() => onSubscribe(s)}
             onToggle={() => onToggle(s)}
             onDelete={() => onDelete(s)}
+            onClassify={(d) => onClassify(s, d)}
           />
         ))}
       </div>
@@ -490,11 +527,12 @@ function DomainSection({
 
 function SourceCard({
   source, subscribed, busy, isAuthed, isAdmin,
-  onSubscribe, onToggle, onDelete,
+  onSubscribe, onToggle, onDelete, onClassify,
 }: {
   source: Source; subscribed: boolean; busy: boolean;
   isAuthed: boolean; isAdmin: boolean;
   onSubscribe: () => void; onToggle: () => void; onDelete: () => void;
+  onClassify: (domain: string) => void;
 }) {
   const dk = DOMAIN_KEY[source.domain] ?? "oth";
   const isYT = source.source_type === "youtube";
@@ -566,6 +604,22 @@ function SourceCard({
 
           {isAdmin && (
             <div className="flex items-center gap-1">
+              <div className="relative" title="Reclassify domain">
+                <Tag className="absolute left-1.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none" style={{ color: "var(--txt-4)" }} />
+                <select
+                  value={source.domain}
+                  onChange={(e) => onClassify(e.target.value)}
+                  className="appearance-none pl-5 pr-1 py-1 rounded-md text-xs transition-colors cursor-pointer"
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--bdr)",
+                    color: "var(--txt-4)",
+                    maxWidth: "7rem",
+                  }}
+                >
+                  {DOMAIN_ORDER.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
               <button
                 onClick={onToggle}
                 title={source.enabled ? "Disable in pipeline" : "Enable in pipeline"}

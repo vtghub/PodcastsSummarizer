@@ -228,6 +228,13 @@ async function sbSetSourceEnabled(id: string, enabled: boolean): Promise<void> {
   if (error) throw error;
 }
 
+async function sbSetSourceDomain(id: string, domain: string): Promise<void> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { error } = await sb.from("sources").update({ domain }).eq("id", id);
+  if (error) throw error;
+}
+
 async function sbGetEpisodesWithInsights(userId: string, sourceId: string): Promise<{ id: string; title: string; published_at: string }[]> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
@@ -351,6 +358,16 @@ export function setSourceEnabled(id: string, enabled: boolean): void {
 export async function setSourceEnabledAsync(id: string, enabled: boolean): Promise<void> {
   if (useSupabase()) return sbSetSourceEnabled(id, enabled);
   setSourceEnabled(id, enabled);
+}
+
+export function setSourceDomain(id: string, domain: string): void {
+  const db = getSqliteDbWrite();
+  db.prepare("UPDATE sources SET domain = ? WHERE id = ?").run(domain, id);
+}
+
+export async function setSourceDomainAsync(id: string, domain: string): Promise<void> {
+  if (useSupabase()) return sbSetSourceDomain(id, domain);
+  setSourceDomain(id, domain);
 }
 
 // ─── Cached Supabase reads (1-hour TTL) ───────────────────────────────────
