@@ -58,6 +58,12 @@ function insightsToPrintHtml(date: string, insights: Insight[]): string {
   hr { border: none; border-top: 1px solid #ddd; margin: 1.5rem 0; }
   @media print { body { margin: 1rem; } }
 </style>
+<script>
+  window.onload = function () { window.print(); };
+  window.onafterprint = function () {
+    document.body.innerHTML = '<p style="font-family:sans-serif;text-align:center;margin-top:4rem;color:#888">Done — you can close this tab.</p>';
+  };
+</script>
 </head>
 <body>
 <h1>Podcast Insights</h1>
@@ -101,10 +107,7 @@ export async function GET(req: Request) {
 
   if (fmt === "pdf") {
     return new Response(insightsToPrintHtml(date, insights), {
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Content-Disposition": `attachment; filename="insights-${date}.pdf"`,
-      },
+      headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
 
