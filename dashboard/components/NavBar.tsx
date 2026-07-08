@@ -6,7 +6,7 @@ import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X } from "
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
-import { getDomainColor } from "@/lib/domain-colors";
+import { getDomainColor, DOMAINS } from "@/lib/domain-colors";
 
 interface SearchResult {
   id: string;
@@ -34,17 +34,24 @@ export default function NavBar({
   const [searchQuery, setSearchQuery]       = useState("");
   const [searchResults, setSearchResults]   = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading]   = useState(false);
+  const [filterDomain, setFilterDomain]     = useState("");
+  const [filterFrom, setFilterFrom]         = useState("");
+  const [filterTo, setFilterTo]             = useState("");
   const pickerRef    = useRef<HTMLDivElement>(null);
   const userMenuRef  = useRef<HTMLDivElement>(null);
   const searchRef    = useRef<HTMLDivElement>(null);
   const searchInput  = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
 
-  const runSearch = useCallback(async (q: string) => {
+  const runSearch = useCallback(async (q: string, domain: string, from: string, to: string) => {
     if (q.length < 2) { setSearchResults([]); return; }
     setSearchLoading(true);
     try {
-      const res = await fetch(`/api/insights/search?q=${encodeURIComponent(q)}`);
+      const params = new URLSearchParams({ q });
+      if (domain) params.set("domain", domain);
+      if (from)   params.set("from", from);
+      if (to)     params.set("to", to);
+      const res = await fetch(`/api/insights/search?${params}`);
       const data = await res.json();
       setSearchResults(data.results ?? []);
     } catch {
@@ -55,9 +62,9 @@ export default function NavBar({
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => runSearch(searchQuery), 300);
+    const timer = setTimeout(() => runSearch(searchQuery, filterDomain, filterFrom, filterTo), 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, runSearch]);
+  }, [searchQuery, filterDomain, filterFrom, filterTo, runSearch]);
 
   function openSearch() {
     setSearchOpen(true);
@@ -68,6 +75,9 @@ export default function NavBar({
     setSearchOpen(false);
     setSearchQuery("");
     setSearchResults([]);
+    setFilterDomain("");
+    setFilterFrom("");
+    setFilterTo("");
   }
 
   function handleResultClick(result: SearchResult) {
@@ -328,6 +338,61 @@ export default function NavBar({
             </button>
           </div>
 
+          {/* Filters */}
+          <div className="px-3 py-2 border-b flex flex-wrap gap-2 items-center" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
+            {/* Domain chips */}
+            <div className="flex flex-wrap gap-1.5">
+              {DOMAINS.map((d) => {
+                const c = getDomainColor(d);
+                const active = filterDomain === d;
+                return (
+                  <button
+                    key={d}
+                    onClick={() => setFilterDomain(active ? "" : d)}
+                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all border ${active ? `${c.bg} ${c.text}` : ""}`}
+                    style={active
+                      ? { borderColor: "transparent" }
+                      : { background: "var(--bg-surface)", color: "var(--txt-4)", borderColor: "var(--bdr)" }
+                    }
+                  >
+                    {d.split(" & ")[0]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Date range */}
+            <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+              <input
+                type="date"
+                value={filterFrom}
+                onChange={(e) => setFilterFrom(e.target.value)}
+                title="From date"
+                className="text-xs px-2 py-1 rounded-lg border outline-none"
+                style={{ background: "var(--bg-surface)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
+              />
+              <span className="text-xs" style={{ color: "var(--txt-4)" }}>–</span>
+              <input
+                type="date"
+                value={filterTo}
+                onChange={(e) => setFilterTo(e.target.value)}
+                title="To date"
+                className="text-xs px-2 py-1 rounded-lg border outline-none"
+                style={{ background: "var(--bg-surface)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
+              />
+              {(filterDomain || filterFrom || filterTo) && (
+                <button
+                  onClick={() => { setFilterDomain(""); setFilterFrom(""); setFilterTo(""); }}
+                  className="text-xs px-2 py-1 rounded-lg border transition-colors"
+                  style={{ background: "var(--bg-surface)", color: "var(--txt-4)", borderColor: "var(--bdr)" }}
+                  title="Clear filters"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Results */}
           {searchResults.length > 0 && (
             <ul className="max-h-96 overflow-y-auto divide-y" style={{ borderColor: "var(--bdr)" }}>
@@ -372,7 +437,7 @@ export default function NavBar({
 
           {searchQuery.length < 2 && (
             <p className="px-4 py-4 text-xs" style={{ color: "var(--txt-4)" }}>
-              Type at least 2 characters to search across all insight summaries, key points, quotes, and tags.
+              Type at least 2 characters to search across all insight summaries, key points, quotes, and tags. Use the domain chips or date range above to narrow results.
             </p>
           )}
         </div>
