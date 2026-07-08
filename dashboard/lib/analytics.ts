@@ -38,6 +38,35 @@ type InsightRow = {
 
 type ViewRow = { insight_id: string };
 
+export async function getNewInsightCount(userId: string): Promise<number> {
+  const sb = getSupabaseClient();
+
+  const { data: profile } = await sb
+    .from("user_profiles")
+    .select("last_visited_at")
+    .eq("user_id", userId)
+    .single();
+
+  if (!profile?.last_visited_at) return 0;
+
+  const { data: subs } = await sb
+    .from("user_subscriptions")
+    .select("source_id")
+    .eq("user_id", userId)
+    .eq("enabled", true);
+
+  const sourceIds = (subs ?? []).map((r: { source_id: string }) => r.source_id);
+  if (sourceIds.length === 0) return 0;
+
+  const { count } = await sb
+    .from("insights")
+    .select("id", { count: "exact", head: true })
+    .in("source_id", sourceIds)
+    .gt("created_at", profile.last_visited_at);
+
+  return count ?? 0;
+}
+
 export async function getAnalytics(userId: string): Promise<AnalyticsData> {
   const sb = getSupabaseClient();
 
