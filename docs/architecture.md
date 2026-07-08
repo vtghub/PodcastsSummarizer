@@ -167,6 +167,9 @@ erDiagram
         bool is_public
         uuid user_id
         jsonb platform_links
+        timestamptz backoff_until
+        int fetch_error_count
+        timestamptz platform_links_attempted_at
     }
     episodes {
         text id PK
@@ -199,6 +202,8 @@ erDiagram
         text source_id
         text status
         text error_msg
+        int retry_count
+        timestamptz retry_after
         timestamptz updated_at
     }
     insight_views {

@@ -14,20 +14,28 @@ sequenceDiagram
     participant MAIL as Gmail SMTP
 
     GH->>PY: trigger (cron or workflow_dispatch)
-    PY->>DB: get_sources(enabled=True)
-    DB-->>PY: 16 sources
+    PY->>DB: get_sources(enabled=True, backoff_until<=NOW)
+    DB-->>PY: sources (429/503-backoffed sources excluded)
+    PY->>DB: get_episodes_for_retry(max_retries=3)
+    DB-->>PY: failed episodes due for retry (retry_after<=NOW)
 
     loop parallel (8 workers)
         PY->>RSS: fetch_latest_episodes(since)
-        RSS-->>PY: new episodes
-        alt platform_links empty or missing youtube key
+        alt 429 or 503 response
+            PY->>DB: update_source_backoff(source_id, backoff_until, error_count)
+        else success
+            PY->>DB: reset_source_backoff(source_id)
+            RSS-->>PY: new episodes
+        end
+        alt platform_links empty or last attempt over 7 days ago
             PY->>RSS: parse feed for website + Podcast 2.0 namespace (Spotify, YouTube)
             PY->>RSS: iTunes Search API → Apple Podcasts URL
             PY->>DB: update_source_platform_links(source_id, merged_links)
+            PY->>DB: mark_platform_links_attempted(source_id)
         end
     end
 
-    loop per episode (4 workers)
+    loop per episode (4 workers) — new + retry queue
         PY->>RSS: fetch_transcript_text()
         alt captions available
             RSS-->>PY: text transcript
@@ -40,9 +48,13 @@ sequenceDiagram
         alt Gemini quota error
             PY->>LLM: retry with Groq
         end
-        LLM-->>PY: Insight (summary, key_points, quotes, actions, tags)
-        PY->>DB: save_insight(insight, date=today)
-        PY->>DB: mark_episode_done(episode_id)
+        alt success
+            LLM-->>PY: Insight (summary, key_points, quotes, actions, tags)
+            PY->>DB: save_insight(insight, date=today)
+            PY->>DB: mark_episode_done(episode_id)
+        else failure
+            PY->>DB: increment_episode_retry(episode_id, retry_after=exponential)
+        end
     end
 
     Note over PY,MAIL: Cache revalidation (before email fan-out)
@@ -50,10 +62,10 @@ sequenceDiagram
     PY->>NEXT: POST /api/revalidate (x-revalidate-secret header)
     NEXT-->>PY: 200 revalidated=true (guests see fresh insights immediately)
 
-    Note over PY,MAIL: Email fan-out (send_email=True)
+    Note over PY,MAIL: Async email fan-out (send_email=True, up to 8 parallel SMTP sends)
     PY->>DB: get_users_with_digest_enabled()
     DB-->>PY: [user1{digest_domains=[...]}, user2{digest_domains=null}, ...]
-    loop per user
+    loop parallel (8 workers) per user
         PY->>DB: get_user_subscribed_source_ids(user_id)
         PY->>DB: get_insights_by_date_and_sources(date, source_ids)
         PY->>PY: filter by user.digest_domains (null = all domains)
