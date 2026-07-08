@@ -28,7 +28,7 @@ graph TB
         BOOKMARKS[("insight_bookmarks\ninsight_id, user_id")]
         COMMENTS[("insight_comments\ninsight_id, user_id, body")]
         CREACTIONS[("comment_reactions\ncomment_id, user_id, type")]
-        PROFILES[("user_profiles\nis_admin, digest_enabled\ndigest_hour, digest_domains[]")]
+        PROFILES[("user_profiles\nis_admin, digest_enabled\ndigest_hour, digest_domains[]\ndigest_frequency, digest_day_of_week\nlast_visited_at")]
         SUBS[("user_subscriptions\nuser_id → source_id")]
         AUTHUSERS[("auth.users\nSupabase Auth")]
     end
@@ -162,6 +162,9 @@ erDiagram
         bool digest_enabled
         int  digest_hour
         text[] digest_domains
+        text digest_frequency
+        int  digest_day_of_week
+        timestamptz last_visited_at
     }
     user_subscriptions {
         uuid user_id PK
