@@ -60,9 +60,11 @@ PodcastsSummarizer/
 │   │   └── email/
 │   │       └── gmail_smtp.py        # Gmail App Password SMTP + HTML renderer
 │   └── jobs/
-│       ├── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → email fan-out; run_single_episode() for on-demand
+│       ├── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → async email fan-out; episode retry; RSS backoff; run_single_episode() for on-demand
 │       ├── backfill_platform_links.py  # One-time job: discover platform URLs for all existing sources
 │       └── backfill_published_at.py    # One-time job: backfill episode published dates from RSS feeds
+│   └── tests/
+│       └── test_pipeline.py         # Pytest suite (24 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience
 │
 ├── supabase/
 │   └── migrations/
@@ -73,7 +75,8 @@ PodcastsSummarizer/
 │       ├── 005_engagement.sql       # insight_views, insight_reactions, insight_comments, comment_reactions
 │       ├── 006_perf_indexes.sql     # Composite indexes on insights(date,source_id), (source_id,episode_id), (source_id,date)
 │       ├── 007_fts.sql              # search_vector tsvector + GIN index + trigger + backfill for full-text search
-│       └── 008_digest_domains.sql   # digest_domains text[] on user_profiles for per-user email domain filter
+│       ├── 008_digest_domains.sql   # digest_domains text[] on user_profiles for per-user email domain filter
+│       └── 009_pipeline_resilience.sql  # retry_count + retry_after on episode_queue; backoff_until + fetch_error_count + platform_links_attempted_at on sources
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
@@ -124,7 +127,7 @@ PodcastsSummarizer/
 │   │   ├── email.ts                 # nodemailer Gmail SMTP sender — HTML + plain text digest renderer
 │   │   ├── supabase.ts              # Service-role Supabase client (server-only)
 │   │   └── supabase-browser.ts      # Anon-key Supabase client singleton (browser — Realtime)
-│   └── middleware.ts                # Supabase SSR session refresh; guards /api routes (401 if no user)
+│   └── middleware.ts                # Supabase SSR session refresh; guards /api routes (401 if no user); token-bucket rate limiting (20 req/min) on comment/reaction mutations
 │
 ├── docs/
 │   ├── architecture.md              # Mermaid system architecture diagram
@@ -170,12 +173,12 @@ auth.users  (Supabase Auth)
 
 ## Digest Fan-Out
 
-The pipeline runs once and sends N personalized emails:
+The pipeline runs once and sends N personalized emails in parallel:
 
 1. Query `user_profiles JOIN auth.users` for all users with `digest_enabled=TRUE`
-2. For each user: fetch their `user_subscriptions` → filter today's insights to those source IDs
+2. For each user (up to 8 concurrent SMTP workers): fetch their `user_subscriptions` → filter today's insights to those source IDs
 3. Apply per-user domain filter: if `digest_domains` is set, drop insights outside those domains (`NULL` = all domains)
-4. Send one HTML email per user via Gmail SMTP
+4. Send one HTML email per user via Gmail SMTP — failures are isolated per-user and logged without blocking other recipients
 5. Users with no subscriptions or no matching insights are skipped
 
 ---
