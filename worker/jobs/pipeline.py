@@ -445,6 +445,9 @@ def _send_per_user_digests(storage, date_str: str):
         for ins in insights:
             if user.digest_domains is None or ins.domain in user.digest_domains:
                 by_domain[ins.domain].append(ins)
+        if not by_domain:
+            print(f"[Email] {user.email} — no insights match domain filter, skipping")
+            return
         ok = email.send_digest(user.email, date_str, dict(by_domain))
         status = "sent" if ok else "failed"
         print(f"[Email] {user.email} — {len(insights)} insight(s) — {status}")
