@@ -1,6 +1,7 @@
 import { getInsightsByDate, getAvailableDates, type Insight } from "@/lib/db";
 import { getUserId } from "@/lib/auth";
 import DateNav from "@/components/DateNav";
+import ExportDropdown from "@/components/ExportDropdown";
 import DomainInsightView from "@/components/DomainInsightView";
 import EmptyState from "@/components/EmptyState";
 import { format, parseISO } from "date-fns";
@@ -48,17 +49,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>{formattedDate}</p>
         </div>
         <div className="flex items-center gap-2">
-          {userId && (
-            <a
-              href={`/api/insights/export?format=csv&date=${selectedDate}`}
-              download
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-opacity hover:opacity-80"
-              style={{ background: "var(--bg-elevated)", color: "var(--txt-4)", borderColor: "var(--bdr)" }}
-              title="Download insights as CSV"
-            >
-              ↓ CSV
-            </a>
-          )}
+          {userId && <ExportDropdown date={selectedDate} />}
           <DateNav selectedDate={selectedDate} availableDates={availableDates} />
         </div>
       </div>

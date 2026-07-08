@@ -67,6 +67,28 @@ ${sections}
 </html>`;
 }
 
+function insightsToJson(date: string, insights: Insight[]): string {
+  return JSON.stringify(
+    {
+      date,
+      count: insights.length,
+      insights: insights.map((ins) => ({
+        id: ins.id,
+        domain: ins.domain,
+        source: ins.source_name ?? null,
+        episode: ins.episode_title ?? null,
+        summary: ins.summary,
+        key_points: ins.key_points,
+        key_quotes: ins.key_quotes,
+        action_items: ins.action_items,
+        tags: ins.tags,
+      })),
+    },
+    null,
+    2
+  );
+}
+
 export async function GET(req: Request) {
   const userId = await getUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -79,7 +101,19 @@ export async function GET(req: Request) {
 
   if (fmt === "pdf") {
     return new Response(insightsToPrintHtml(date, insights), {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Disposition": `attachment; filename="insights-${date}.pdf"`,
+      },
+    });
+  }
+
+  if (fmt === "json") {
+    return new Response(insightsToJson(date, insights), {
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Disposition": `attachment; filename="insights-${date}.json"`,
+      },
     });
   }
 
