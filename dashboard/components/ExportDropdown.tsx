@@ -20,8 +20,20 @@ interface JsonInsight {
   tags: string[];
 }
 
+// Domain accent colours (RGB) — mirror the app's CSS token palette
+const DOMAIN_COLORS: Record<string, [number, number, number]> = {
+  "Technology & AI":           [99,  102, 241],
+  "Business & Startups":       [245, 158,  11],
+  "Health & Science":          [16,  185, 129],
+  "Finance & Investing":       [59,  130, 246],
+  "Leadership & Productivity": [168,  85, 247],
+  "Society & Culture":         [236,  72, 153],
+};
+function domainColor(domain: string): [number, number, number] {
+  return DOMAIN_COLORS[domain] ?? [107, 114, 128];
+}
+
 async function generatePdf(date: string) {
-  // Dynamic import so jsPDF is never bundled into the server chunk
   const { jsPDF } = await import("jspdf");
   const res = await fetch(`/api/insights/export?format=json&date=${date}`);
   if (!res.ok) throw new Error("Failed to fetch insights");
@@ -30,74 +42,149 @@ async function generatePdf(date: string) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 48;
+  const margin = 50;
   const contentW = pageW - margin * 2;
   let y = margin;
+  let pageNum = 1;
 
-  function ensureSpace(needed: number) {
-    if (y + needed > pageH - margin) {
-      doc.addPage();
-      y = margin;
-    }
+  // ── helpers ────────────────────────────────────────────────────────────────
+
+  function addPageFooter() {
+    doc.setFontSize(8);
+    doc.setTextColor(170, 170, 170);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Podcast Insights · ${date}`, margin, pageH - 24);
+    doc.text(`Page ${pageNum}`, pageW - margin, pageH - 24, { align: "right" });
   }
 
-  function addText(text: string, size: number, color: [number, number, number], bold = false) {
+  function newPage() {
+    addPageFooter();
+    doc.addPage();
+    pageNum += 1;
+    y = margin;
+  }
+
+  function ensureSpace(needed: number) {
+    if (y + needed > pageH - 48) newPage();
+  }
+
+  function text(
+    str: string,
+    size: number,
+    color: [number, number, number],
+    opts: { bold?: boolean; maxW?: number; align?: "left" | "right" | "center" } = {}
+  ) {
+    const { bold = false, maxW = contentW, align = "left" } = opts;
     doc.setFontSize(size);
     doc.setTextColor(...color);
     doc.setFont("helvetica", bold ? "bold" : "normal");
-    const lines = doc.splitTextToSize(text, contentW);
-    ensureSpace(lines.length * size * 1.4);
-    doc.text(lines, margin, y);
-    y += lines.length * size * 1.4;
+    const lines = doc.splitTextToSize(str, maxW);
+    const lineH = size * 1.45;
+    ensureSpace(lines.length * lineH);
+    const x = align === "right" ? pageW - margin : align === "center" ? pageW / 2 : margin;
+    doc.text(lines, x, y, { align });
+    y += lines.length * lineH;
+    return lines.length * lineH;
   }
 
-  // Title
-  addText(`Podcast Insights — ${date}`, 18, [26, 26, 26], true);
-  addText(`${insights.length} insight${insights.length !== 1 ? "s" : ""}`, 10, [136, 136, 136]);
-  y += 12;
+  function hRule(color: [number, number, number] = [230, 230, 230], weight = 0.5) {
+    doc.setDrawColor(...color);
+    doc.setLineWidth(weight);
+    doc.line(margin, y, pageW - margin, y);
+  }
 
-  insights.forEach((ins, i) => {
-    ensureSpace(60);
+  // ── Cover header ───────────────────────────────────────────────────────────
 
-    // Separator line (not before first)
-    if (i > 0) {
-      doc.setDrawColor(220, 220, 220);
-      doc.line(margin, y, pageW - margin, y);
-      y += 14;
+  // Accent bar at top
+  doc.setFillColor(99, 102, 241);
+  doc.rect(0, 0, pageW, 6, "F");
+
+  y = 36;
+  text("Podcast Insights", 22, [26, 26, 26], { bold: true });
+  y += 2;
+  text(date, 11, [100, 100, 100]);
+  y += 2;
+  text(`${insights.length} insight${insights.length !== 1 ? "s" : ""}`, 9, [160, 160, 160]);
+  y += 10;
+  hRule([200, 200, 200], 0.75);
+  y += 18;
+
+  // ── Insights ───────────────────────────────────────────────────────────────
+
+  insights.forEach((ins) => {
+    // Estimate card height to avoid splitting a card awkwardly across pages
+    ensureSpace(80);
+
+    const [r, g, b] = domainColor(ins.domain);
+
+    // Card background
+    const cardX = margin - 10;
+    const cardStartY = y - 8;
+    const cardW = contentW + 20;
+
+    // Domain badge pill
+    doc.setFillColor(r, g, b, 0.12);  // light tint background
+    doc.roundedRect(cardX, cardStartY, cardW, 18, 3, 3, "F");
+    doc.setFillColor(r, g, b);
+    doc.roundedRect(cardX, cardStartY, 4, 18, 1, 1, "F");  // left accent strip
+
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(r, g, b);
+    doc.text(ins.domain.toUpperCase(), margin + 4, y + 5);
+
+    // Source · Episode (right-aligned on same row)
+    const meta = [ins.source, ins.episode].filter(Boolean).join(" · ");
+    if (meta) {
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(140, 140, 140);
+      doc.setFontSize(7.5);
+      doc.text(meta, pageW - margin - 4, y + 5, { align: "right", maxWidth: contentW * 0.6 });
     }
-
-    // Meta
-    const meta = [ins.domain, ins.source, ins.episode].filter(Boolean).join(" · ");
-    addText(meta, 8, [136, 136, 136]);
-    y += 2;
+    y += 20;
 
     // Summary
-    addText(ins.summary, 10, [26, 26, 26]);
-    y += 4;
+    text(ins.summary, 10, [30, 30, 30]);
+    y += 5;
 
-    const section = (title: string, items: string[], prefix = "") => {
+    // Section helper
+    const section = (label: string, items: string[], bullet: string) => {
       if (!items.length) return;
-      ensureSpace(24);
-      addText(title, 8, [85, 85, 85], true);
-      y += 2;
+      ensureSpace(20);
+      text(label, 7.5, [120, 120, 120], { bold: true });
+      y += 1;
       items.forEach((item) => {
-        const text = prefix ? `${prefix} ${item}` : item;
-        addText(text, 9, [51, 51, 51]);
+        ensureSpace(14);
+        // Bullet
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(r, g, b);
+        doc.text(bullet, margin + 2, y);
+        // Item text
+        doc.setTextColor(55, 55, 55);
+        const lines = doc.splitTextToSize(item, contentW - 14);
+        doc.text(lines, margin + 13, y);
+        y += lines.length * 9 * 1.4;
       });
       y += 4;
     };
 
-    section("KEY POINTS", ins.key_points, "•");
-    section("KEY QUOTES", ins.key_quotes.map((q) => `"${q}"`));
+    section("KEY POINTS", ins.key_points, "▸");
+    section("KEY QUOTES", ins.key_quotes.map((q) => `"${q}"`), "❝");
     section("ACTION ITEMS", ins.action_items, "→");
 
+    // Tags
     if (ins.tags.length) {
-      addText(ins.tags.map((t) => `#${t}`).join("  "), 8, [119, 119, 119]);
+      ensureSpace(14);
+      text(ins.tags.map((t) => `#${t}`).join("  "), 7.5, [170, 170, 170]);
     }
 
-    y += 8;
+    y += 6;
+    hRule([235, 235, 235]);
+    y += 14;
   });
 
+  addPageFooter();
   doc.save(`insights-${date}.pdf`);
 }
 
