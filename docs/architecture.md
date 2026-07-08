@@ -67,7 +67,7 @@ graph TB
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
         ARENG["/api/insights/[id]/engagement\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
         AREXP["/api/insights/export\nGET ?format=csv|pdf&date=\nauthed — download insights"]
-        ARFTS["/api/insights/search\nGET ?q= — websearch FTS"]
+        ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
         ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]
     end
