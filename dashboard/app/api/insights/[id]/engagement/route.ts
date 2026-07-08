@@ -15,6 +15,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // Record view — avoid upsert because the unique index on (insight_id, user_id)
   // is a partial index (WHERE user_id IS NOT NULL), which Supabase's onConflict
   // cannot reference directly. Use select-then-insert instead.
+  // Capture `alreadyRead` before inserting so callers know if this is a return visit.
+  let alreadyRead = false;
   if (shouldRecordView) {
     if (userId) {
       const { data: existing } = await supabase
@@ -23,6 +25,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         .eq("insight_id", insightId)
         .eq("user_id", userId)
         .maybeSingle();
+      alreadyRead = !!existing;
       if (!existing) {
         await supabase
           .from("insight_views")
@@ -55,5 +58,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     mine,
     commentCount: commentsRes.count ?? 0,
     bookmarked: !!bookmarkRes.data,
+    is_read: alreadyRead,
   });
 }
