@@ -47,7 +47,20 @@ export default async function DashboardPage({ searchParams }: Props) {
           <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>Daily Insights</h1>
           <p className="text-sm mt-1" style={{ color: "var(--txt-3)" }}>{formattedDate}</p>
         </div>
-        <DateNav selectedDate={selectedDate} availableDates={availableDates} />
+        <div className="flex items-center gap-2">
+          {userId && (
+            <a
+              href={`/api/insights/export?format=csv&date=${selectedDate}`}
+              download
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-opacity hover:opacity-80"
+              style={{ background: "var(--bg-elevated)", color: "var(--txt-4)", borderColor: "var(--bdr)" }}
+              title="Download insights as CSV"
+            >
+              ↓ CSV
+            </a>
+          )}
+          <DateNav selectedDate={selectedDate} availableDates={availableDates} />
+        </div>
       </div>
 
       {/* Guest banner */}
