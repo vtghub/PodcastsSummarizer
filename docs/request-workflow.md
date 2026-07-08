@@ -560,7 +560,72 @@ sequenceDiagram
 
 ---
 
-## 17. Realtime Dashboard Update
+## 17. Export Insights as CSV / PDF
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant MW as middleware.ts
+    participant API as /api/insights/export
+    participant DB as Supabase
+
+    B->>MW: GET /api/insights/export?format=csv&date=2026-07-07
+    MW->>MW: rate limit check (pass — GET is not in RATE_LIMIT_METHODS)
+    MW->>MW: supabase.auth.getUser()
+    alt not signed in
+        MW-->>B: 401 Unauthorized
+    else signed in
+        MW-->>API: pass through
+        API->>DB: getUserId() → user_id
+        API->>DB: SELECT source_id FROM user_subscriptions WHERE user_id=?
+        DB-->>API: [source_id_1, source_id_2, ...]
+        API->>DB: SELECT insights JOIN sources JOIN episodes WHERE date=? AND source_id IN (...)
+        DB-->>API: insights with source name + episode title
+        alt format=csv
+            API->>API: build CSV rows (Date, Domain, Source, Episode, Summary, Key Points, Key Quotes, Action Items, Tags)
+            API-->>B: 200 text/csv — browser triggers download
+        else format=pdf
+            API->>API: build printable HTML with @media print CSS
+            API-->>B: 200 text/html — opens in browser for printing
+        end
+    end
+```
+
+---
+
+## 18. Analytics Dashboard
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant MW as middleware.ts
+    participant PAGE as analytics/page.tsx
+    participant LIB as lib/analytics.ts
+    participant DB as Supabase
+
+    B->>MW: GET /analytics
+    MW->>MW: supabase.auth.getUser()
+    alt not signed in
+        MW-->>PAGE: pass through
+        PAGE->>PAGE: getUserId() → null → redirect("/login?from=/analytics")
+    else signed in
+        MW-->>PAGE: pass through
+        PAGE->>LIB: getAnalytics(userId)
+        LIB->>DB: SELECT source_id FROM user_subscriptions WHERE user_id=?
+        DB-->>LIB: subscribed source IDs
+        LIB->>DB: SELECT insights WHERE source_id IN (...) ORDER BY date
+        DB-->>LIB: all insights for subscribed sources
+        LIB->>DB: SELECT insight_views WHERE insight_id IN (...)
+        DB-->>LIB: view records
+        LIB->>LIB: aggregate in JS — dayMap, domainMap, viewCountMap, top-10 by views
+        LIB-->>PAGE: AnalyticsData {totals, insights_by_day, domain_stats, top_insights}
+        PAGE->>B: render AnalyticsDashboard (KPI cards + SVG chart + domain bars + top-10 list)
+    end
+```
+
+---
+
+## 19. Realtime Dashboard Update
 
 ```mermaid
 sequenceDiagram

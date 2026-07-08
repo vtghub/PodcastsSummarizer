@@ -81,8 +81,9 @@ PodcastsSummarizer/
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
 │   │   ├── layout.tsx               # Root layout — async; fetches user server-side; passes to NavBar
-│   │   ├── dashboard/page.tsx       # Daily Insights — personalized when signed in, public preview for guests
+│   │   ├── dashboard/page.tsx       # Daily Insights — personalized when signed in, public preview for guests; CSV export button for signed-in users
 │   │   ├── dashboard/loading.tsx    # Instant skeleton shown by Next.js while the server fetches insight data
+│   │   ├── analytics/page.tsx       # Analytics dashboard — KPI cards, insights-per-day chart, domain breakdown, top insights (signed-in only)
 │   │   ├── podcasts/page.tsx        # Podcast catalog — public read-only for guests, full subscribe/unsubscribe for signed-in users; admin controls
 │   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, episode digest picker
 │   │   ├── login/page.tsx           # Email + password sign-in
@@ -105,10 +106,12 @@ PodcastsSummarizer/
 │   │       ├── insights/[id]/engagement/ # GET ?view=1 — batched: record view + fetch views/likes/dislikes/commentCount in one round-trip
 │   │       ├── insights/[id]/react/ # GET counts+mine · POST toggle like/dislike
 │   │       ├── insights/[id]/comments/ # GET list · POST add comment
+│   │       ├── insights/export/     # GET ?format=csv|pdf&date=YYYY-MM-DD — download insights for a date (authed)
 │   │       ├── insights/search/     # GET ?q= — full-text websearch across summary, key_points, quotes, tags
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
-│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), user dropdown, TTS toggle, theme picker
+│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics link (signed-in), user dropdown, TTS toggle, theme picker
+│   │   ├── AnalyticsDashboard.tsx   # Client component — KPI cards, SVG bar chart (insights/day), domain breakdown bars, top-10 most-viewed list
 │   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud; shows episode published date
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client) + Supabase Realtime subscription (auto-refresh on new insights)
 │   │   ├── PodcastManager.tsx       # Catalog — domain tab layout; optimistic subscribe toggles; admin reclassify with toast on failure
@@ -122,6 +125,7 @@ PodcastsSummarizer/
 │   │   └── TTSContext.tsx            # Global read-aloud enable/disable
 │   ├── lib/
 │   │   ├── auth.ts                  # React-cached getUser(), getUserId(), isAdmin(), getDisplayName()
+│   │   ├── analytics.ts             # getAnalytics(userId) — aggregates totals, insights-per-day, domain stats, top insights from subscribed sources
 │   │   ├── db.ts                    # Supabase / SQLite queries; unstable_cache for public views
 │   │   ├── domain-colors.ts         # Canonical DOMAINS order + per-domain Tailwind colour tokens (shared by Dashboard and My Podcasts)
 │   │   ├── email.ts                 # nodemailer Gmail SMTP sender — HTML + plain text digest renderer
@@ -280,6 +284,8 @@ npm run dev      # http://localhost:3000
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); clicking "Process & Send Digest" on an unprocessed episode queues the pipeline **and automatically sends the digest email when processing completes** — no second click needed; button shows "Processing — will send when ready…" during the wait; queued episodes show ⏳ in the dropdown; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime (no page refresh); if pipeline fails, the `episode_queue` table receives a `failed` status row — Realtime pushes it to the browser instantly, resetting the episode to ○ with an error message (no polling) |
 | **Engagement** | Per-card: view count (auto-tracked, deduped per signed-in user), like/dislike with optimistic UI and toggle-off, **copy-to-clipboard** button (writes both `text/html` and `text/plain` via `ClipboardItem` — pasting into Notion/Docs/email produces rich formatting with headings, bullets, and blockquotes; pasting into plain text gives clean ASCII; falls back to `writeText` on older browsers; icon swaps to ✓ for 2 s on success), share dropdown (Twitter/X, LinkedIn, Facebook, WhatsApp, Reddit, Telegram, Gmail, Copy link — share URL is a deep link encoding date + domain tab + card anchor so recipients land directly on the shared insight), collapsible comments panel with per-comment like/dislike and delete-own-comment; reactions and comments require sign-in; views tracked for all visitors |
 | **Platform Links** | Each insight card shows a "Listen on" icon row — Spotify (green), Apple Podcasts (purple), YouTube (red), Website — linked to the correct platform; URLs auto-discovered by the pipeline: Apple via iTunes Search API (public, no key), Spotify + YouTube via Podcast 2.0 namespace tags in the RSS feed, Website from RSS `<channel><link>`; no API key required; when a new podcast is added to the catalog, a fire-and-forget `workflow_dispatch` to `backfill_platform_links.yml` runs automatically so icons appear without manual backfill |
+| **Export** | Signed-in users can download a CSV of all insights for the selected date via the "↓ CSV" button next to the date navigator; `GET /api/insights/export?format=csv&date=YYYY-MM-DD` returns a file with columns: Date, Domain, Source, Episode, Summary, Key Points, Key Quotes, Action Items, Tags (pipe-separated within cells); `?format=pdf` returns a printable HTML page with `@media print` CSS |
+| **Analytics** | `/analytics` page (signed-in only) — four KPI cards (total insights, views, subscribed sources, days with insights); SVG bar chart of insights per day (last 30 days); domain breakdown with proportional horizontal bars; top-10 most-viewed insights ranked list with deep links back to the insight card |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
 
