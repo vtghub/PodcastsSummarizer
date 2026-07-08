@@ -155,7 +155,7 @@ export default function ProfileForm({
                       className="flex-1 py-2 rounded-lg text-sm font-medium border transition-all"
                       style={{
                         background: digestFrequency === freq ? "var(--acc)" : "var(--bg-elevated)",
-                        color: digestFrequency === freq ? "var(--acc-txt)" : "var(--txt-3)",
+                        color: digestFrequency === freq ? "white" : "var(--txt-3)",
                         borderColor: digestFrequency === freq ? "var(--acc)" : "var(--bdr)",
                       }}
                     >
@@ -178,7 +178,7 @@ export default function ProfileForm({
                         className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
                         style={{
                           background: digestDayOfWeek === idx ? "var(--acc)" : "var(--bg-elevated)",
-                          color: digestDayOfWeek === idx ? "var(--acc-txt)" : "var(--txt-3)",
+                          color: digestDayOfWeek === idx ? "white" : "var(--txt-3)",
                           borderColor: digestDayOfWeek === idx ? "var(--acc)" : "var(--bdr)",
                         }}
                       >
