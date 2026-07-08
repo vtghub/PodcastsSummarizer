@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { addSourceAsync } from "@/lib/db";
-import { isAdmin } from "@/lib/auth";
+import { isAdmin, getUserId } from "@/lib/auth";
 import { DOMAINS as DOMAIN_ORDER } from "@/lib/domain-colors";
 
 const GH_TOKEN = process.env.GH_TOKEN;
@@ -30,8 +30,8 @@ async function triggerBackfill(sourceId: string) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await isAdmin())) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await getUserId())) {
+    return NextResponse.json({ error: "Sign in to add a podcast" }, { status: 401 });
   }
   try {
     const body = await req.json();
