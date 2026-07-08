@@ -77,17 +77,19 @@ PodcastsSummarizer/
 │       ├── 007_fts.sql              # search_vector tsvector + GIN index + trigger + backfill for full-text search
 │       ├── 008_digest_domains.sql   # digest_domains text[] on user_profiles for per-user email domain filter
 │       ├── 009_pipeline_resilience.sql  # retry_count + retry_after on episode_queue; backoff_until + fetch_error_count + platform_links_attempted_at on sources
-│       └── 010_bookmarks.sql        # insight_bookmarks table with RLS (per-user SELECT/INSERT/DELETE)
+│       ├── 010_bookmarks.sql        # insight_bookmarks table with RLS (per-user SELECT/INSERT/DELETE)
+│       ├── 011_last_visited.sql     # last_visited_at TIMESTAMPTZ on user_profiles (new-insight badge)
+│       └── 012_digest_frequency.sql # digest_frequency ('daily'|'weekly') + digest_day_of_week (0=Mon…6=Sun) on user_profiles
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
 │   │   ├── layout.tsx               # Root layout — async; fetches user server-side; passes to NavBar
-│   │   ├── dashboard/page.tsx       # Daily Insights — personalized when signed in, public preview for guests; CSV export button for signed-in users
+│   │   ├── dashboard/page.tsx       # Daily Insights — personalized when signed in; WelcomeOnboarding for new users; public preview for guests; CSV export button for signed-in users
 │   │   ├── dashboard/loading.tsx    # Instant skeleton shown by Next.js while the server fetches insight data
 │   │   ├── analytics/page.tsx       # Analytics dashboard — KPI cards, insights-per-day chart, domain breakdown, top insights (signed-in only)
 │   │   ├── saved/page.tsx           # Saved Insights — lists all bookmarked insights for signed-in user, sorted by bookmark date
 │   │   ├── podcasts/page.tsx        # Podcast catalog — public read-only for guests, full subscribe/unsubscribe for signed-in users; admin controls
-│   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, episode digest picker
+│   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, digest frequency (daily/weekly), episode digest picker
 │   │   ├── login/page.tsx           # Email + password sign-in
 │   │   ├── register/page.tsx        # New user registration
 │   │   └── api/
@@ -103,7 +105,7 @@ PodcastsSummarizer/
 │   │       ├── digest/process/      # POST — trigger workflow_dispatch for unprocessed episode
 │   │       ├── digest/status/       # GET — poll DB for insights on a specific episode
 │   │       ├── podcasts/search/     # GET — proxy iTunes Search API for podcast name lookup
-│   │       ├── profile/             # GET/PUT user profile (display_name, digest_enabled, digest_hour, digest_domains)
+│   │       ├── profile/             # GET/PUT user profile (display_name, digest_enabled, digest_hour, digest_domains, digest_frequency, digest_day_of_week)
 │   │       ├── revalidate/          # POST — on-demand Next.js cache bust (called by pipeline after new insights saved)
 │   │       ├── insights/[id]/engagement/ # GET ?view=1 — batched: record view + fetch views/likes/dislikes/commentCount/bookmarked in one round-trip
 │   │       ├── insights/[id]/bookmark/ # GET is-bookmarked · POST toggle bookmark on/off (authed)
@@ -120,7 +122,8 @@ PodcastsSummarizer/
 │   │   ├── SavedInsightsList.tsx    # Client wrapper for /saved — renders bookmarked InsightCards with empty state
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client) + Supabase Realtime subscription (auto-refresh on new insights)
 │   │   ├── PodcastManager.tsx       # Catalog — domain tab layout; optimistic subscribe toggles; admin reclassify with toast on failure
-│   │   ├── ProfileForm.tsx          # Display name, digest toggle, UTC hour picker, per-domain digest filter chips
+│   │   ├── ProfileForm.tsx          # Display name, digest toggle, Daily/Weekly frequency toggle, day-of-week picker, UTC hour picker, per-domain digest filter chips
+│   │   ├── WelcomeOnboarding.tsx    # First-run experience for new signed-in users with no subscriptions — 3-step guide + CTA to /podcasts
 │   │   ├── SendDigestButton.tsx     # On-demand digest send + Preview button (opens /api/digest/preview in new tab)
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
 │   │   ├── SignOutButton.tsx        # POST /api/auth/logout → redirect
@@ -158,7 +161,7 @@ PodcastsSummarizer/
 ```
 auth.users  (Supabase Auth)
     │
-    ├── user_profiles       display_name, is_admin, digest_enabled, digest_hour, digest_domains[]
+    ├── user_profiles       display_name, is_admin, digest_enabled, digest_hour, digest_domains[], digest_frequency, digest_day_of_week, last_visited_at
     │
     └── user_subscriptions  user_id → source_id (many-to-many)
                                 │
@@ -188,8 +191,9 @@ The pipeline runs once and sends N personalized emails in parallel:
 1. Query `user_profiles JOIN auth.users` for all users with `digest_enabled=TRUE`
 2. For each user (up to 8 concurrent SMTP workers): fetch their `user_subscriptions` → filter today's insights to those source IDs
 3. Apply per-user domain filter: if `digest_domains` is set, drop insights outside those domains (`NULL` = all domains)
-4. Send one HTML email per user via Gmail SMTP — failures are isolated per-user and logged without blocking other recipients
-5. Users with no subscriptions or no matching insights are skipped
+4. Apply frequency filter: users with `digest_frequency = 'weekly'` are skipped unless `date.weekday() == digest_day_of_week` (0=Monday…6=Sunday)
+5. Send one HTML email per user via Gmail SMTP — failures are isolated per-user and logged without blocking other recipients
+6. Users with no subscriptions or no matching insights are skipped
 
 ---
 
@@ -285,7 +289,8 @@ npm run dev      # http://localhost:3000
 | **Themes** | 5 built-in themes: **Parchment** (warm light), **Midnight** (deep blue slate), **Aurora** (ocean depths), **Cosmos** (violet nebula), **Forest** (deep emerald); compact swatch-grid picker (~196 px) — header shows "THEME / &lt;name&gt;" with the name updating live on hover; five 3-stripe colour chips (bg · mid · accent) in a single row; active chip glows in its accent colour |
 | **My Podcasts** | Catalog visible to all visitors (public read-only); subscribe/unsubscribe requires sign-in; grouped by domain tabs (same canonical order as the Dashboard — Technology & AI, Business & Startups, etc.); subscribed cards show an accent-coloured border + soft ring shadow, unsubscribed cards are borderless; admin controls for catalog management (add, delete, enable/disable, reclassify domain); domain reclassification uses an optimistic inline select — card moves to the new domain tab immediately and **reverts with a toast notification on API failure**; podcast name search with iTunes-powered dropdown |
 | **Search** | Full-text search across all insight summaries, key points, quotes, and action items; triggered via Search button in the navbar or `Cmd/Ctrl+K`; opens a fixed overlay with a debounced input (300ms), domain-colour-badged results, episode title and date, and click-to-navigate deep links that land on the exact insight card; **filter bar** below the input: domain chips (abbreviated labels, accent-coloured when active, toggle off on second click) + `from` / `to` date pickers; Clear button appears when any filter is active; all filters reset on overlay close; re-search fires on any filter change |
-| **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, digest hour, **per-domain email filter** (chip toggles — faded chips are excluded from the daily digest; `null` means all domains); "Send Digest Now" + **"Preview" button** (opens the exact email HTML in a new tab before sending); Episode Digest picker |
+| **Onboarding** | New signed-in users with no subscriptions see a `WelcomeOnboarding` card instead of the empty dashboard — personalised greeting, three illustrated steps (Browse → Subscribe → Get insights), and a prominent CTA to `/podcasts` |
+| **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, **Daily / Weekly frequency toggle** (Weekly mode reveals a Mon–Sun day-of-week picker), digest hour, **per-domain email filter** (chip toggles — faded chips are excluded from the digest; `null` means all domains); "Send Digest Now" + **"Preview" button** (opens the exact email HTML in a new tab before sending); Episode Digest picker |
 | **Realtime Dashboard** | `DomainInsightView` subscribes to Supabase Realtime `postgres_changes` INSERT on `insights`; when a new insight lands for the currently viewed date, the page auto-refreshes via `router.refresh()` — new cards appear without a manual reload |
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); clicking "Process & Send Digest" on an unprocessed episode queues the pipeline **and automatically sends the digest email when processing completes** — no second click needed; button shows "Processing — will send when ready…" during the wait; queued episodes show ⏳ in the dropdown; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime (no page refresh); if pipeline fails, the `episode_queue` table receives a `failed` status row — Realtime pushes it to the browser instantly, resetting the episode to ○ with an error message (no polling) |
 | **Engagement** | Per-card: view count (auto-tracked, deduped per signed-in user), like/dislike with optimistic UI and toggle-off, **copy-to-clipboard** button (writes both `text/html` and `text/plain` via `ClipboardItem` — pasting into Notion/Docs/email produces rich formatting with headings, bullets, and blockquotes; pasting into plain text gives clean ASCII; falls back to `writeText` on older browsers; icon swaps to ✓ for 2 s on success), share dropdown (Twitter/X, LinkedIn, Facebook, WhatsApp, Reddit, Telegram, Gmail, Copy link — share URL is a deep link encoding date + domain tab + card anchor so recipients land directly on the shared insight), collapsible comments panel with per-comment like/dislike and delete-own-comment; reactions and comments require sign-in; views tracked for all visitors |
