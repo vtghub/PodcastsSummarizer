@@ -57,6 +57,7 @@ class UserDigestProfile:
     digest_domains: list[str] | None = None   # None = all domains
     digest_frequency: str = "daily"           # 'daily' or 'weekly'
     digest_day_of_week: int = 0               # 0=Monday … 6=Sunday (Python weekday)
+    digest_timezone: str = "America/New_York" # IANA timezone string
 
 
 @dataclass

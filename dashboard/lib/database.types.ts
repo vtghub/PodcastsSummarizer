@@ -153,6 +153,7 @@ export interface Database {
           digest_domains: string[] | null;
           digest_frequency: string;
           digest_day_of_week: number;
+          digest_timezone: string;
           last_visited_at: string | null;
           created_at: string;
         };
@@ -165,6 +166,7 @@ export interface Database {
           digest_domains?: string[] | null;
           digest_frequency?: string;
           digest_day_of_week?: number;
+          digest_timezone?: string;
           last_visited_at?: string | null;
           created_at?: string;
         };
@@ -177,6 +179,7 @@ export interface Database {
           digest_domains?: string[] | null;
           digest_frequency?: string;
           digest_day_of_week?: number;
+          digest_timezone?: string;
           last_visited_at?: string | null;
           created_at?: string;
         };

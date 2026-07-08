@@ -14,7 +14,7 @@ export default async function ProfilePage() {
   const sb = getSupabaseClient();
   const [{ data: profile }, subscribedIds, allSources] = await Promise.all([
     sb.from("user_profiles")
-      .select("display_name, digest_enabled, digest_hour, digest_domains, digest_frequency, digest_day_of_week")
+      .select("display_name, digest_enabled, digest_hour, digest_domains, digest_frequency, digest_day_of_week, digest_timezone")
       .eq("user_id", user.id)
       .single(),
     getUserSubscriptions(user.id),
@@ -45,6 +45,7 @@ export default async function ProfilePage() {
           initialDigestDomains={(profile as { digest_domains?: string[] | null })?.digest_domains ?? null}
           initialDigestFrequency={((profile as { digest_frequency?: string })?.digest_frequency ?? "daily") as "daily" | "weekly"}
           initialDigestDayOfWeek={(profile as { digest_day_of_week?: number })?.digest_day_of_week ?? 0}
+          initialDigestTimezone={(profile as { digest_timezone?: string })?.digest_timezone ?? "America/New_York"}
         />
 
         {/* Right — Digest actions */}

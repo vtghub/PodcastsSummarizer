@@ -16,6 +16,7 @@ import traceback
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from worker.core.interfaces import PodcastSource
 from worker.core.registry import (
@@ -322,6 +323,19 @@ def run_single_episode(
     return {"stat": stat, "error": error_msg, "date": date_str}
 
 
+def run_digest_fanout(date_str: str | None = None) -> None:
+    """
+    Send digest emails to all eligible users for a given date.
+    Called by the hourly digest workflow — no ingestion, just email fan-out.
+    Respects each user's digest_hour and digest_timezone preferences.
+    """
+    storage = get_storage_provider()
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+    print(f"[DigestFanout] Running for date={date_str}")
+    _send_per_user_digests(storage, date_str)
+
+
 def _process_episode(
     storage, llm, source: "PodcastSource", provider, episode, date_str: str
 ) -> tuple[str, str | None]:
@@ -426,9 +440,23 @@ def _send_per_user_digests(storage, date_str: str):
     print(f"[Email] Sending digests to {len(users)} user(s)")
 
     def _send_one(user):
+        # Check if the current hour in the user's timezone matches their chosen send hour
+        try:
+            user_tz = ZoneInfo(user.digest_timezone)
+            local_now = datetime.now(user_tz)
+            if local_now.hour != user.digest_hour:
+                print(f"[Email] {user.email} — not their send hour (local={local_now.hour}, want={user.digest_hour}), skipping")
+                return
+        except ZoneInfoNotFoundError:
+            print(f"[Email] {user.email} — unknown timezone '{user.digest_timezone}', sending anyway")
+
         # Weekly users only receive on their chosen day of week (0=Monday…6=Sunday)
         if user.digest_frequency == "weekly":
-            today_dow = date.fromisoformat(date_str).weekday()
+            try:
+                user_tz = ZoneInfo(user.digest_timezone)
+                today_dow = datetime.now(user_tz).weekday()
+            except ZoneInfoNotFoundError:
+                today_dow = date.fromisoformat(date_str).weekday()
             if today_dow != user.digest_day_of_week:
                 print(f"[Email] {user.email} — weekly digest not scheduled today, skipping")
                 return

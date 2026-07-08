@@ -328,6 +328,7 @@ class SupabaseStorageProvider(StorageProvider):
                         p.digest_domains,
                         p.digest_frequency,
                         p.digest_day_of_week,
+                        p.digest_timezone,
                         u.email
                     FROM user_profiles p
                     JOIN auth.users u ON u.id = p.user_id
@@ -345,6 +346,7 @@ class SupabaseStorageProvider(StorageProvider):
                 digest_domains=list(r["digest_domains"]) if r["digest_domains"] else None,
                 digest_frequency=r["digest_frequency"] or "daily",
                 digest_day_of_week=r["digest_day_of_week"] if r["digest_day_of_week"] is not None else 0,
+                digest_timezone=r["digest_timezone"] or "America/New_York",
             )
             for r in rows
         ]
