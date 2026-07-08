@@ -130,6 +130,7 @@ export default function NavBar({
         <div className="flex items-center gap-2 sm:gap-3">
           <span className="hidden sm:inline">{navLink("/dashboard", "Dashboard")}</span>
           {navLink("/podcasts", "My Podcasts")}
+          {userEmail && <span className="hidden sm:inline">{navLink("/analytics", "Analytics")}</span>}
 
           {/* Search */}
           <button

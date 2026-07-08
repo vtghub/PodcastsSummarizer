@@ -25,7 +25,7 @@ const RATE_LIMIT_PATHS = [
 ];
 const RATE_LIMIT_METHODS = new Set(["POST", "DELETE", "PATCH"]);
 const BUCKET_CAPACITY = 20;   // max burst
-const REFILL_RATE = 20 / 60;  // tokens per ms → 20 per minute
+const REFILL_RATE = 20 / 60_000;  // tokens per ms → 20 per minute
 
 type Bucket = { tokens: number; lastMs: number };
 const _buckets = new Map<string, Bucket>();
@@ -50,12 +50,10 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 export async function middleware(request: NextRequest) {
-  const { pathname, method } = { pathname: request.nextUrl.pathname, method: request.method };
-
   // Rate-limit engagement mutation routes.
   if (
-    RATE_LIMIT_METHODS.has(method) &&
-    RATE_LIMIT_PATHS.some((p) => pathname.startsWith(p))
+    RATE_LIMIT_METHODS.has(request.method) &&
+    RATE_LIMIT_PATHS.some((p) => request.nextUrl.pathname.startsWith(p))
   ) {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
     if (!checkRateLimit(ip)) {
