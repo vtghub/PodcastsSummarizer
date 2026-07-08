@@ -154,6 +154,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   const [myReaction, setMyReaction] = useState<"like" | "dislike" | null>(null);
   const [reacting, setReacting] = useState(false);
   const [commentCount, setCommentCount] = useState<number | null>(null);
+  const [isRead, setIsRead] = useState(false);
 
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarking, setBookmarking] = useState(false);
@@ -180,6 +181,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
         setMyReaction(d.mine ?? null);
         setCommentCount(d.commentCount ?? 0);
         setBookmarked(d.bookmarked ?? false);
+        setIsRead(d.is_read ?? false);
       })
       .catch(() => {});
   }, [insight.id]);
@@ -265,9 +267,11 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
     }
   }, [insight.id, isAuthed, bookmarked, bookmarking]);
 
-  const shareUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/dashboard?date=${insight.date}&domain=${encodeURIComponent(insight.domain)}#insight-${insight.id}`
+  // Permalink is the canonical share URL; deep-link is used internally for in-page navigation
+  const permalink = typeof window !== "undefined"
+    ? `${window.location.origin}/insight/${insight.id}`
     : "";
+  const shareUrl = permalink;
   const shareText = `${insight.episode_title ?? insight.source_name ?? "Podcast Insight"} — ${insight.summary?.slice(0, 100)}…`;
 
   const handleShare = useCallback((platform: "twitter" | "linkedin" | "facebook" | "whatsapp" | "reddit" | "telegram" | "gmail" | "copy") => {
@@ -359,11 +363,12 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   return (
     <article
       id={`insight-${insight.id}`}
-      className="card-lift rounded-2xl overflow-hidden border flex flex-col"
+      className="card-lift rounded-2xl overflow-hidden border flex flex-col transition-opacity"
       style={{
         background: "var(--bg-surface)",
         borderColor: "var(--bdr)",
         boxShadow: "var(--shadow-card)",
+        opacity: isRead && !expanded ? 0.55 : 1,
       }}
     >
       {/* Domain colour bar */}
@@ -497,7 +502,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
 
       {/* Expand / collapse */}
       <button
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => { setExpanded((v) => !v); setIsRead(false); }}
         className="w-full flex items-center justify-center gap-1.5 py-2.5 border-t text-xs font-medium transition-colors mt-auto"
         style={{ borderColor: "var(--bdr)", color: "var(--txt-4)" }}
         onMouseEnter={(e) => {

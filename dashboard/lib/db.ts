@@ -261,6 +261,25 @@ async function sbGetEpisodesWithInsights(_userId: string, sourceId: string): Pro
   return episodes.sort((a, b) => b.published_at.localeCompare(a.published_at));
 }
 
+async function sbGetInsightById(id: string): Promise<Insight | null> {
+  const { getSupabaseClient } = await import("./supabase");
+  const sb = getSupabaseClient();
+  const { data, error } = await sb
+    .from("insights")
+    .select("*, sources(name, platform_links), episodes(title, published_at)")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) return null;
+  const r = data as Record<string, unknown>;
+  return {
+    ...r,
+    source_name:          (r.sources  as { name: string; platform_links?: PlatformLinks } | null)?.name,
+    episode_title:        (r.episodes as { title: string; published_at?: string } | null)?.title,
+    episode_published_at: (r.episodes as { title: string; published_at?: string } | null)?.published_at,
+    platform_links:       (r.sources  as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
+  } as Insight;
+}
+
 async function sbGetInsightsByEpisode(episodeId: string): Promise<Insight[]> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
@@ -433,6 +452,19 @@ export async function unsubscribeFromSource(userId: string, sourceId: string): P
 export async function getEpisodesWithInsights(userId: string, sourceId: string): Promise<{ id: string; title: string; published_at: string }[]> {
   if (useSupabase()) return sbGetEpisodesWithInsights(userId, sourceId);
   return []; // SQLite local dev: not supported
+}
+
+export async function getInsightById(id: string): Promise<Insight | null> {
+  if (useSupabase()) return sbGetInsightById(id);
+  const db = getSqliteDb();
+  const row = db.prepare(`
+    SELECT i.*, s.name AS source_name, e.title AS episode_title, e.published_at AS episode_published_at
+    FROM insights i
+    LEFT JOIN sources  s ON s.id = i.source_id
+    LEFT JOIN episodes e ON e.id = i.episode_id
+    WHERE i.id = ?
+  `).get(id) as Record<string, string> | undefined;
+  return row ? parseSqliteInsight(row) : null;
 }
 
 export async function getInsightsByEpisode(episodeId: string): Promise<Insight[]> {
