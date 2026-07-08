@@ -44,9 +44,10 @@ graph TB
     subgraph DASH["🌐 Next.js 15 Dashboard — Vercel"]
         MW["middleware.ts\nSession refresh · API guard"]
         LAYOUT["layout.tsx (async)\ngetUser() + getDisplayName()"]
-        DPAGE["dashboard/page.tsx\nPersonalized or public preview"]
+        DPAGE["dashboard/page.tsx\nPersonalized or public preview\n+ CSV export button"]
         PPAGE["podcasts/page.tsx\nCatalog + subscribe toggles"]
         PROF["profile/page.tsx\nDisplay name · digest prefs"]
+        APAGE["analytics/page.tsx\nKPI cards · chart · top insights"]
         REG["register/page.tsx"]
         LOGIN["login/page.tsx"]
         CACHE["unstable_cache\n1h TTL — public views only"]
@@ -63,6 +64,7 @@ graph TB
         ARDIGSTAT["/api/digest/status\npoll for insights"]
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
         ARENG["/api/insights/[id]/engagement\n/react · /comments\n/api/comments/[id]\n/react · DELETE"]
+        AREXP["/api/insights/export\nGET ?format=csv|pdf&date=\nauthed — download insights"]
         ARFTS["/api/insights/search\nGET ?q= — websearch FTS"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
         ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]
@@ -96,6 +98,7 @@ graph TB
     LAYOUT --> DPAGE
     LAYOUT --> PPAGE
     LAYOUT --> PROF
+    LAYOUT --> APAGE
     LAYOUT --> REG
     LAYOUT --> LOGIN
 
@@ -122,6 +125,10 @@ graph TB
     ARENG --> COMMENTS
     ARENG --> CREACTIONS
     ARFTS --> INSIGHTS
+    AREXP --> INSIGHTS
+    APAGE --> INSIGHTS
+    APAGE --> VIEWS
+    APAGE --> SUBS
     ARDIGPREV --> INSIGHTS
     LLM -.->|POST after insights saved| ARREV
     ARREV -.->|revalidateTag insights| CACHE
