@@ -1,9 +1,9 @@
 name: Daily Podcast Pipeline
-# Runs daily at 07:00 UTC; also triggerable manually via workflow_dispatch.
+# Runs daily at 12:00 UTC (7:00 AM EST / 8:00 AM EDT); also triggerable manually via workflow_dispatch.
 
 on:
   schedule:
-    - cron: "0 0 * * *"   # 7:00 PM EST daily (midnight UTC)
+    - cron: "0 12 * * *"   # 7:00 AM EST / 8:00 AM EDT daily (noon UTC)
   workflow_dispatch:        # allow manual trigger from Actions tab
     inputs:
       since_days:
