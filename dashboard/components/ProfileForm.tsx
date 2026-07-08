@@ -5,15 +5,41 @@ import { useRouter } from "next/navigation";
 import { Loader2, Check } from "lucide-react";
 import { DOMAINS, getDomainColor } from "@/lib/domain-colors";
 
-const UTC_HOURS = Array.from({ length: 24 }, (_, i) => i);
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
 // 0=Monday … 6=Sunday (Python weekday convention, matches the worker)
 const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-function utcHourLabel(h: number) {
-  const date = new Date();
-  date.setUTCHours(h, 0, 0, 0);
-  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short" });
+// Common IANA timezones grouped for the picker
+const TIMEZONES: { label: string; value: string }[] = [
+  { label: "Eastern Time (ET)",        value: "America/New_York" },
+  { label: "Central Time (CT)",        value: "America/Chicago" },
+  { label: "Mountain Time (MT)",       value: "America/Denver" },
+  { label: "Pacific Time (PT)",        value: "America/Los_Angeles" },
+  { label: "Alaska Time (AKT)",        value: "America/Anchorage" },
+  { label: "Hawaii Time (HST)",        value: "Pacific/Honolulu" },
+  { label: "UTC",                      value: "UTC" },
+  { label: "London (GMT/BST)",         value: "Europe/London" },
+  { label: "Paris / Berlin (CET)",     value: "Europe/Paris" },
+  { label: "Dubai (GST)",              value: "Asia/Dubai" },
+  { label: "India (IST)",              value: "Asia/Kolkata" },
+  { label: "Singapore / HK (SGT)",     value: "Asia/Singapore" },
+  { label: "Tokyo (JST)",              value: "Asia/Tokyo" },
+  { label: "Sydney (AEST)",            value: "Australia/Sydney" },
+];
+
+function hourLabel(h: number, tz: string) {
+  try {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setHours(h);
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric", minute: "2-digit", hour12: true,
+      timeZone: tz,
+    });
+  } catch {
+    return `${h}:00`;
+  }
 }
 
 export default function ProfileForm({
@@ -23,6 +49,7 @@ export default function ProfileForm({
   initialDigestDomains,
   initialDigestFrequency,
   initialDigestDayOfWeek,
+  initialDigestTimezone,
 }: {
   initialDisplayName: string;
   initialDigestEnabled: boolean;
@@ -30,6 +57,7 @@ export default function ProfileForm({
   initialDigestDomains: string[] | null;
   initialDigestFrequency: "daily" | "weekly";
   initialDigestDayOfWeek: number;
+  initialDigestTimezone: string;
 }) {
   const router = useRouter();
   const [displayName, setDisplayName]           = useState(initialDisplayName);
@@ -38,6 +66,7 @@ export default function ProfileForm({
   const [digestDomains, setDigestDomains]       = useState<string[] | null>(initialDigestDomains);
   const [digestFrequency, setDigestFrequency]   = useState<"daily" | "weekly">(initialDigestFrequency);
   const [digestDayOfWeek, setDigestDayOfWeek]   = useState(initialDigestDayOfWeek);
+  const [digestTimezone, setDigestTimezone]     = useState(initialDigestTimezone);
   const [saving, setSaving]                     = useState(false);
   const [saved, setSaved]                       = useState(false);
   const [error, setError]                       = useState("");
@@ -70,6 +99,7 @@ export default function ProfileForm({
           digest_domains: digestDomains,
           digest_frequency: digestFrequency,
           digest_day_of_week: digestDayOfWeek,
+          digest_timezone: digestTimezone,
         }),
       });
       if (!res.ok) {
@@ -192,20 +222,34 @@ export default function ProfileForm({
                 </div>
               )}
 
+              {/* Timezone */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium block" style={{ color: "var(--txt-3)" }}>Timezone</label>
+                <select
+                  value={digestTimezone}
+                  onChange={(e) => setDigestTimezone(e.target.value)}
+                  className="input"
+                >
+                  {TIMEZONES.map(({ label, value }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
               {/* Send time */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium block" style={{ color: "var(--txt-3)" }}>Send time (your local time)</label>
+                <label className="text-xs font-medium block" style={{ color: "var(--txt-3)" }}>Send time</label>
                 <select
                   value={digestHour}
                   onChange={(e) => setDigestHour(Number(e.target.value))}
                   className="input"
                 >
-                  {UTC_HOURS.map((h) => (
-                    <option key={h} value={h}>{utcHourLabel(h)}</option>
+                  {HOURS.map((h) => (
+                    <option key={h} value={h}>{hourLabel(h, digestTimezone)}</option>
                   ))}
                 </select>
                 <p className="text-xs" style={{ color: "var(--txt-4)" }}>
-                  The pipeline runs once daily — your digest arrives after that run completes.
+                  Times shown in your selected timezone. Digest emails go out within the hour after ingestion completes.
                 </p>
               </div>
 

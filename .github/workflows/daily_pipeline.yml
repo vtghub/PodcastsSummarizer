@@ -1,9 +1,11 @@
 name: Daily Podcast Pipeline
-# Runs daily at 07:00 UTC; also triggerable manually via workflow_dispatch.
+# Ingestion only — fetches RSS, transcribes, extracts insights.
+# Runs at 06:00 UTC so insights are ready before most users' digest hour.
+# Email fan-out is handled separately by hourly_digest.yml.
 
 on:
   schedule:
-    - cron: "0 0 * * *"   # 7:00 PM EST daily (midnight UTC)
+    - cron: "0 6 * * *"   # 6:00 AM UTC daily
   workflow_dispatch:        # allow manual trigger from Actions tab
     inputs:
       since_days:
@@ -99,7 +101,7 @@ jobs:
               since = datetime.now(timezone.utc) - timedelta(days=since_days)
               print(f"Running pipeline | since={since.date()} | storage=supabase | llm=gemini")
               force_email = os.environ.get("FORCE_EMAIL", "false").lower() == "true"
-              stats = run_pipeline(since=since, send_email=True, force_email=force_email)
+              stats = run_pipeline(since=since, send_email=False, force_email=force_email)
               print(f"Done: {stats}")
               if stats.get("errors"):
                   sys.exit(1)

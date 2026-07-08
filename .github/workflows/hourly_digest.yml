@@ -1,0 +1,51 @@
+name: Hourly Digest Fan-out
+# Runs every hour and sends digest emails to users whose preferred send hour
+# (in their chosen timezone) matches the current hour. Ingestion is NOT done
+# here — that is handled by daily_pipeline.yml at 06:00 UTC.
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # every hour, on the hour
+  workflow_dispatch:        # allow manual trigger for testing
+    inputs:
+      date:
+        description: "Date to send digest for (YYYY-MM-DD). Defaults to today."
+        required: false
+        default: ""
+
+jobs:
+  send-digests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run digest fan-out
+        env:
+          STORAGE_PROVIDER: supabase
+          EMAIL_PROVIDER: gmail_smtp
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          DIGEST_DATE: ${{ github.event.inputs.date || '' }}
+          PYTHONUTF8: "1"
+        run: |
+          python - <<'EOF'
+          import sys, os
+          sys.path.insert(0, '.')
+          from worker.jobs.pipeline import run_digest_fanout
+
+          date_str = os.environ.get("DIGEST_DATE", "").strip() or None
+          run_digest_fanout(date_str)
+          EOF
