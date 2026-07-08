@@ -38,6 +38,7 @@ const THEME_VARS: Record<ThemeKey, Record<string, string>> = {
     "--d-fin-bg": "#FFFBEB",  "--d-fin-txt": "#92400E",  "--d-fin-bdr": "#FDE68A",  "--d-fin-dot": "#F59E0B",
     "--d-lead-bg": "#F5F3FF", "--d-lead-txt": "#5B21B6", "--d-lead-bdr": "#DDD6FE", "--d-lead-dot": "#7C3AED",
     "--d-soc-bg": "#FFF1F2",  "--d-soc-txt": "#9F1239",  "--d-soc-bdr": "#FECDD3",  "--d-soc-dot": "#F43F5E",
+    "--d-gen-bg": "#F0FDFA",  "--d-gen-txt": "#0F766E",  "--d-gen-bdr": "#99F6E4",  "--d-gen-dot": "#14B8A6",
     "--d-oth-bg": "#F8FAFC",  "--d-oth-txt": "#475569",  "--d-oth-bdr": "#E2E8F0",  "--d-oth-dot": "#64748B",
   },
   "midnight": {
@@ -56,6 +57,7 @@ const THEME_VARS: Record<ThemeKey, Record<string, string>> = {
     "--d-fin-bg": "#451A03",  "--d-fin-txt": "#FCD34D",  "--d-fin-bdr": "#92400E",  "--d-fin-dot": "#FBBF24",
     "--d-lead-bg": "#2E1065", "--d-lead-txt": "#C4B5FD", "--d-lead-bdr": "#5B21B6", "--d-lead-dot": "#A78BFA",
     "--d-soc-bg": "#4C0519",  "--d-soc-txt": "#FECDD3",  "--d-soc-bdr": "#9F1239",  "--d-soc-dot": "#FB7185",
+    "--d-gen-bg": "#042F2E",  "--d-gen-txt": "#5EEAD4",  "--d-gen-bdr": "#0D9488",  "--d-gen-dot": "#2DD4BF",
     "--d-oth-bg": "#0F172A",  "--d-oth-txt": "#CBD5E1",  "--d-oth-bdr": "#334155",  "--d-oth-dot": "#94A3B8",
   },
   "aurora": {
@@ -74,6 +76,7 @@ const THEME_VARS: Record<ThemeKey, Record<string, string>> = {
     "--d-fin-bg": "#3D1500",  "--d-fin-txt": "#FCD34D",  "--d-fin-bdr": "#7A3200",  "--d-fin-dot": "#FBBF24",
     "--d-lead-bg": "#1E0A4A", "--d-lead-txt": "#C4B5FD", "--d-lead-bdr": "#4A1A9A", "--d-lead-dot": "#A78BFA",
     "--d-soc-bg": "#3D0515",  "--d-soc-txt": "#FECDD3",  "--d-soc-bdr": "#800E30",  "--d-soc-dot": "#FB7185",
+    "--d-gen-bg": "#022020",  "--d-gen-txt": "#99F6E4",  "--d-gen-bdr": "#0D7A72",  "--d-gen-dot": "#2DD4BF",
     "--d-oth-bg": "#06182A",  "--d-oth-txt": "#BAE6FD",  "--d-oth-bdr": "#1A4A72",  "--d-oth-dot": "#7DD3FC",
   },
   "dusk": {
@@ -92,6 +95,7 @@ const THEME_VARS: Record<ThemeKey, Record<string, string>> = {
     "--d-fin-bg": "#3D1800",  "--d-fin-txt": "#FCD34D",  "--d-fin-bdr": "#7A3500",  "--d-fin-dot": "#FBBF24",
     "--d-lead-bg": "#2E1065", "--d-lead-txt": "#C4B5FD", "--d-lead-bdr": "#5B21B6", "--d-lead-dot": "#A78BFA",
     "--d-soc-bg": "#3D0525",  "--d-soc-txt": "#FECDD3",  "--d-soc-bdr": "#800E40",  "--d-soc-dot": "#FB7185",
+    "--d-gen-bg": "#041A18",  "--d-gen-txt": "#5EEAD4",  "--d-gen-bdr": "#0D5A52",  "--d-gen-dot": "#2DD4BF",
     "--d-oth-bg": "#160F26",  "--d-oth-txt": "#E9D5FF",  "--d-oth-bdr": "#3D2C6E",  "--d-oth-dot": "#C4B5FD",
   },
   "forest": {
@@ -110,6 +114,7 @@ const THEME_VARS: Record<ThemeKey, Record<string, string>> = {
     "--d-fin-bg": "#3D1500",  "--d-fin-txt": "#FCD34D",  "--d-fin-bdr": "#7A3200",  "--d-fin-dot": "#FBBF24",
     "--d-lead-bg": "#1E0A4A", "--d-lead-txt": "#C4B5FD", "--d-lead-bdr": "#4A1A9A", "--d-lead-dot": "#A78BFA",
     "--d-soc-bg": "#3D0515",  "--d-soc-txt": "#FECDD3",  "--d-soc-bdr": "#800E30",  "--d-soc-dot": "#FB7185",
+    "--d-gen-bg": "#042F2E",  "--d-gen-txt": "#5EEAD4",  "--d-gen-bdr": "#0D9488",  "--d-gen-dot": "#2DD4BF",
     "--d-oth-bg": "#09150F",  "--d-oth-txt": "#D1FAE5",  "--d-oth-bdr": "#1C4A2C",  "--d-oth-dot": "#6EE7B7",
   },
 };
