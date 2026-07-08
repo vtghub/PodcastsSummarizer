@@ -501,7 +501,7 @@ sequenceDiagram
 
 ---
 
-## 15. Full-Text Search (Cmd+K / Ctrl+K overlay)
+## 15. Full-Text Search (Cmd+K / Ctrl+K overlay) with Filters
 
 ```mermaid
 sequenceDiagram
@@ -512,23 +512,43 @@ sequenceDiagram
 
     B->>NAV: press Cmd+K (or click 🔍)
     NAV->>NAV: openSearch() → searchOpen=true, focus input
+    Note over NAV: filter bar renders below input:<br/>domain chips (DOMAINS list) + from/to date pickers
 
     B->>NAV: type query (≥2 chars, 300ms debounce)
-    NAV->>NAV: runSearch(query)
-    NAV->>API: GET /api/insights/search?q=<query>
+    NAV->>NAV: runSearch(query, filterDomain, filterFrom, filterTo)
+    NAV->>API: GET /api/insights/search?q=<query>[&domain=X][&from=YYYY-MM-DD][&to=YYYY-MM-DD]
     API->>API: q.length < 2 → return {results:[]}
-    API->>DB: .textSearch("search_vector", q, {type:"websearch", config:"english"})
+    API->>DB: .textSearch("search_vector", q, {type:"websearch"})
+    opt domain filter set
+        API->>DB: .eq("domain", domain)
+    end
+    opt from filter set
+        API->>DB: .gte("date", from)
+    end
+    opt to filter set
+        API->>DB: .lte("date", to)
+    end
     Note right of DB: GIN index on tsvector (summary, key_points, quotes, actions, tags)
     DB-->>API: top 20 rows (id, date, domain, summary, source_name, episode_title)
     API-->>NAV: {results: [...summary truncated to 160 chars]}
     NAV->>NAV: render results list with domain color badges
 
+    Note over B,NAV: Filter interactions (all re-trigger 300ms debounced search)
+    alt click domain chip
+        B->>NAV: setFilterDomain(domain) or clear if already active
+    else change date input
+        B->>NAV: setFilterFrom / setFilterTo
+    else click Clear button
+        B->>NAV: reset filterDomain + filterFrom + filterTo
+    end
+
     alt user clicks result
-        NAV->>NAV: handleResultClick() → closeSearch()
+        NAV->>NAV: handleResultClick() → closeSearch() → resets all filters
         NAV->>B: router.push("/dashboard?date=YYYY-MM-DD&domain=...#insight-{id}")
+        NAV->>B: router.refresh()
         B->>B: navigate to date, domain tab auto-selected, card scrolled into view
-    else user presses Escape
-        NAV->>NAV: closeSearch() → searchOpen=false, query cleared
+    else user presses Escape or clicks backdrop
+        NAV->>NAV: closeSearch() → searchOpen=false, query + all filters cleared
     end
 ```
 
