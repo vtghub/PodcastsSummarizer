@@ -132,6 +132,7 @@ export default function NavBar({
           <span className="hidden sm:inline">{navLink("/dashboard", "Dashboard")}</span>
           {navLink("/podcasts", "My Podcasts")}
           {userEmail && <span className="hidden sm:inline">{navLink("/analytics", "Analytics")}</span>}
+          {userEmail && <span className="hidden sm:inline">{navLink("/saved", "Saved")}</span>}
 
           {/* Search */}
           <button

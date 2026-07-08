@@ -235,6 +235,25 @@ export interface Database {
         };
         Relationships: [];
       };
+      insight_bookmarks: {
+        Row: {
+          id: number;
+          insight_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          insight_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          insight_id?: string;
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       insight_comments: {
         Row: {
           id: number;
