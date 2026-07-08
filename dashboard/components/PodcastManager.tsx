@@ -248,14 +248,14 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
             {isPending && <span className="ml-2" style={{ color: "var(--txt-4)" }}>refreshing…</span>}
           </p>
         </div>
-        {isAdmin && (
+        {isAuthed && (
           <button
             onClick={openAdd}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0 text-white"
             style={{ background: "var(--acc)" }}
           >
             <Plus className="w-4 h-4" />
-            Add to Catalog
+            Add Podcast
           </button>
         )}
       </div>
@@ -281,9 +281,9 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         <div className="flex flex-col items-center py-20 text-center">
           <span className="text-5xl mb-4">🎙</span>
           <h2 className="text-lg font-semibold mb-2" style={{ color: "var(--txt-1)" }}>No podcasts yet</h2>
-          {isAdmin && (
+          {isAuthed && (
             <p className="text-sm max-w-sm" style={{ color: "var(--txt-3)" }}>
-              Click <strong>Add to Catalog</strong> to add the first RSS or YouTube source.
+              Click <strong>Add Podcast</strong> to add the first RSS or YouTube source.
             </p>
           )}
         </div>
@@ -331,7 +331,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         </>
       )}
 
-      {/* Add to catalog dialog (admin only) */}
+      {/* Add podcast dialog */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
           <div
