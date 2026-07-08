@@ -66,11 +66,15 @@ sequenceDiagram
     PY->>DB: get_users_with_digest_enabled()
     DB-->>PY: [user1{digest_domains=[...]}, user2{digest_domains=null}, ...]
     loop parallel (8 workers) per user
-        PY->>DB: get_user_subscribed_source_ids(user_id)
-        PY->>DB: get_insights_by_date_and_sources(date, source_ids)
-        PY->>PY: filter by user.digest_domains (null = all domains)
-        alt has insights after domain filter
-            PY->>MAIL: send_digest(user.email, date, insights_by_domain)
+        alt digest_frequency == 'weekly' and today != digest_day_of_week
+            PY->>PY: skip — not their send day
+        else daily or weekly on correct day
+            PY->>DB: get_user_subscribed_source_ids(user_id)
+            PY->>DB: get_insights_by_date_and_sources(date, source_ids)
+            PY->>PY: filter by user.digest_domains (null = all domains)
+            alt has insights after domain filter
+                PY->>MAIL: send_digest(user.email, date, insights_by_domain)
+            end
         end
     end
 ```
@@ -208,13 +212,13 @@ sequenceDiagram
     participant FORM as ProfileForm.tsx
     participant API as /api/profile
 
-    B->>FORM: edit display_name / digest_enabled / digest_hour / digest_domains chips
-    FORM->>API: PUT {display_name, digest_enabled, digest_hour, digest_domains}
-    Note right of API: digest_domains is string[] or null; empty array coerced to null
-    API->>API: validate: user authed, digest_hour 0-23
+    B->>FORM: edit display_name / digest_enabled / digest_hour / digest_domains / digest_frequency / digest_day_of_week
+    FORM->>API: PUT {display_name, digest_enabled, digest_hour, digest_domains, digest_frequency, digest_day_of_week}
+    Note right of API: digest_domains: string[] or null; digest_frequency: 'daily'|'weekly'; digest_day_of_week: 0–6
+    API->>API: validate: user authed, digest_hour 0-23, digest_frequency in ['daily','weekly'], digest_day_of_week 0-6
     API->>DB: UPDATE user_profiles SET ... WHERE user_id=?
     DB-->>API: ok
-    API-->>FORM: 200 {display_name, digest_enabled, digest_hour, digest_domains}
+    API-->>FORM: 200 ok
     FORM->>FORM: show green checkmark, router.refresh()
 ```
 
