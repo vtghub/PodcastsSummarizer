@@ -95,5 +95,6 @@ DOMAINS = [
     "Finance & Investing",
     "Leadership & Productivity",
     "Society & Culture",
+    "General",
     "Other",
 ]

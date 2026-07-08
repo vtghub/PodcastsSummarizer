@@ -5,6 +5,7 @@ const DOMAIN_KEY: Record<string, string> = {
   "Finance & Investing":       "fin",
   "Leadership & Productivity": "lead",
   "Society & Culture":         "soc",
+  "General":                   "gen",
   "Other":                     "oth",
 };
 
