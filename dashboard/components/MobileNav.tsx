@@ -25,7 +25,7 @@ export default function MobileNav() {
       }}
     >
       {TABS.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+        const active = pathname === href || pathname.startsWith(href);
         return (
           <Link
             key={href}
