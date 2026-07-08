@@ -248,8 +248,9 @@ async function generatePdf(date: string) {
     const rgb = hexToRgb(DOMAIN_HEX[domain] ?? "#6b7280");
     const [r, g, b] = rgb;
 
-    // Domain badge
-    if (y + S.badgeH + S.afterBadge + 60 > FOOTER) newPage();
+    // Domain badge — only draw if there's room for the badge + first card
+    const firstCardH = domainInsights.length > 0 ? measureCard(domainInsights[0]) : 0;
+    if (y + S.badgeH + S.afterBadge + firstCardH > FOOTER - 8) newPage();
 
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
@@ -267,8 +268,20 @@ async function generatePdf(date: string) {
       const cardX = MG - S.cardPadX;
       const cardW = CW + S.cardPadX * 2;
 
-      // If card doesn't fit, go to next page
-      if (y + cardH > FOOTER - 8) newPage();
+      // If card doesn't fit, go to next page and repeat the domain badge
+      if (y + cardH > FOOTER - 8) {
+        newPage();
+        // Re-draw domain badge marked as continued
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        const contLabel = `${domain.toUpperCase()}  (cont'd)`;
+        const contW = doc.getTextWidth(contLabel) + S.badgePadX * 2;
+        doc.setFillColor(r, g, b);
+        doc.roundedRect(MG, y, contW, S.badgeH, 3, 3, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.text(contLabel, MG + S.badgePadX, y + S.badgeH * 0.68);
+        y += S.badgeH + S.afterBadge;
+      }
 
       const cardY = y;
 
