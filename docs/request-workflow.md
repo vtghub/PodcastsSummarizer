@@ -560,33 +560,47 @@ sequenceDiagram
 
 ---
 
-## 17. Export Insights as CSV / PDF
+## 17. Export Insights (CSV / JSON / PDF)
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
+    participant DD as ExportDropdown.tsx
     participant MW as middleware.ts
     participant API as /api/insights/export
     participant DB as Supabase
 
+    B->>DD: click "↓ Export ▾"
+    DD->>DD: setOpen(true) — show CSV / JSON / PDF options
+
+    B->>DD: select format (e.g. CSV)
+    DD->>DD: setOpen(false)
+    DD->>B: fetch /api/insights/export?format=csv&date=YYYY-MM-DD
+
     B->>MW: GET /api/insights/export?format=csv&date=2026-07-07
-    MW->>MW: rate limit check (pass — GET is not in RATE_LIMIT_METHODS)
+    MW->>MW: rate limit check (pass — GET not in RATE_LIMIT_METHODS)
     MW->>MW: supabase.auth.getUser()
     alt not signed in
-        MW-->>B: 401 Unauthorized
+        API-->>B: 401 Unauthorized
     else signed in
         MW-->>API: pass through
         API->>DB: getUserId() → user_id
         API->>DB: SELECT source_id FROM user_subscriptions WHERE user_id=?
-        DB-->>API: [source_id_1, source_id_2, ...]
+        DB-->>API: subscribed source IDs
         API->>DB: SELECT insights JOIN sources JOIN episodes WHERE date=? AND source_id IN (...)
         DB-->>API: insights with source name + episode title
         alt format=csv
-            API->>API: build CSV rows (Date, Domain, Source, Episode, Summary, Key Points, Key Quotes, Action Items, Tags)
-            API-->>B: 200 text/csv — browser triggers download
+            API->>API: insightsToCsv() — pipe-separated key_points/quotes/actions
+            API-->>B: 200 text/csv · Content-Disposition: attachment
+            B->>B: browser downloads insights-YYYY-MM-DD.csv
+        else format=json
+            API->>API: insightsToJson() — pretty-printed JSON with arrays
+            API-->>B: 200 application/json · Content-Disposition: attachment
+            B->>B: browser downloads insights-YYYY-MM-DD.json
         else format=pdf
-            API->>API: build printable HTML with @media print CSS
-            API-->>B: 200 text/html — opens in browser for printing
+            API->>API: insightsToPrintHtml() — styled HTML with @media print CSS
+            API-->>B: 200 text/html · Content-Disposition: attachment
+            DD->>B: window.open(url, "_blank") — opens printable page in new tab
         end
     end
 ```
