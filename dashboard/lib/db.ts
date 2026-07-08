@@ -237,6 +237,9 @@ async function sbSetSourceDomain(id: string, domain: string): Promise<void> {
   const sb = getSupabaseClient();
   const { error } = await sb.from("sources").update({ domain }).eq("id", id);
   if (error) throw error;
+  // Cascade to existing insights so reclassified episodes show the new domain immediately
+  const { error: insightError } = await sb.from("insights").update({ domain }).eq("source_id", id);
+  if (insightError) throw insightError;
 }
 
 async function sbGetEpisodesWithInsights(_userId: string, sourceId: string): Promise<{ id: string; title: string; published_at: string }[]> {
