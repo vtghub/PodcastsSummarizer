@@ -439,9 +439,9 @@ sequenceDiagram
     Note over CARD,EAPI: On mount — single batched call records view + fetches all counts
     CARD->>EAPI: GET ?view=1 — user_id from cookie if signed in
     EAPI->>DB: UPSERT insight_views (deduped per user, anonymous inserts freely)
-    EAPI->>DB: Promise.all — COUNT insight_views, SELECT insight_reactions, COUNT insight_comments
-    EAPI-->>CARD: { views, likes, dislikes, mine, commentCount }
-    CARD->>CARD: render engagement bar (eye, thumbs, comment count, share)
+    EAPI->>DB: Promise.all — COUNT insight_views, SELECT insight_reactions, COUNT insight_comments, SELECT insight_bookmarks (authed only)
+    EAPI-->>CARD: { views, likes, dislikes, mine, commentCount, bookmarked }
+    CARD->>CARD: render engagement bar (eye, thumbs, bookmark ☆/★, comment count, share)
 
     Note over B,CARD: Like / Dislike (requires sign-in)
     B->>CARD: click Like
@@ -639,7 +639,55 @@ sequenceDiagram
 
 ---
 
-## 19. Realtime Dashboard Update
+## 19. Bookmark Toggle (Save / Unsave Insight)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant CARD as InsightCard.tsx
+    participant EAPI as /api/insights/[id]/engagement
+    participant BAPI as /api/insights/[id]/bookmark
+    participant DB as Supabase
+
+    Note over CARD,EAPI: On mount — bookmarked state loaded with engagement data
+    CARD->>EAPI: GET ?view=1
+    EAPI->>DB: SELECT id FROM insight_bookmarks WHERE insight_id=? AND user_id=? (authed only)
+    EAPI-->>CARD: { ..., bookmarked: true|false }
+    CARD->>CARD: render ☆ (unbookmarked) or ★ amber (bookmarked)
+
+    Note over B,CARD: User clicks bookmark button (requires sign-in)
+    B->>CARD: click ☆ (save) or ★ (unsave)
+    CARD->>CARD: optimistic toggle — setBookmarked(!prev), setBookmarking(true)
+
+    CARD->>BAPI: POST /api/insights/[id]/bookmark
+    BAPI->>DB: getUserId() from JWT cookie
+    alt not signed in
+        BAPI-->>CARD: 401 Unauthorized
+        CARD->>CARD: revert to prev state
+    else signed in
+        BAPI->>DB: SELECT id FROM insight_bookmarks WHERE insight_id=? AND user_id=?
+        alt bookmark exists → remove
+            BAPI->>DB: DELETE FROM insight_bookmarks WHERE id=?
+            BAPI-->>CARD: { bookmarked: false }
+        else no bookmark → add
+            BAPI->>DB: INSERT INTO insight_bookmarks (insight_id, user_id)
+            BAPI-->>CARD: { bookmarked: true }
+        end
+        CARD->>CARD: reconcile state with server response
+    end
+
+    Note over B,CARD: Saved insights visible on /saved page
+    B->>B: navigate to /saved
+    B->>DB: SELECT insight_bookmarks WHERE user_id ORDER BY created_at DESC
+    DB-->>B: bookmarked insight_ids in bookmark order
+    B->>DB: SELECT insights + JOIN episodes + sources WHERE id IN (...)
+    DB-->>B: full insight rows
+    B->>B: render InsightCard grid (same cards as dashboard)
+```
+
+---
+
+## 20. Realtime Dashboard Update
 
 ```mermaid
 sequenceDiagram
