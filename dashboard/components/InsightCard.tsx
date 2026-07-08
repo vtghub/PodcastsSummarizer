@@ -5,7 +5,7 @@ import type { Insight, PlatformLinks } from "@/lib/db";
 import {
   ChevronDown, ChevronUp, Quote, Zap, Tag, Volume2, VolumeX, Globe,
   CalendarDays, ThumbsUp, ThumbsDown, Share2, Eye, MessageCircle,
-  Link2, Check, Send, Trash2, X, Copy,
+  Link2, Check, Send, Trash2, X, Copy, Bookmark,
 } from "lucide-react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useSpeech } from "@/hooks/useSpeech";
@@ -155,6 +155,9 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   const [reacting, setReacting] = useState(false);
   const [commentCount, setCommentCount] = useState<number | null>(null);
 
+  const [bookmarked, setBookmarked] = useState(false);
+  const [bookmarking, setBookmarking] = useState(false);
+
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
   const [contentCopied, setContentCopied] = useState(false);
@@ -176,6 +179,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
         setDislikes(d.dislikes ?? 0);
         setMyReaction(d.mine ?? null);
         setCommentCount(d.commentCount ?? 0);
+        setBookmarked(d.bookmarked ?? false);
       })
       .catch(() => {});
   }, [insight.id]);
@@ -243,6 +247,23 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
       setReacting(false);
     }
   }, [insight.id, isAuthed, myReaction, reacting]);
+
+  const handleBookmark = useCallback(async () => {
+    if (!isAuthed || bookmarking) return;
+    setBookmarking(true);
+    const prev = bookmarked;
+    setBookmarked(!prev);
+    try {
+      const res = await fetch(`/api/insights/${insight.id}/bookmark`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) setBookmarked(data.bookmarked);
+      else setBookmarked(prev);
+    } catch {
+      setBookmarked(prev);
+    } finally {
+      setBookmarking(false);
+    }
+  }, [insight.id, isAuthed, bookmarked, bookmarking]);
 
   const shareUrl = typeof window !== "undefined"
     ? `${window.location.origin}/dashboard?date=${insight.date}&domain=${encodeURIComponent(insight.domain)}#insight-${insight.id}`
@@ -538,6 +559,17 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
         >
           <MessageCircle className="w-3.5 h-3.5" />
           {commentCount !== null && commentCount > 0 && <span>{fmtCount(commentCount)}</span>}
+        </EngagementButton>
+
+        {/* Bookmark */}
+        <EngagementButton
+          onClick={handleBookmark}
+          active={bookmarked}
+          disabled={!isAuthed}
+          title={isAuthed ? (bookmarked ? "Remove bookmark" : "Bookmark") : "Sign in to bookmark"}
+          activeColor="#F59E0B"
+        >
+          <Bookmark className={`w-3.5 h-3.5 ${bookmarked ? "fill-current" : ""}`} />
         </EngagementButton>
 
         {/* Copy + Share (right-aligned) */}
