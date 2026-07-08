@@ -20,9 +20,11 @@ interface SearchResult {
 export default function NavBar({
   userEmail,
   displayName,
+  newInsightCount = 0,
 }: {
   userEmail?: string | null;
   displayName?: string | null;
+  newInsightCount?: number;
 }) {
   const { enabled, toggle } = useTTS();
   const { theme, setTheme } = useTheme();
@@ -139,7 +141,17 @@ export default function NavBar({
 
         {/* Right controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <span className="hidden sm:inline">{navLink("/dashboard", "Dashboard")}</span>
+          <span className="hidden sm:inline relative">
+            {navLink("/dashboard", "Dashboard")}
+            {newInsightCount > 0 && (
+              <span
+                className="absolute -top-1.5 -right-4 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold px-1"
+                style={{ background: "var(--acc)", color: "var(--acc-txt)" }}
+              >
+                {newInsightCount > 99 ? "99+" : newInsightCount}
+              </span>
+            )}
+          </span>
           {navLink("/podcasts", "My Podcasts")}
           {userEmail && <span className="hidden sm:inline">{navLink("/analytics", "Analytics")}</span>}
           {userEmail && <span className="hidden sm:inline">{navLink("/saved", "Saved")}</span>}

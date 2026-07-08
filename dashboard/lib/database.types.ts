@@ -151,6 +151,7 @@ export interface Database {
           digest_enabled: boolean;
           digest_hour: number;
           digest_domains: string[] | null;
+          last_visited_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -160,6 +161,7 @@ export interface Database {
           digest_enabled?: boolean;
           digest_hour?: number;
           digest_domains?: string[] | null;
+          last_visited_at?: string | null;
           created_at?: string;
         };
         Update: {
@@ -169,6 +171,7 @@ export interface Database {
           digest_enabled?: boolean;
           digest_hour?: number;
           digest_domains?: string[] | null;
+          last_visited_at?: string | null;
           created_at?: string;
         };
         Relationships: [];

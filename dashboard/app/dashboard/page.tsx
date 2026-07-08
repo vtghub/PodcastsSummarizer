@@ -4,6 +4,7 @@ import DateNav from "@/components/DateNav";
 import ExportDropdown from "@/components/ExportDropdown";
 import DomainInsightView from "@/components/DomainInsightView";
 import EmptyState from "@/components/EmptyState";
+import VisitStamp from "@/components/VisitStamp";
 import { format, parseISO } from "date-fns";
 import Link from "next/link";
 
@@ -42,6 +43,7 @@ export default async function DashboardPage({ searchParams }: Props) {
 
   return (
     <div>
+      {userId && <VisitStamp />}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
