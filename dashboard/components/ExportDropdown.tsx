@@ -42,34 +42,64 @@ async function generatePdf(date: string) {
   if (!res.ok) throw new Error("Failed to fetch insights");
   const { insights }: { date: string; count: number; insights: JsonInsight[] } = await res.json();
 
-  // Group by domain (preserving encounter order, matching email renderer)
   const byDomain: Record<string, JsonInsight[]> = {};
-  for (const ins of insights) {
-    (byDomain[ins.domain] ??= []).push(ins);
-  }
+  for (const ins of insights) (byDomain[ins.domain] ??= []).push(ins);
 
-  const doc   = new jsPDF({ unit: "pt", format: "letter" });
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const mg    = 48;               // page margin
-  const cW    = pageW - mg * 2;  // content width
-  const footerY = pageH - 24;
-  let y = mg;
-  let pageNum = 1;
+  const doc     = new jsPDF({ unit: "pt", format: "letter" });
+  const pageW   = doc.internal.pageSize.getWidth();
+  const pageH   = doc.internal.pageSize.getHeight();
+  const MG      = 48;              // page margin (left/right)
+  const CW      = pageW - MG * 2; // usable content width
+  const FOOTER  = pageH - 32;     // y of footer line
+  let   y       = MG;
+  let   pageNum = 1;
 
-  // ── palette (mirrors email renderer) ───────────────────────────────────────
-  const C = {
-    pageBg:    [249, 250, 251] as [number,number,number],  // #f9fafb
-    cardBg:    [255, 255, 255] as [number,number,number],  // #fff
-    cardBdr:   [229, 231, 235] as [number,number,number],  // #e5e7eb
-    textHead:  [ 17,  24,  39] as [number,number,number],  // #111827
-    textBody:  [ 55,  65,  81] as [number,number,number],  // #374151
-    textMuted: [107, 114, 128] as [number,number,number],  // #6b7280
-    textSrc:   [156, 163, 175] as [number,number,number],  // #9ca3af
-    textQuote: [ 85,  85,  85] as [number,number,number],  // #555
+  // ── All spacing in one place — tweak here only ─────────────────────────────
+  const S = {
+    LH:           1.55,  // line-height multiplier (all text)
+    cardPadX:     16,    // horizontal padding inside card
+    cardPadTop:   14,    // top padding inside card
+    cardPadBot:   14,    // bottom padding inside card
+    afterSrc:      6,    // source line → summary
+    afterSummary: 12,    // summary → first section (or end of card)
+    afterSecHdr:   5,    // section header → first item
+    afterItem:     2,    // between list items (added after each line block)
+    afterSection: 10,    // after last item in a section → next section (or end)
+    quoteBarOff:  10,    // colored bar offset above quote baseline
+    afterQuote:    8,    // between consecutive quotes
+    betweenCards: 14,    // gap between cards in same domain
+    badgePadX:    10,    // horizontal padding inside badge pill
+    badgeH:       20,    // badge pill height
+    afterBadge:   12,    // badge → first card
+    betweenDomains: 24,  // last card of domain → next domain badge
   };
 
-  // ── page helpers ───────────────────────────────────────────────────────────
+  // ── Colour palette (exact values from lib/email.ts) ────────────────────────
+  const C = {
+    pageBg:   [249, 250, 251] as [number,number,number],
+    cardBg:   [255, 255, 255] as [number,number,number],
+    cardBdr:  [229, 231, 235] as [number,number,number],
+    head:     [ 17,  24,  39] as [number,number,number],
+    body:     [ 55,  65,  81] as [number,number,number],
+    muted:    [107, 114, 128] as [number,number,number],
+    src:      [156, 163, 175] as [number,number,number],
+    quote:    [ 85,  85,  85] as [number,number,number],
+  };
+
+  // ── Primitives ─────────────────────────────────────────────────────────────
+
+  function lh(size: number) { return size * S.LH; }
+
+  // Split text into lines using the doc's current font/size
+  function wrap(text: string, maxW: number): string[] {
+    return doc.splitTextToSize(text, maxW) as string[];
+  }
+
+  // Height of a block of wrapped text at given size
+  function blockH(text: string, size: number, maxW: number): number {
+    doc.setFontSize(size);
+    return wrap(text, maxW).length * lh(size);
+  }
 
   function drawPageBg() {
     doc.setFillColor(...C.pageBg);
@@ -78,190 +108,187 @@ async function generatePdf(date: string) {
 
   function drawFooter() {
     doc.setFontSize(8);
-    doc.setTextColor(...C.textSrc);
     doc.setFont("helvetica", "normal");
-    doc.text(`Podcast Insights  ·  ${date}`, mg, footerY);
-    doc.text(`${pageNum}`, pageW - mg, footerY, { align: "right" });
+    doc.setTextColor(...C.src);
+    doc.text(`Podcast Insights  ·  ${date}`, MG, FOOTER);
+    doc.text(`${pageNum}`, pageW - MG, FOOTER, { align: "right" });
   }
 
   function newPage() {
     drawFooter();
     doc.addPage();
     pageNum++;
-    y = mg;
+    y = MG;
     drawPageBg();
   }
 
-  function ensureSpace(need: number) {
-    if (y + need > footerY - 16) newPage();
-  }
-
-  // Lay out wrapped text; returns total height consumed
-  function addText(
-    str: string,
+  // Render wrapped text at current y; advance y by the text block height
+  function putText(
+    text: string,
     size: number,
     color: [number,number,number],
-    opts: { bold?: boolean; maxW?: number; x?: number } = {}
-  ): number {
-    const { bold = false, maxW = cW, x = mg } = opts;
+    x = MG,
+    maxW = CW,
+    style: "normal" | "bold" | "italic" = "normal"
+  ) {
     doc.setFontSize(size);
+    doc.setFont("helvetica", style);
     doc.setTextColor(...color);
-    doc.setFont("helvetica", bold ? "bold" : "normal");
-    const lines = doc.splitTextToSize(str, maxW) as string[];
-    const lh = size * 1.5;
-    ensureSpace(lines.length * lh);
+    const lines = wrap(text, maxW);
     doc.text(lines, x, y);
-    y += lines.length * lh;
-    return lines.length * lh;
+    y += lines.length * lh(size);
   }
 
-  // ── Page 1 setup ───────────────────────────────────────────────────────────
+  // ── Measure a complete card (must mirror renderCard exactly) ───────────────
+  function measureCard(ins: JsonInsight): number {
+    const iW  = CW - S.cardPadX * 2;   // text width inside card
+    const blW = iW - 14;               // bullet text width
+
+    let h = S.cardPadTop;
+
+    const src = [ins.source, ins.episode].filter(Boolean).join(" · ");
+    if (src) h += blockH(src, 9, iW) + S.afterSrc;
+
+    h += blockH(ins.summary, 10.5, iW) + S.afterSummary;
+
+    if (ins.key_points.length) {
+      h += blockH("Key Points", 10, iW) + S.afterSecHdr;
+      for (const p of ins.key_points) h += blockH(p, 10, blW) + S.afterItem;
+      h += S.afterSection;
+    }
+
+    if (ins.key_quotes.length) {
+      for (const q of ins.key_quotes) h += blockH(`"${q}"`, 10, blW) + S.afterQuote;
+      h += S.afterSection;
+    }
+
+    if (ins.action_items.length) {
+      h += blockH("Action Items", 10, iW) + S.afterSecHdr;
+      for (const a of ins.action_items) h += blockH(a, 10, blW) + S.afterItem;
+      h += S.afterSection;
+    }
+
+    h += S.cardPadBot;
+    return h;
+  }
+
+  // ── Render a card at the current y (card bg already drawn) ────────────────
+  function renderCardContent(ins: JsonInsight, domainRgb: [number,number,number]) {
+    const [r, g, b] = domainRgb;
+    const cx  = MG + S.cardPadX;     // text x inside card
+    const iW  = CW - S.cardPadX * 2; // text width inside card
+    const blW = iW - 14;             // bullet text width
+
+    const src = [ins.source, ins.episode].filter(Boolean).join(" · ");
+    if (src) {
+      putText(src, 9, C.src, cx, iW);
+      y += S.afterSrc;
+    }
+
+    putText(ins.summary, 10.5, C.body, cx, iW);
+    y += S.afterSummary;
+
+    if (ins.key_points.length) {
+      putText("Key Points", 10, C.head, cx, iW, "bold");
+      y += S.afterSecHdr;
+      for (const pt of ins.key_points) {
+        doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.body);
+        doc.text("•", cx, y);
+        const lines = wrap(pt, blW);
+        doc.text(lines, cx + 10, y);
+        y += lines.length * lh(10) + S.afterItem;
+      }
+      y += S.afterSection;
+    }
+
+    if (ins.key_quotes.length) {
+      for (const q of ins.key_quotes) {
+        const lines = wrap(`"${q}"`, blW);
+        const barH  = lines.length * lh(10) + 4;
+        doc.setFillColor(r, g, b);
+        doc.rect(cx, y - S.quoteBarOff, 3, barH, "F");
+        doc.setFontSize(10); doc.setFont("helvetica", "italic"); doc.setTextColor(...C.quote);
+        doc.text(lines, cx + 10, y);
+        y += lines.length * lh(10) + S.afterQuote;
+      }
+      y += S.afterSection;
+    }
+
+    if (ins.action_items.length) {
+      putText("Action Items", 10, C.head, cx, iW, "bold");
+      y += S.afterSecHdr;
+      for (const act of ins.action_items) {
+        doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.setTextColor(...C.body);
+        doc.text("→", cx, y);
+        const lines = wrap(act, blW);
+        doc.text(lines, cx + 10, y);
+        y += lines.length * lh(10) + S.afterItem;
+      }
+      y += S.afterSection;
+    }
+  }
+
+  // ── Page 1 ─────────────────────────────────────────────────────────────────
   drawPageBg();
 
-  // Header — mirrors email <h1> + subtitle
-  y = mg + 4;
-  addText("Podcast Insights", 22, C.textHead, { bold: true });
-  y += 2;
-  addText(date, 12, C.textMuted);
-  y += 16;
-
-  // Thin separator
-  doc.setDrawColor(...C.cardBdr);
-  doc.setLineWidth(0.75);
-  doc.line(mg, y, pageW - mg, y);
+  y = MG + 8;
+  putText("Podcast Insights", 22, C.head, MG, CW, "bold");
+  y += 4;
+  putText(date, 12, C.muted);
   y += 20;
 
+  doc.setDrawColor(...C.cardBdr);
+  doc.setLineWidth(0.75);
+  doc.line(MG, y, pageW - MG, y);
+  y += 24;
+
   // ── Domain sections ────────────────────────────────────────────────────────
-  for (const [domain, domainInsights] of Object.entries(byDomain)) {
-    const [r, g, b] = hexToRgb(DOMAIN_HEX[domain] ?? "#6b7280");
+  const domains = Object.entries(byDomain);
+  domains.forEach(([domain, domainInsights], dIdx) => {
+    const rgb = hexToRgb(DOMAIN_HEX[domain] ?? "#6b7280");
+    const [r, g, b] = rgb;
 
-    ensureSpace(36);
+    // Domain badge
+    if (y + S.badgeH + S.afterBadge + 60 > FOOTER) newPage();
 
-    // Domain badge — colored pill (mirrors email inline-block colored div)
-    const badgeLabel = domain.toUpperCase();
-    doc.setFontSize(10);
+    doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    const badgeW = doc.getTextWidth(badgeLabel) + 20;
-    const badgeH = 18;
+    const label  = domain.toUpperCase();
+    const badgeW = doc.getTextWidth(label) + S.badgePadX * 2;
     doc.setFillColor(r, g, b);
-    doc.roundedRect(mg, y, badgeW, badgeH, 3, 3, "F");
+    doc.roundedRect(MG, y, badgeW, S.badgeH, 3, 3, "F");
     doc.setTextColor(255, 255, 255);
-    doc.text(badgeLabel, mg + 10, y + 12.5);
-    y += badgeH + 14;
+    doc.text(label, MG + S.badgePadX, y + S.badgeH * 0.68);
+    y += S.badgeH + S.afterBadge;
 
-    // ── Insight cards ────────────────────────────────────────────────────────
-    for (const ins of domainInsights) {
-      ensureSpace(90);
+    // Cards
+    domainInsights.forEach((ins, cIdx) => {
+      const cardH = measureCard(ins);
+      const cardX = MG - S.cardPadX;
+      const cardW = CW + S.cardPadX * 2;
 
-      const pad   = 14;          // inner card padding
-      const cardX = mg - pad;
-      const cardW = cW + pad * 2;
+      // If card doesn't fit, go to next page
+      if (y + cardH > FOOTER - 8) newPage();
 
-      // ── Measure card height before drawing anything ────────────────────────
-      // We need to know total height up front so we can draw the white card
-      // background BEFORE the text (so text renders on top of it).
-      function measureWrapped(str: string, size: number, maxW: number): number {
-        doc.setFontSize(size);
-        const lines = doc.splitTextToSize(str, maxW) as string[];
-        return lines.length * size * 1.5;
-      }
+      const cardY = y;
 
-      let est = pad * 2;
-      const srcParts = [ins.source, ins.episode].filter(Boolean);
-      if (srcParts.length) est += measureWrapped(srcParts.join(" · "), 9, cW) + 4;
-      est += measureWrapped(ins.summary, 10.5, cW) + 10;
-      if (ins.key_points.length) {
-        est += 10 * 1.5 + 4; // header
-        for (const p of ins.key_points) est += measureWrapped(p, 10, cW - 16);
-        est += 8;
-      }
-      if (ins.key_quotes.length) {
-        for (const q of ins.key_quotes) est += measureWrapped(`"${q}"`, 10, cW - 20) + 12;
-        est += 6;
-      }
-      if (ins.action_items.length) {
-        est += 10 * 1.5 + 4;
-        for (const a of ins.action_items) est += measureWrapped(a, 10, cW - 16);
-        est += 6;
-      }
-
-      // If card won't fit on remaining page, start a new page
-      if (y + est > footerY - 16) newPage();
-
-      const cardStartY = y - pad + 4;
-
-      // Draw white card background + border FIRST
+      // Draw white card bg + border
       doc.setFillColor(...C.cardBg);
       doc.setDrawColor(...C.cardBdr);
       doc.setLineWidth(0.5);
-      doc.roundedRect(cardX, cardStartY, cardW, est, 5, 5, "FD");
+      doc.roundedRect(cardX, cardY, cardW, cardH, 5, 5, "FD");
 
-      // ── Now draw text content ──────────────────────────────────────────────
+      // Start text at card top + top padding
+      y = cardY + S.cardPadTop;
+      renderCardContent(ins, rgb);
 
-      // Source line
-      if (srcParts.length) {
-        addText(srcParts.join(" · "), 9, C.textSrc);
-        y += 2;
-      }
+      // Next card starts after this card + gap
+      y = cardY + cardH + (cIdx < domainInsights.length - 1 ? S.betweenCards : 0);
+    });
 
-      // Summary
-      addText(ins.summary, 10.5, C.textBody);
-      y += 8;
-
-      // Key Points
-      if (ins.key_points.length) {
-        addText("Key Points", 10, C.textHead, { bold: true });
-        y += 3;
-        for (const pt of ins.key_points) {
-          doc.setFontSize(10);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(...C.textBody);
-          doc.text("•", mg + 4, y);
-          const lines = doc.splitTextToSize(pt, cW - 16) as string[];
-          doc.text(lines, mg + 14, y);
-          y += lines.length * 10 * 1.5;
-        }
-        y += 8;
-      }
-
-      // Key Quotes — blockquote with colored left bar
-      if (ins.key_quotes.length) {
-        for (const q of ins.key_quotes) {
-          const qLines = doc.splitTextToSize(`"${q}"`, cW - 18) as string[];
-          const qH = qLines.length * 10 * 1.5 + 10;
-          // Colored 3pt left bar
-          doc.setFillColor(r, g, b);
-          doc.rect(mg + 2, y - 11, 3, qH, "F");
-          doc.setFontSize(10);
-          doc.setFont("helvetica", "italic");
-          doc.setTextColor(...C.textQuote);
-          doc.text(qLines, mg + 14, y);
-          y += qH;
-        }
-        y += 4;
-      }
-
-      // Action Items
-      if (ins.action_items.length) {
-        addText("Action Items", 10, C.textHead, { bold: true });
-        y += 3;
-        for (const act of ins.action_items) {
-          doc.setFontSize(10);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(...C.textBody);
-          doc.text("→", mg + 4, y);
-          const lines = doc.splitTextToSize(act, cW - 16) as string[];
-          doc.text(lines, mg + 14, y);
-          y += lines.length * 10 * 1.5;
-        }
-        y += 4;
-      }
-
-      y = cardStartY + est + 12;
-    }
-
-    y += 8;
-  }
+    // Gap between domain sections
+    if (dIdx < domains.length - 1) y += S.betweenDomains;
+  });
 
   drawFooter();
   doc.save(`insights-${date}.pdf`);
