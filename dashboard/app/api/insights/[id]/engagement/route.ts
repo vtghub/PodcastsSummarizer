@@ -33,11 +33,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  // Fetch all counts in parallel
-  const [viewsRes, reactionsRes, commentsRes] = await Promise.all([
+  // Fetch all counts in parallel (bookmarks only for authed users)
+  const [viewsRes, reactionsRes, commentsRes, bookmarkRes] = await Promise.all([
     supabase.from("insight_views").select("*", { count: "exact", head: true }).eq("insight_id", insightId),
     supabase.from("insight_reactions").select("type, user_id").eq("insight_id", insightId),
     supabase.from("insight_comments").select("*", { count: "exact", head: true }).eq("insight_id", insightId),
+    userId
+      ? supabase.from("insight_bookmarks").select("id").eq("insight_id", insightId).eq("user_id", userId).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
 
   const reactions = reactionsRes.data ?? [];
@@ -51,5 +54,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     dislikes,
     mine,
     commentCount: commentsRes.count ?? 0,
+    bookmarked: !!bookmarkRes.data,
   });
 }
