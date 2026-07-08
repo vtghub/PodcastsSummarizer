@@ -25,6 +25,7 @@ graph TB
         EPQUEUE[("episode_queue\nepisode_id, status\ndone·failed·pending")]
         VIEWS[("insight_views\ninsight_id, user_id")]
         REACTIONS[("insight_reactions\ninsight_id, user_id, type")]
+        BOOKMARKS[("insight_bookmarks\ninsight_id, user_id")]
         COMMENTS[("insight_comments\ninsight_id, user_id, body")]
         CREACTIONS[("comment_reactions\ncomment_id, user_id, type")]
         PROFILES[("user_profiles\nis_admin, digest_enabled\ndigest_hour, digest_domains[]")]
@@ -48,6 +49,7 @@ graph TB
         PPAGE["podcasts/page.tsx\nCatalog + subscribe toggles"]
         PROF["profile/page.tsx\nDisplay name · digest prefs"]
         APAGE["analytics/page.tsx\nKPI cards · chart · top insights"]
+        SPAGE["saved/page.tsx\nBookmarked insights list"]
         REG["register/page.tsx"]
         LOGIN["login/page.tsx"]
         CACHE["unstable_cache\n1h TTL — public views only"]
@@ -63,7 +65,7 @@ graph TB
         ARDIGPROC["/api/digest/process\ntriggers workflow_dispatch"]
         ARDIGSTAT["/api/digest/status\npoll for insights"]
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
-        ARENG["/api/insights/[id]/engagement\n/react · /comments\n/api/comments/[id]\n/react · DELETE"]
+        ARENG["/api/insights/[id]/engagement\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
         AREXP["/api/insights/export\nGET ?format=csv|pdf&date=\nauthed — download insights"]
         ARFTS["/api/insights/search\nGET ?q= — websearch FTS"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
@@ -99,6 +101,7 @@ graph TB
     LAYOUT --> PPAGE
     LAYOUT --> PROF
     LAYOUT --> APAGE
+    LAYOUT --> SPAGE
     LAYOUT --> REG
     LAYOUT --> LOGIN
 
@@ -122,8 +125,10 @@ graph TB
     ARSEARCH -.->|iTunes API| SOURCES
     ARENG --> VIEWS
     ARENG --> REACTIONS
+    ARENG --> BOOKMARKS
     ARENG --> COMMENTS
     ARENG --> CREACTIONS
+    SPAGE --> BOOKMARKS
     ARFTS --> INSIGHTS
     AREXP --> INSIGHTS
     APAGE --> INSIGHTS
@@ -226,6 +231,12 @@ erDiagram
         text type
         timestamptz created_at
     }
+    insight_bookmarks {
+        bigint id PK
+        text insight_id FK
+        uuid user_id FK
+        timestamptz created_at
+    }
     insight_comments {
         bigint id PK
         text insight_id FK
@@ -250,6 +261,7 @@ erDiagram
     episodes ||--o| episode_queue : "queued in"
     insights ||--o{ insight_views : "tracked by"
     insights ||--o{ insight_reactions : "reacted to"
+    insights ||--o{ insight_bookmarks : "bookmarked by"
     insights ||--o{ insight_comments : "commented on"
     insight_comments ||--o{ comment_reactions : "reacted to"
 ```
