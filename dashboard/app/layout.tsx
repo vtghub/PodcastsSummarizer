@@ -4,6 +4,7 @@ import "./globals.css";
 import { TTSProvider } from "@/contexts/TTSContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import NavBar from "@/components/NavBar";
+import MobileNav from "@/components/MobileNav";
 import { getUser, getDisplayName, getUserId } from "@/lib/auth";
 import { getNewInsightCount } from "@/lib/analytics";
 
@@ -33,7 +34,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               displayName={displayName}
               newInsightCount={newInsightCount}
             />
-            <main className="max-w-6xl mx-auto px-6 py-8">{children}</main>
+            <main className="max-w-6xl mx-auto px-6 py-8 pb-20 sm:pb-8">{children}</main>
+            <MobileNav />
           </TTSProvider>
         </ThemeProvider>
       </body>
