@@ -7,6 +7,9 @@ import { DOMAINS, getDomainColor } from "@/lib/domain-colors";
 
 const UTC_HOURS = Array.from({ length: 24 }, (_, i) => i);
 
+// 0=Monday … 6=Sunday (Python weekday convention, matches the worker)
+const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
 function utcHourLabel(h: number) {
   const date = new Date();
   date.setUTCHours(h, 0, 0, 0);
@@ -18,20 +21,26 @@ export default function ProfileForm({
   initialDigestEnabled,
   initialDigestHour,
   initialDigestDomains,
+  initialDigestFrequency,
+  initialDigestDayOfWeek,
 }: {
   initialDisplayName: string;
   initialDigestEnabled: boolean;
   initialDigestHour: number;
   initialDigestDomains: string[] | null;
+  initialDigestFrequency: "daily" | "weekly";
+  initialDigestDayOfWeek: number;
 }) {
   const router = useRouter();
-  const [displayName, setDisplayName]         = useState(initialDisplayName);
-  const [digestEnabled, setDigestEnabled]     = useState(initialDigestEnabled);
-  const [digestHour, setDigestHour]           = useState(initialDigestHour);
-  const [digestDomains, setDigestDomains]     = useState<string[] | null>(initialDigestDomains);
-  const [saving, setSaving]                   = useState(false);
-  const [saved, setSaved]                     = useState(false);
-  const [error, setError]                     = useState("");
+  const [displayName, setDisplayName]           = useState(initialDisplayName);
+  const [digestEnabled, setDigestEnabled]       = useState(initialDigestEnabled);
+  const [digestHour, setDigestHour]             = useState(initialDigestHour);
+  const [digestDomains, setDigestDomains]       = useState<string[] | null>(initialDigestDomains);
+  const [digestFrequency, setDigestFrequency]   = useState<"daily" | "weekly">(initialDigestFrequency);
+  const [digestDayOfWeek, setDigestDayOfWeek]   = useState(initialDigestDayOfWeek);
+  const [saving, setSaving]                     = useState(false);
+  const [saved, setSaved]                       = useState(false);
+  const [error, setError]                       = useState("");
 
   function toggleDomain(domain: string) {
     setDigestDomains((prev) => {
@@ -54,7 +63,14 @@ export default function ProfileForm({
       const res = await fetch("/api/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ display_name: displayName, digest_enabled: digestEnabled, digest_hour: digestHour, digest_domains: digestDomains }),
+        body: JSON.stringify({
+          display_name: displayName,
+          digest_enabled: digestEnabled,
+          digest_hour: digestHour,
+          digest_domains: digestDomains,
+          digest_frequency: digestFrequency,
+          digest_day_of_week: digestDayOfWeek,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -93,21 +109,21 @@ export default function ProfileForm({
         </div>
       </div>
 
-      {/* Daily Digest card */}
+      {/* Digest settings card */}
       <div
         className="rounded-2xl border overflow-hidden"
         style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)", boxShadow: "var(--shadow-card)" }}
       >
         <div className="px-5 py-4 border-b" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
-          <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--txt-4)" }}>Daily Digest</h2>
+          <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--txt-4)" }}>Email Digest</h2>
         </div>
         <div className="p-5 space-y-4">
-          {/* Toggle row */}
+          {/* Enable toggle */}
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium" style={{ color: "var(--txt-1)" }}>Email digest</p>
               <p className="text-xs mt-0.5" style={{ color: "var(--txt-4)" }}>
-                Receive a daily summary of your subscribed podcasts.
+                Receive a summary of your subscribed podcasts by email.
               </p>
             </div>
             <button
@@ -124,10 +140,60 @@ export default function ProfileForm({
             </button>
           </div>
 
-          {/* Hour picker + domain filter */}
           {digestEnabled && (
             <div className="space-y-4 pt-1 border-t" style={{ borderColor: "var(--bdr)" }}>
+
+              {/* Frequency: Daily / Weekly */}
               <div className="space-y-1.5 pt-3">
+                <label className="text-xs font-medium block" style={{ color: "var(--txt-3)" }}>Frequency</label>
+                <div className="flex gap-2">
+                  {(["daily", "weekly"] as const).map((freq) => (
+                    <button
+                      key={freq}
+                      type="button"
+                      onClick={() => setDigestFrequency(freq)}
+                      className="flex-1 py-2 rounded-lg text-sm font-medium border transition-all"
+                      style={{
+                        background: digestFrequency === freq ? "var(--acc)" : "var(--bg-elevated)",
+                        color: digestFrequency === freq ? "var(--acc-txt)" : "var(--txt-3)",
+                        borderColor: digestFrequency === freq ? "var(--acc)" : "var(--bdr)",
+                      }}
+                    >
+                      {freq.charAt(0).toUpperCase() + freq.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Day of week — only for weekly */}
+              {digestFrequency === "weekly" && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium block" style={{ color: "var(--txt-3)" }}>Send on</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DAYS_OF_WEEK.map((day, idx) => (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => setDigestDayOfWeek(idx)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+                        style={{
+                          background: digestDayOfWeek === idx ? "var(--acc)" : "var(--bg-elevated)",
+                          color: digestDayOfWeek === idx ? "var(--acc-txt)" : "var(--txt-3)",
+                          borderColor: digestDayOfWeek === idx ? "var(--acc)" : "var(--bdr)",
+                        }}
+                      >
+                        {day.slice(0, 3)}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs" style={{ color: "var(--txt-4)" }}>
+                    Your digest will include insights from the past 7 days.
+                  </p>
+                </div>
+              )}
+
+              {/* Send time */}
+              <div className="space-y-1.5">
                 <label className="text-xs font-medium block" style={{ color: "var(--txt-3)" }}>Send time (your local time)</label>
                 <select
                   value={digestHour}
