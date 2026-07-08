@@ -212,6 +212,8 @@ async function sbAddSource(fields: {
 }): Promise<void> {
   const { getSupabaseClient } = await import("./supabase");
   const sb = getSupabaseClient();
+  const { data: existing } = await sb.from("sources").select("id").eq("url", fields.url).eq("deleted", false).maybeSingle();
+  if (existing) throw new Error("A podcast with this feed URL already exists in the catalog.");
   const { error } = await sb.from("sources").insert({ ...fields, enabled: true, is_public: true });
   if (error) throw error;
 }

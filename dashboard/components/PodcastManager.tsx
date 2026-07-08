@@ -41,6 +41,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
   const [actionId, setActionId] = useState<string | null>(null);
   const [localSubs, setLocalSubs] = useState<Set<string>>(new Set(subscribedIds));
   const [localSources, setLocalSources] = useState<Source[]>(sources);
+  useEffect(() => { setLocalSources(sources); }, [sources]);
 
   const [toast, setToast] = useState<{ msg: string; type: "error" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
