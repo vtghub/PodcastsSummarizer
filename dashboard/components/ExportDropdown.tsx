@@ -20,17 +20,20 @@ interface JsonInsight {
   tags: string[];
 }
 
-// Domain accent colours (RGB) — mirror the app's CSS token palette
-const DOMAIN_COLORS: Record<string, [number, number, number]> = {
-  "Technology & AI":           [99,  102, 241],
-  "Business & Startups":       [245, 158,  11],
-  "Health & Science":          [16,  185, 129],
-  "Finance & Investing":       [59,  130, 246],
-  "Leadership & Productivity": [168,  85, 247],
-  "Society & Culture":         [236,  72, 153],
+// Exact colours from lib/email.ts
+const DOMAIN_HEX: Record<string, string> = {
+  "Technology & AI":           "#3b82f6",
+  "Business & Startups":       "#10b981",
+  "Health & Science":          "#ec4899",
+  "Finance & Investing":       "#f59e0b",
+  "Leadership & Productivity": "#8b5cf6",
+  "Society & Culture":         "#ef4444",
+  "Other":                     "#6b7280",
 };
-function domainColor(domain: string): [number, number, number] {
-  return DOMAIN_COLORS[domain] ?? [107, 114, 128];
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
 async function generatePdf(date: string) {
@@ -39,152 +42,228 @@ async function generatePdf(date: string) {
   if (!res.ok) throw new Error("Failed to fetch insights");
   const { insights }: { date: string; count: number; insights: JsonInsight[] } = await res.json();
 
-  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  // Group by domain (preserving encounter order, matching email renderer)
+  const byDomain: Record<string, JsonInsight[]> = {};
+  for (const ins of insights) {
+    (byDomain[ins.domain] ??= []).push(ins);
+  }
+
+  const doc   = new jsPDF({ unit: "pt", format: "letter" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 50;
-  const contentW = pageW - margin * 2;
-  let y = margin;
+  const mg    = 48;               // page margin
+  const cW    = pageW - mg * 2;  // content width
+  const footerY = pageH - 24;
+  let y = mg;
   let pageNum = 1;
 
-  // ── helpers ────────────────────────────────────────────────────────────────
+  // ── palette (mirrors email renderer) ───────────────────────────────────────
+  const C = {
+    pageBg:    [249, 250, 251] as [number,number,number],  // #f9fafb
+    cardBg:    [255, 255, 255] as [number,number,number],  // #fff
+    cardBdr:   [229, 231, 235] as [number,number,number],  // #e5e7eb
+    textHead:  [ 17,  24,  39] as [number,number,number],  // #111827
+    textBody:  [ 55,  65,  81] as [number,number,number],  // #374151
+    textMuted: [107, 114, 128] as [number,number,number],  // #6b7280
+    textSrc:   [156, 163, 175] as [number,number,number],  // #9ca3af
+    textQuote: [ 85,  85,  85] as [number,number,number],  // #555
+  };
 
-  function addPageFooter() {
+  // ── page helpers ───────────────────────────────────────────────────────────
+
+  function drawPageBg() {
+    doc.setFillColor(...C.pageBg);
+    doc.rect(0, 0, pageW, pageH, "F");
+  }
+
+  function drawFooter() {
     doc.setFontSize(8);
-    doc.setTextColor(170, 170, 170);
+    doc.setTextColor(...C.textSrc);
     doc.setFont("helvetica", "normal");
-    doc.text(`Podcast Insights · ${date}`, margin, pageH - 24);
-    doc.text(`Page ${pageNum}`, pageW - margin, pageH - 24, { align: "right" });
+    doc.text(`Podcast Insights  ·  ${date}`, mg, footerY);
+    doc.text(`${pageNum}`, pageW - mg, footerY, { align: "right" });
   }
 
   function newPage() {
-    addPageFooter();
+    drawFooter();
     doc.addPage();
-    pageNum += 1;
-    y = margin;
+    pageNum++;
+    y = mg;
+    drawPageBg();
   }
 
-  function ensureSpace(needed: number) {
-    if (y + needed > pageH - 48) newPage();
+  function ensureSpace(need: number) {
+    if (y + need > footerY - 16) newPage();
   }
 
-  function text(
+  // Lay out wrapped text; returns total height consumed
+  function addText(
     str: string,
     size: number,
-    color: [number, number, number],
-    opts: { bold?: boolean; maxW?: number; align?: "left" | "right" | "center" } = {}
-  ) {
-    const { bold = false, maxW = contentW, align = "left" } = opts;
+    color: [number,number,number],
+    opts: { bold?: boolean; maxW?: number; x?: number } = {}
+  ): number {
+    const { bold = false, maxW = cW, x = mg } = opts;
     doc.setFontSize(size);
     doc.setTextColor(...color);
     doc.setFont("helvetica", bold ? "bold" : "normal");
-    const lines = doc.splitTextToSize(str, maxW);
-    const lineH = size * 1.45;
-    ensureSpace(lines.length * lineH);
-    const x = align === "right" ? pageW - margin : align === "center" ? pageW / 2 : margin;
-    doc.text(lines, x, y, { align });
-    y += lines.length * lineH;
-    return lines.length * lineH;
+    const lines = doc.splitTextToSize(str, maxW) as string[];
+    const lh = size * 1.5;
+    ensureSpace(lines.length * lh);
+    doc.text(lines, x, y);
+    y += lines.length * lh;
+    return lines.length * lh;
   }
 
-  function hRule(color: [number, number, number] = [230, 230, 230], weight = 0.5) {
-    doc.setDrawColor(...color);
-    doc.setLineWidth(weight);
-    doc.line(margin, y, pageW - margin, y);
-  }
+  // ── Page 1 setup ───────────────────────────────────────────────────────────
+  drawPageBg();
 
-  // ── Cover header ───────────────────────────────────────────────────────────
-
-  // Accent bar at top
-  doc.setFillColor(99, 102, 241);
-  doc.rect(0, 0, pageW, 6, "F");
-
-  y = 36;
-  text("Podcast Insights", 22, [26, 26, 26], { bold: true });
+  // Header — mirrors email <h1> + subtitle
+  y = mg + 4;
+  addText("Podcast Insights", 22, C.textHead, { bold: true });
   y += 2;
-  text(date, 11, [100, 100, 100]);
-  y += 2;
-  text(`${insights.length} insight${insights.length !== 1 ? "s" : ""}`, 9, [160, 160, 160]);
-  y += 10;
-  hRule([200, 200, 200], 0.75);
-  y += 18;
+  addText(date, 12, C.textMuted);
+  y += 16;
 
-  // ── Insights ───────────────────────────────────────────────────────────────
+  // Thin separator
+  doc.setDrawColor(...C.cardBdr);
+  doc.setLineWidth(0.75);
+  doc.line(mg, y, pageW - mg, y);
+  y += 20;
 
-  insights.forEach((ins) => {
-    // Estimate card height to avoid splitting a card awkwardly across pages
-    ensureSpace(80);
+  // ── Domain sections ────────────────────────────────────────────────────────
+  for (const [domain, domainInsights] of Object.entries(byDomain)) {
+    const [r, g, b] = hexToRgb(DOMAIN_HEX[domain] ?? "#6b7280");
 
-    const [r, g, b] = domainColor(ins.domain);
+    ensureSpace(36);
 
-    // Card background
-    const cardX = margin - 10;
-    const cardStartY = y - 8;
-    const cardW = contentW + 20;
-
-    // Domain badge pill
-    doc.setFillColor(r, g, b, 0.12);  // light tint background
-    doc.roundedRect(cardX, cardStartY, cardW, 18, 3, 3, "F");
-    doc.setFillColor(r, g, b);
-    doc.roundedRect(cardX, cardStartY, 4, 18, 1, 1, "F");  // left accent strip
-
-    doc.setFontSize(8);
+    // Domain badge — colored pill (mirrors email inline-block colored div)
+    const badgeLabel = domain.toUpperCase();
+    doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(r, g, b);
-    doc.text(ins.domain.toUpperCase(), margin + 4, y + 5);
+    const badgeW = doc.getTextWidth(badgeLabel) + 20;
+    const badgeH = 18;
+    doc.setFillColor(r, g, b);
+    doc.roundedRect(mg, y, badgeW, badgeH, 3, 3, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.text(badgeLabel, mg + 10, y + 12.5);
+    y += badgeH + 14;
 
-    // Source · Episode (right-aligned on same row)
-    const meta = [ins.source, ins.episode].filter(Boolean).join(" · ");
-    if (meta) {
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(140, 140, 140);
-      doc.setFontSize(7.5);
-      doc.text(meta, pageW - margin - 4, y + 5, { align: "right", maxWidth: contentW * 0.6 });
+    // ── Insight cards ────────────────────────────────────────────────────────
+    for (const ins of domainInsights) {
+      ensureSpace(90);
+
+      const pad   = 14;          // inner card padding
+      const cardX = mg - pad;
+      const cardW = cW + pad * 2;
+
+      // ── Measure card height before drawing anything ────────────────────────
+      // We need to know total height up front so we can draw the white card
+      // background BEFORE the text (so text renders on top of it).
+      function measureWrapped(str: string, size: number, maxW: number): number {
+        doc.setFontSize(size);
+        const lines = doc.splitTextToSize(str, maxW) as string[];
+        return lines.length * size * 1.5;
+      }
+
+      let est = pad * 2;
+      const srcParts = [ins.source, ins.episode].filter(Boolean);
+      if (srcParts.length) est += measureWrapped(srcParts.join(" · "), 9, cW) + 4;
+      est += measureWrapped(ins.summary, 10.5, cW) + 10;
+      if (ins.key_points.length) {
+        est += 10 * 1.5 + 4; // header
+        for (const p of ins.key_points) est += measureWrapped(p, 10, cW - 16);
+        est += 8;
+      }
+      if (ins.key_quotes.length) {
+        for (const q of ins.key_quotes) est += measureWrapped(`"${q}"`, 10, cW - 20) + 12;
+        est += 6;
+      }
+      if (ins.action_items.length) {
+        est += 10 * 1.5 + 4;
+        for (const a of ins.action_items) est += measureWrapped(a, 10, cW - 16);
+        est += 6;
+      }
+
+      // If card won't fit on remaining page, start a new page
+      if (y + est > footerY - 16) newPage();
+
+      const cardStartY = y - pad + 4;
+
+      // Draw white card background + border FIRST
+      doc.setFillColor(...C.cardBg);
+      doc.setDrawColor(...C.cardBdr);
+      doc.setLineWidth(0.5);
+      doc.roundedRect(cardX, cardStartY, cardW, est, 5, 5, "FD");
+
+      // ── Now draw text content ──────────────────────────────────────────────
+
+      // Source line
+      if (srcParts.length) {
+        addText(srcParts.join(" · "), 9, C.textSrc);
+        y += 2;
+      }
+
+      // Summary
+      addText(ins.summary, 10.5, C.textBody);
+      y += 8;
+
+      // Key Points
+      if (ins.key_points.length) {
+        addText("Key Points", 10, C.textHead, { bold: true });
+        y += 3;
+        for (const pt of ins.key_points) {
+          doc.setFontSize(10);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(...C.textBody);
+          doc.text("•", mg + 4, y);
+          const lines = doc.splitTextToSize(pt, cW - 16) as string[];
+          doc.text(lines, mg + 14, y);
+          y += lines.length * 10 * 1.5;
+        }
+        y += 8;
+      }
+
+      // Key Quotes — blockquote with colored left bar
+      if (ins.key_quotes.length) {
+        for (const q of ins.key_quotes) {
+          const qLines = doc.splitTextToSize(`"${q}"`, cW - 18) as string[];
+          const qH = qLines.length * 10 * 1.5 + 10;
+          // Colored 3pt left bar
+          doc.setFillColor(r, g, b);
+          doc.rect(mg + 2, y - 11, 3, qH, "F");
+          doc.setFontSize(10);
+          doc.setFont("helvetica", "italic");
+          doc.setTextColor(...C.textQuote);
+          doc.text(qLines, mg + 14, y);
+          y += qH;
+        }
+        y += 4;
+      }
+
+      // Action Items
+      if (ins.action_items.length) {
+        addText("Action Items", 10, C.textHead, { bold: true });
+        y += 3;
+        for (const act of ins.action_items) {
+          doc.setFontSize(10);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(...C.textBody);
+          doc.text("→", mg + 4, y);
+          const lines = doc.splitTextToSize(act, cW - 16) as string[];
+          doc.text(lines, mg + 14, y);
+          y += lines.length * 10 * 1.5;
+        }
+        y += 4;
+      }
+
+      y = cardStartY + est + 12;
     }
-    y += 20;
 
-    // Summary
-    text(ins.summary, 10, [30, 30, 30]);
-    y += 5;
+    y += 8;
+  }
 
-    // Section helper
-    const section = (label: string, items: string[], bullet: string) => {
-      if (!items.length) return;
-      ensureSpace(20);
-      text(label, 7.5, [120, 120, 120], { bold: true });
-      y += 1;
-      items.forEach((item) => {
-        ensureSpace(14);
-        // Bullet
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(r, g, b);
-        doc.text(bullet, margin + 2, y);
-        // Item text
-        doc.setTextColor(55, 55, 55);
-        const lines = doc.splitTextToSize(item, contentW - 14);
-        doc.text(lines, margin + 13, y);
-        y += lines.length * 9 * 1.4;
-      });
-      y += 4;
-    };
-
-    section("KEY POINTS", ins.key_points, "▸");
-    section("KEY QUOTES", ins.key_quotes.map((q) => `"${q}"`), "❝");
-    section("ACTION ITEMS", ins.action_items, "→");
-
-    // Tags
-    if (ins.tags.length) {
-      ensureSpace(14);
-      text(ins.tags.map((t) => `#${t}`).join("  "), 7.5, [170, 170, 170]);
-    }
-
-    y += 6;
-    hRule([235, 235, 235]);
-    y += 14;
-  });
-
-  addPageFooter();
+  drawFooter();
   doc.save(`insights-${date}.pdf`);
 }
 
