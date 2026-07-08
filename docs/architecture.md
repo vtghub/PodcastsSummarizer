@@ -57,7 +57,7 @@ graph TB
 
     subgraph APIROUTES["📡 API Routes"]
         ARAUTH["/api/auth/\nlogin · logout · register"]
-        ARSRC["/api/sources\nadmin only"]
+        ARSRC["/api/sources\nPOST: authed users\nPATCH/DELETE: admin only"]
         ARSUBS["/api/subscriptions\nauthed users"]
         ARPROF["/api/profile\nauthed users"]
         ARDIG["/api/digest/send\nauthed users — on-demand email"]

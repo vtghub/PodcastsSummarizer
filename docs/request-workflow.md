@@ -374,11 +374,11 @@ sequenceDiagram
 
 ---
 
-## 12. Admin Source Management
+## 12. Add Podcast (Authenticated Source Management)
 
 ```mermaid
 sequenceDiagram
-    participant B as Browser (admin)
+    participant B as Browser (signed in)
     participant MW as middleware.ts
     participant API as /api/sources
     participant DB as Supabase
@@ -387,15 +387,15 @@ sequenceDiagram
     B->>MW: POST /api/sources (with JWT cookie)
     MW->>MW: verify session → user present
     MW-->>API: pass through
-    API->>DB: isAdmin() → user_profiles.is_admin
-    alt is_admin = true
+    API->>API: getUserId() → user present?
+    alt not signed in
+        API-->>B: 401 Unauthorized
+    else signed in
         API->>DB: INSERT sources (is_public=true)
         API-->>B: 201 Created
         Note over API,GH: fire-and-forget (does not block response)
         API->>GH: workflow_dispatch backfill_platform_links.yml { source_id }
         GH->>DB: discover & store platform URLs for new source
-    else not admin
-        API-->>B: 403 Forbidden
     end
 ```
 
