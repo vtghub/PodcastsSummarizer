@@ -5,7 +5,6 @@ import { useState, useRef, useEffect } from "react";
 const FORMATS = [
   { label: "CSV",  value: "csv",  description: "Spreadsheet" },
   { label: "JSON", value: "json", description: "Raw data"    },
-  { label: "PDF",  value: "pdf",  description: "Print / save" },
 ] as const;
 
 export default function ExportDropdown({ date }: { date: string }) {
@@ -23,14 +22,10 @@ export default function ExportDropdown({ date }: { date: string }) {
   function handleSelect(fmt: string) {
     setOpen(false);
     const url = `/api/insights/export?format=${fmt}&date=${date}`;
-    if (fmt === "pdf") {
-      window.open(url, "_blank");
-    } else {
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `insights-${date}.${fmt}`;
-      a.click();
-    }
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `insights-${date}.${fmt}`;
+    a.click();
   }
 
   return (
