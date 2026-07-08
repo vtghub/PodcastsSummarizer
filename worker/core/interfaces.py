@@ -53,8 +53,10 @@ class UserDigestProfile:
     user_id: str
     email: str
     display_name: str
-    digest_hour: int = 19  # UTC hour to send digest
-    digest_domains: list[str] | None = None  # None = all domains
+    digest_hour: int = 19          # UTC hour to send digest
+    digest_domains: list[str] | None = None   # None = all domains
+    digest_frequency: str = "daily"           # 'daily' or 'weekly'
+    digest_day_of_week: int = 0               # 0=Monday … 6=Sunday (Python weekday)
 
 
 @dataclass

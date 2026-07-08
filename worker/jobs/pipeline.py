@@ -15,7 +15,7 @@ import threading
 import traceback
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from worker.core.interfaces import PodcastSource
 from worker.core.registry import (
@@ -426,6 +426,13 @@ def _send_per_user_digests(storage, date_str: str):
     print(f"[Email] Sending digests to {len(users)} user(s)")
 
     def _send_one(user):
+        # Weekly users only receive on their chosen day of week (0=Monday…6=Sunday)
+        if user.digest_frequency == "weekly":
+            today_dow = date.fromisoformat(date_str).weekday()
+            if today_dow != user.digest_day_of_week:
+                print(f"[Email] {user.email} — weekly digest not scheduled today, skipping")
+                return
+
         source_ids = storage.get_user_subscribed_source_ids(user.user_id)
         if not source_ids:
             print(f"[Email] {user.email} — no subscriptions, skipping")
