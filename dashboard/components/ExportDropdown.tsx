@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 
 const FORMATS = [
   { label: "PDF",  value: "pdf",  description: "Download"    },
-  { label: "Word", value: "word", description: ".doc file"   },
+  { label: "Word", value: "word", description: ".docx file"  },
   { label: "CSV",  value: "csv",  description: "Spreadsheet" },
   { label: "JSON", value: "json", description: "Raw data"    },
 ] as const;
@@ -332,7 +332,7 @@ export default function ExportDropdown({ date }: { date: string }) {
       }
       return;
     }
-    const ext = fmt === "word" ? "doc" : fmt;
+    const ext = fmt === "word" ? "docx" : fmt;
     const url = `/api/insights/export?format=${fmt}&date=${date}`;
     const a = document.createElement("a");
     a.href = url;
