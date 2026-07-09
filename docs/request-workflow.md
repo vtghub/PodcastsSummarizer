@@ -916,3 +916,72 @@ sequenceDiagram
         end
     end
 ```
+
+
+---
+
+## 25. Ask AI — LLM-Powered Q&A
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (signed in)
+    participant PAGE as ask/page.tsx
+    participant API as /api/ask
+    participant DB as Supabase
+    participant LLM1 as Gemini 2.0 Flash
+    participant LLM2 as Groq (Llama 3.1 8B / 3.3 70B)
+    participant LLM3 as Mistral / Together / Cohere
+
+    B->>PAGE: navigate to /ask
+    PAGE->>PAGE: render chat UI + 4 suggested questions
+
+    B->>PAGE: click suggested question (or type + Enter)
+    PAGE->>PAGE: append user bubble, setLoading(true)
+    PAGE->>API: POST /api/ask { question }
+
+    API->>DB: getUserId() from JWT cookie
+    alt not signed in
+        API-->>PAGE: 401 Unauthorized
+        PAGE->>PAGE: show error bubble
+    else signed in
+        API->>DB: SELECT source_id FROM user_subscriptions WHERE user_id=? AND enabled=true
+        DB-->>API: subscribedSourceIds[]
+
+        Note over API,DB: 1. FTS search restricted to user's subscriptions
+        API->>DB: .textSearch("search_vector", question, {type:"websearch"}) .in("source_id", subscribedSourceIds) .limit(8)
+        DB-->>API: matched insights (or empty)
+
+        alt FTS returns 0 results
+            Note over API,DB: 2. Fallback — most recent insights from subscriptions
+            API->>DB: SELECT insights WHERE source_id IN (...) ORDER BY date DESC LIMIT 8
+            DB-->>API: recent insights
+        end
+
+        alt still 0 insights
+            API-->>PAGE: { answer: "No insights yet...", citations: [] }
+            PAGE->>PAGE: show assistant bubble (no citations)
+        else has insights
+            API->>API: build context block (summary + key_points + key_quotes per insight)
+            API->>API: compose prompt with [1][2]... citation instructions
+
+            Note over API,LLM1: 6-model waterfall — try each until one succeeds
+            API->>LLM1: POST generateContent (Gemini 2.0 Flash)
+            alt Gemini quota exceeded (429 / RESOURCE_EXHAUSTED)
+                API->>LLM2: POST /openai/v1/chat (Groq llama-3.1-8b-instant)
+                alt Groq 8B quota exceeded
+                    API->>LLM2: POST /openai/v1/chat (Groq llama-3.3-70b-versatile)
+                    alt Groq 70B quota exceeded
+                        API->>LLM3: POST Mistral / Together / Cohere (first key available)
+                    end
+                end
+            end
+            Note over API: logs "[ask] answered by <model-name>"
+
+            API-->>PAGE: { answer, citations[{index, id, date, domain, source_name, episode_title}], model }
+            PAGE->>PAGE: append assistant bubble (answer text, pre-wrap)
+            PAGE->>PAGE: render citation cards below bubble
+            B->>PAGE: click citation card
+            PAGE->>B: router.push("/dashboard?date=...&domain=...&insight=<id>")
+        end
+    end
+```
