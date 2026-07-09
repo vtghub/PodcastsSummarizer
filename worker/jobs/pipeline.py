@@ -323,22 +323,23 @@ def run_single_episode(
     return {"stat": stat, "error": error_msg, "date": date_str}
 
 
-def run_digest_fanout(date_str: str | None = None, force: bool = False) -> None:
+def run_digest_fanout(date_str: str | None = None, force: bool = False, target_email: str | None = None) -> None:
     """
     Send digest emails to all eligible users for a given date.
     Called by the hourly digest workflow — no ingestion, just email fan-out.
     Respects each user's digest_hour and digest_timezone preferences.
 
     Args:
-        date_str: Override the lookup date (YYYY-MM-DD). Defaults to UTC today.
-        force:    Skip the hour check — send immediately to all eligible users.
-                  Use for manual test runs only.
+        date_str:     Override the lookup date (YYYY-MM-DD). Defaults to UTC today.
+        force:        Skip the hour check — send immediately to all eligible users.
+        target_email: If set, only send to this email address (for targeted testing).
     """
     storage = get_storage_provider()
     if date_str is None:
         date_str = datetime.now().strftime("%Y-%m-%d")
-    print(f"[DigestFanout] Running for date={date_str}{' (forced)' if force else ''}")
-    _send_per_user_digests(storage, date_str, force=force)
+    label = f"date={date_str}" + (" (forced)" if force else "") + (f" → {target_email}" if target_email else "")
+    print(f"[DigestFanout] Running for {label}")
+    _send_per_user_digests(storage, date_str, force=force, target_email=target_email)
 
 
 def _process_episode(
@@ -426,7 +427,7 @@ def _get_source_provider(source: PodcastSource):
 _EMAIL_WORKERS = 8  # max concurrent SMTP connections for digest fan-out
 
 
-def _send_per_user_digests(storage, date_str: str, force: bool = False):
+def _send_per_user_digests(storage, date_str: str, force: bool = False, target_email: str | None = None):
     """Fan out personalised digest emails to every user with digest_enabled=TRUE."""
     email = get_email_provider()
 
@@ -441,6 +442,12 @@ def _send_per_user_digests(storage, date_str: str, force: bool = False):
         # Fallback for local SQLite dev: send the old single-recipient digest
         _send_single_digest(storage, date_str, email)
         return
+
+    if target_email:
+        users = [u for u in users if u.email == target_email]
+        if not users:
+            print(f"[Email] No digest-enabled user found with email {target_email}")
+            return
 
     print(f"[Email] Sending digests to {len(users)} user(s)")
 

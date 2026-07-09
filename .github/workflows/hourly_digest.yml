@@ -16,6 +16,10 @@ on:
         description: "Skip the hour check and send to all eligible users immediately (true/false)."
         required: false
         default: "false"
+      target_email:
+        description: "Only send to this email address (leave blank for all users)."
+        required: false
+        default: ""
 
 jobs:
   send-digests:
@@ -44,6 +48,7 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           DIGEST_DATE: ${{ github.event.inputs.date || '' }}
           DIGEST_FORCE: ${{ github.event.inputs.force || 'false' }}
+          DIGEST_TARGET_EMAIL: ${{ github.event.inputs.target_email || '' }}
           PYTHONUTF8: "1"
         run: |
           python - <<'EOF'
@@ -53,5 +58,6 @@ jobs:
 
           date_str = os.environ.get("DIGEST_DATE", "").strip() or None
           force = os.environ.get("DIGEST_FORCE", "false").lower() == "true"
-          run_digest_fanout(date_str, force=force)
+          target_email = os.environ.get("DIGEST_TARGET_EMAIL", "").strip() or None
+          run_digest_fanout(date_str, force=force, target_email=target_email)
           EOF
