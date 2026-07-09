@@ -61,6 +61,7 @@ PodcastsSummarizer/
 │   │       └── gmail_smtp.py        # Gmail App Password SMTP + HTML renderer
 │   └── jobs/
 │       ├── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → async email fan-out; episode retry; RSS backoff; run_single_episode() for on-demand
+│       ├── recommendations.py       # Weekly recommendations job: LLM-ranked best insights + trending podcast discovery per user
 │       ├── backfill_platform_links.py  # One-time job: discover platform URLs for all existing sources
 │       └── backfill_published_at.py    # One-time job: backfill episode published dates from RSS feeds
 │   └── tests/
@@ -90,6 +91,7 @@ PodcastsSummarizer/
 │   │   ├── saved/page.tsx           # Saved Insights — lists all bookmarked insights for signed-in user, sorted by bookmark date
 │   │   ├── podcasts/page.tsx        # Podcast catalog — public read-only for guests, full subscribe/unsubscribe for signed-in users; admin controls
 │   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, digest frequency (daily/weekly), episode digest picker
+│   │   ├── onboarding/page.tsx      # New-user onboarding wizard (auth-required; redirects to /dashboard if already subscribed)
 │   │   ├── login/page.tsx           # Email + password sign-in
 │   │   ├── register/page.tsx        # New user registration
 │   │   └── api/
@@ -105,6 +107,7 @@ PodcastsSummarizer/
 │   │       ├── digest/process/      # POST — trigger workflow_dispatch for unprocessed episode
 │   │       ├── digest/status/       # GET — poll DB for insights on a specific episode
 │   │       ├── podcasts/search/     # GET — proxy iTunes Search API for podcast name lookup
+│   │       ├── recommendations/podcasts/ # GET ?domains=X,Y — catalog sources + iTunes suggestions for onboarding
 │   │       ├── profile/             # GET/PUT user profile (display_name, digest_enabled, digest_hour, digest_domains, digest_frequency, digest_day_of_week)
 │   │       ├── revalidate/          # POST — on-demand Next.js cache bust (called by pipeline after new insights saved)
 │   │       ├── insights/[id]/engagement/ # GET ?view=1 — batched: record view + fetch views/likes/dislikes/commentCount/bookmarked in one round-trip
@@ -123,7 +126,8 @@ PodcastsSummarizer/
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client) + Supabase Realtime subscription (auto-refresh on new insights)
 │   │   ├── PodcastManager.tsx       # Catalog — domain tab layout; optimistic subscribe toggles; admin reclassify with toast on failure
 │   │   ├── ProfileForm.tsx          # Display name, digest toggle, Daily/Weekly frequency toggle, day-of-week picker, UTC hour picker, per-domain digest filter chips
-│   │   ├── WelcomeOnboarding.tsx    # First-run experience for new signed-in users with no subscriptions — 3-step guide + CTA to /podcasts
+│   │   ├── OnboardingWizard.tsx     # 3-step onboarding: domain picker → catalog + iTunes recommendations → subscribe & finish
+│   │   ├── WelcomeOnboarding.tsx    # Fallback first-run card shown on dashboard if user skips onboarding — 3-step guide + CTA to /onboarding
 │   │   ├── SendDigestButton.tsx     # On-demand digest send + Preview button (opens /api/digest/preview in new tab)
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
 │   │   ├── SignOutButton.tsx        # POST /api/auth/logout → redirect
@@ -146,7 +150,9 @@ PodcastsSummarizer/
 │   └── request-workflow.md          # Mermaid request flow sequence diagrams
 │
 ├── .github/workflows/
-│   ├── daily_pipeline.yml           # Cron at midnight UTC; workflow_dispatch with since_days + force_email
+│   ├── daily_pipeline.yml           # Cron at 6 AM UTC (ingestion only, no email); workflow_dispatch with since_days + force_email
+│   ├── hourly_digest.yml            # Cron every hour — per-user digest fan-out (checks digest_hour in user's timezone)
+│   ├── weekly_recommendations.yml   # Cron Sundays 10 AM UTC — LLM-ranked best-of-week + trending podcast discovery email
 │   ├── backfill_platform_links.yml  # Manual workflow_dispatch — backfills platform URLs; optional source_id input
 │   └── backfill_published_at.yml    # Manual workflow_dispatch — backfills episode published dates; optional source_id input
 │
@@ -289,7 +295,7 @@ npm run dev      # http://localhost:3000
 | **Themes** | 5 built-in themes: **Parchment** (warm light), **Midnight** (deep blue slate), **Aurora** (ocean depths), **Cosmos** (violet nebula), **Forest** (deep emerald); compact swatch-grid picker (~196 px) — header shows "THEME / &lt;name&gt;" with the name updating live on hover; five 3-stripe colour chips (bg · mid · accent) in a single row; active chip glows in its accent colour |
 | **My Podcasts** | Catalog visible to all visitors (public read-only); subscribe/unsubscribe requires sign-in; grouped by domain tabs (same canonical order as the Dashboard — Technology & AI, Business & Startups, etc.); subscribed cards show an accent-coloured border + soft ring shadow, unsubscribed cards are borderless; admin controls for catalog management (add, delete, enable/disable, reclassify domain); domain reclassification uses an optimistic inline select — card moves to the new domain tab immediately and **reverts with a toast notification on API failure**; podcast name search with iTunes-powered dropdown |
 | **Search** | Full-text search across all insight summaries, key points, quotes, and action items; triggered via Search button in the navbar or `Cmd/Ctrl+K`; opens a fixed overlay with a debounced input (300ms), domain-colour-badged results, episode title and date, and click-to-navigate deep links that land on the exact insight card; **filter bar** below the input: domain chips (abbreviated labels, accent-coloured when active, toggle off on second click) + `from` / `to` date pickers; Clear button appears when any filter is active; all filters reset on overlay close; re-search fires on any filter change |
-| **Onboarding** | New signed-in users with no subscriptions see a `WelcomeOnboarding` card instead of the empty dashboard — personalised greeting, three illustrated steps (Browse → Subscribe → Get insights), and a prominent CTA to `/podcasts` |
+| **Onboarding Wizard** | New signed-in users are automatically redirected to `/onboarding` where they pick interest domains (Technology & AI, Business, etc.), browse catalog podcasts and iTunes suggestions for those domains, and subscribe before reaching the dashboard; `WelcomeOnboarding` card shown as fallback if user reaches dashboard with 0 subscriptions |
 | **Profile** | Responsive 2-column layout (laptop) / single-column (mobile); display name, digest toggle, **Daily / Weekly frequency toggle** (Weekly mode reveals a Mon–Sun day-of-week picker), digest hour, **per-domain email filter** (chip toggles — faded chips are excluded from the digest; `null` means all domains); "Send Digest Now" + **"Preview" button** (opens the exact email HTML in a new tab before sending); Episode Digest picker |
 | **Realtime Dashboard** | `DomainInsightView` subscribes to Supabase Realtime `postgres_changes` INSERT on `insights`; when a new insight lands for the currently viewed date, the page auto-refreshes via `router.refresh()` — new cards appear without a manual reload |
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); clicking "Process & Send Digest" on an unprocessed episode queues the pipeline **and automatically sends the digest email when processing completes** — no second click needed; button shows "Processing — will send when ready…" during the wait; queued episodes show ⏳ in the dropdown; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime (no page refresh); if pipeline fails, the `episode_queue` table receives a `failed` status row — Realtime pushes it to the browser instantly, resetting the episode to ○ with an error message (no polling) |
@@ -305,10 +311,13 @@ npm run dev      # http://localhost:3000
 
 ## CI/CD & Deployment
 
-- **Pipeline**: GitHub Actions runs `daily_pipeline.yml` at **midnight UTC (8 PM EDT)** daily.
+- **Pipeline** (`daily_pipeline.yml`): runs at **6 AM UTC** daily — ingestion only (`send_email=False`).
   - `since_days` input: look-back window (default: 1)
   - `force_email` input: send digest from existing DB insights even if no new episodes (for testing)
   - `episode_audio_url` + `source_id` + `target_email` inputs: single-episode on-demand mode (triggered by `/api/digest/process`)
+- **Hourly Digest** (`hourly_digest.yml`): runs every hour — checks each user's `digest_hour` in their `digest_timezone` and sends digest email to users whose local hour matches.
+- **Weekly Recommendations** (`weekly_recommendations.yml`): runs **Sundays at 10 AM UTC (~6 AM EST)** — sends all digest-enabled users a two-section email: LLM-ranked best insights from their subscriptions + trending podcasts they aren't subscribed to in their domains.
+  - `date` input: override date (YYYY-MM-DD); defaults to today.
 - **Backfill platform links**: `backfill_platform_links.yml` — manual `workflow_dispatch`; optional `source_id` input to run for a single source (leave blank to backfill all).
 - **Backfill published dates**: `backfill_published_at.yml` — manual `workflow_dispatch`; optional `source_id` input to run per-source and stay within the 30-minute job timeout (leave blank to process all sources).
 - **Dashboard**: Vercel auto-deploys on every push to `main`.
