@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 
 const FORMATS = [
   { label: "CSV",  value: "csv",  description: "Spreadsheet" },
+  { label: "Word", value: "word", description: ".doc file"   },
   { label: "JSON", value: "json", description: "Raw data"    },
   { label: "PDF",  value: "pdf",  description: "Download"    },
 ] as const;
@@ -331,10 +332,11 @@ export default function ExportDropdown({ date }: { date: string }) {
       }
       return;
     }
+    const ext = fmt === "word" ? "doc" : fmt;
     const url = `/api/insights/export?format=${fmt}&date=${date}`;
     const a = document.createElement("a");
     a.href = url;
-    a.download = `insights-${date}.${fmt}`;
+    a.download = `insights-${date}.${ext}`;
     a.click();
   }
 

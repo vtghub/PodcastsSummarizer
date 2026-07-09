@@ -73,6 +73,37 @@ ${sections}
 </html>`;
 }
 
+function insightsToWord(date: string, insights: Insight[]): string {
+  const sections = insights.map((ins) => `
+    <h2 style="font-size:13pt;color:#333;margin-bottom:2pt">${ins.source_name ?? ""}${ins.episode_title ? ` — ${ins.episode_title}` : ""}</h2>
+    <p style="font-size:9pt;color:#888;margin:0 0 6pt">${ins.domain} · ${date}</p>
+    <p style="margin:0 0 8pt">${ins.summary}</p>
+    ${ins.key_points.length ? `<p style="font-size:9pt;font-weight:bold;margin:6pt 0 2pt">KEY POINTS</p><ul style="margin:0 0 8pt">${ins.key_points.map((p) => `<li>${p}</li>`).join("")}</ul>` : ""}
+    ${ins.key_quotes.length ? `<p style="font-size:9pt;font-weight:bold;margin:6pt 0 2pt">KEY QUOTES</p><ul style="margin:0 0 8pt">${ins.key_quotes.map((q) => `<li>"${q}"</li>`).join("")}</ul>` : ""}
+    ${ins.action_items.length ? `<p style="font-size:9pt;font-weight:bold;margin:6pt 0 2pt">ACTION ITEMS</p><ul style="margin:0 0 8pt">${ins.action_items.map((a) => `<li>${a}</li>`).join("")}</ul>` : ""}
+    ${ins.tags.length ? `<p style="font-size:8pt;color:#777;margin:4pt 0 0">${ins.tags.map((t) => `#${t}`).join(" ")}</p>` : ""}
+    <hr style="border:none;border-top:1px solid #ddd;margin:12pt 0">`).join("");
+
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<title>Podcast Insights — ${date}</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]-->
+<style>
+  body { font-family: Calibri, sans-serif; font-size: 11pt; color: #1a1a1a; margin: 2cm; line-height: 1.5; }
+  h1 { font-size: 18pt; color: #111; margin-bottom: 4pt; }
+  ul { padding-left: 18pt; }
+  li { margin-bottom: 3pt; }
+</style>
+</head>
+<body>
+<h1>Podcast Insights</h1>
+<p style="color:#666;font-size:10pt;margin:0 0 18pt">${date} · ${insights.length} insight${insights.length !== 1 ? "s" : ""}</p>
+${sections}
+</body>
+</html>`;
+}
+
 function insightsToJson(date: string, insights: Insight[]): string {
   return JSON.stringify(
     {
@@ -104,6 +135,15 @@ export async function GET(req: Request) {
   const fmt = searchParams.get("format") ?? "csv";
 
   const insights = await getInsightsByDate(date, userId);
+
+  if (fmt === "word") {
+    return new Response(insightsToWord(date, insights), {
+      headers: {
+        "Content-Type": "application/msword; charset=utf-8",
+        "Content-Disposition": `attachment; filename="insights-${date}.doc"`,
+      },
+    });
+  }
 
   if (fmt === "pdf") {
     return new Response(insightsToPrintHtml(date, insights), {
