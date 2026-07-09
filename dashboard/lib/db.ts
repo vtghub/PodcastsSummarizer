@@ -177,7 +177,7 @@ async function sbGetInsightsByDateForUser(date: string, userId: string): Promise
     .select("*, sources(name, platform_links), episodes(title, published_at)")
     .eq("date", date)
     .in("source_id", sourceIds)
-    .order("domain").order("created_at");
+    .order("domain").order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
@@ -309,7 +309,7 @@ async function sbGetInsightsByDate(date: string): Promise<Insight[]> {
     .from("insights")
     .select("*, sources(name, platform_links), episodes(title, published_at)")
     .eq("date", date)
-    .order("domain").order("created_at");
+    .order("domain").order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
@@ -419,7 +419,7 @@ export async function getInsightsByDate(date: string, userId?: string | null): P
     LEFT JOIN sources  s ON s.id = i.source_id
     LEFT JOIN episodes e ON e.id = i.episode_id
     WHERE i.date = ?
-    ORDER BY i.domain, i.created_at
+    ORDER BY i.domain, i.created_at DESC
   `).all(date) as Record<string, string>[];
   return rows.map(parseSqliteInsight);
 }

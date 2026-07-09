@@ -1,5 +1,6 @@
 """Local Whisper transcription — runs entirely on CPU, zero API cost."""
 
+import re
 import whisper
 
 from worker.core.interfaces import Episode, Transcript, TranscriptionProvider
@@ -65,6 +66,21 @@ _DOMAIN_PROMPTS: dict[str, str] = {
     "Other": _PROMPT_GENERAL,
 }
 
+# Known Whisper mishearings: (pattern, replacement) applied after transcription.
+# Patterns are case-insensitive; replacements use the canonical casing.
+_TRANSCRIPT_CORRECTIONS: list[tuple[str, str]] = [
+    (r"\bcloud\s+science\b", "Claude Science"),
+    (r"\bclaude\s+co[-\s]work\b", "Claude Cowork"),
+    (r"\bclaude\s+co[-\s]works\b", "Claude Cowork"),
+    (r"\bcloud\s+ai\b", "Claude AI"),
+]
+
+
+def _apply_corrections(text: str) -> str:
+    for pattern, replacement in _TRANSCRIPT_CORRECTIONS:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    return text
+
 
 class LocalWhisperProvider(TranscriptionProvider):
 
@@ -89,9 +105,10 @@ class LocalWhisperProvider(TranscriptionProvider):
             language=None,
             initial_prompt=prompt,
         )
+        corrected = _apply_corrections(result["text"].strip())
         return Transcript(
             episode_id="",          # caller sets this
-            text=result["text"].strip(),
+            text=corrected,
             language=result.get("language", "en"),
         )
 

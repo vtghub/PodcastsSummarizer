@@ -214,7 +214,7 @@ class SupabaseStorageProvider(StorageProvider):
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT * FROM insights WHERE date = %s ORDER BY domain, created_at",
+                    "SELECT * FROM insights WHERE date = %s ORDER BY domain, created_at DESC",
                     (date,)
                 )
                 return [self._row_to_insight(r) for r in cur.fetchall()]

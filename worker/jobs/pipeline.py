@@ -391,9 +391,16 @@ def _process_episode(
     storage.save_transcript(transcript)
     print(f"  {tag} transcript [{transcript_source}]: {len(transcript_text):,} chars")
 
+    # Use the episode's release date so the insight appears on the day the podcast
+    # was published, not the day the pipeline ran. Falls back to pipeline run date
+    # for episodes with missing or implausible published_at values.
+    ep_date = date_str
+    if episode.published_at and episode.published_at.year >= 2020:
+        ep_date = episode.published_at.astimezone(timezone.utc).strftime("%Y-%m-%d")
+
     try:
         insight = llm.extract_insights(episode, transcript, domain=source.domain)
-        insight.date = date_str
+        insight.date = ep_date
     except Exception as e:
         if _is_quota_error(e) and GROQ_API_KEY:
             print(f"  {tag} Gemini quota — falling back to Groq")
@@ -401,7 +408,7 @@ def _process_episode(
                 from worker.providers.llm.groq_llm import GroqLLMProvider
                 groq = GroqLLMProvider()
                 insight = groq.extract_insights(episode, transcript, domain=source.domain)
-                insight.date = date_str
+                insight.date = ep_date
             except Exception as groq_e:
                 return "errors", f"  {tag} [ERROR] Groq fallback also failed: {groq_e}"
         else:
