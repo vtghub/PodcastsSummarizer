@@ -42,6 +42,10 @@ select option {
   color: var(--txt-1, #1C1917);
 }
 
+/* Hide scrollbar while keeping scroll functionality */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 /* Card hover lift */
 .card-lift {
   transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
