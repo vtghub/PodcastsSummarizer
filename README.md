@@ -94,6 +94,7 @@ PodcastsSummarizer/
 │   │   ├── podcasts/page.tsx        # Podcast catalog — public read-only for guests, full subscribe/unsubscribe for signed-in users; admin controls
 │   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, digest frequency (daily/weekly), episode digest picker
 │   │   ├── onboarding/page.tsx      # New-user onboarding wizard (auth-required; redirects to /dashboard if already subscribed)
+│   │   ├── about/page.tsx           # Public About page — feature overview, CTA buttons (no auth required)
 │   │   ├── login/page.tsx           # Email + password sign-in
 │   │   ├── register/page.tsx        # New user registration
 │   │   └── api/
@@ -121,7 +122,7 @@ PodcastsSummarizer/
 │   │       ├── insights/search/     # GET ?q= — full-text websearch across summary, key_points, quotes, tags; optional ?domain= ?from= ?to= filters
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
-│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved links (signed-in), user dropdown, TTS toggle, theme picker
+│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved links (signed-in), About link (always visible), user dropdown, TTS toggle, theme picker
 │   │   ├── AnalyticsDashboard.tsx   # Client component — KPI cards, SVG bar chart (insights/day), domain breakdown bars, top-10 most-viewed list
 │   │   ├── ExportDropdown.tsx       # Client component — "↓ Export ▾" button with CSV / JSON / PDF options
 │   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud, bookmark toggle (☆/★), engagement bar
@@ -311,6 +312,7 @@ npm run dev      # http://localhost:3000
 | **Export** | Signed-in users click "↓ Export ▾" next to the date navigator to open a dropdown with three formats — **CSV** (download spreadsheet: Date, Domain, Source, Episode, Summary, Key Points, Key Quotes, Action Items, Tags; pipe-separated within cells), **JSON** (pretty-printed download with all fields as arrays), **PDF** (real binary PDF generated client-side via jsPDF — no new tab, no print dialog; insights grouped by domain with colored badges, white cards, blockquote-style quotes, section headers, page numbers, and automatic page-break logic that keeps domain badges with their content); all formats served by `GET /api/insights/export?format=csv|json|pdf&date=YYYY-MM-DD` (auth required) |
 | **Bookmarks** | Signed-in users can bookmark any insight with the ☆/★ button on the engagement bar (amber when saved); toggle-style — click once to save, click again to remove; optimistic UI with server reconciliation; saved insights appear on `/saved` page sorted by bookmark date; **Saved** link in the navbar (signed-in users only) |
 | **Analytics** | `/analytics` page (signed-in only) — four KPI cards (total insights, views, subscribed sources, days with insights); SVG bar chart of insights per day (last 30 days); domain breakdown with proportional horizontal bars; top-10 most-viewed insights ranked list with deep links back to the insight card |
+| **About Page** | Public `/about` page — no auth required; hero, 7 feature cards with Lucide icons, and Get Started / Sign in CTA; "About" link visible in the navbar for all visitors |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
 
