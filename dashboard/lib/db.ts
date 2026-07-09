@@ -486,6 +486,20 @@ export async function getInsightsByEpisode(episodeId: string): Promise<Insight[]
   return rows.map(parseSqliteInsight);
 }
 
+export async function getUserTimezone(userId: string): Promise<string> {
+  if (useSupabase()) {
+    const { getSupabaseClient } = await import("./supabase");
+    const sb = getSupabaseClient();
+    const { data } = await sb
+      .from("user_profiles")
+      .select("digest_timezone")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return (data as { digest_timezone?: string } | null)?.digest_timezone || "UTC";
+  }
+  return "UTC";
+}
+
 export async function getRecentInsights(limit = 20): Promise<Insight[]> {
   if (useSupabase()) {
     const { getSupabaseClient } = await import("./supabase");
