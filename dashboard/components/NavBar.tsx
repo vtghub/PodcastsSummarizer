@@ -157,14 +157,15 @@ export default function NavBar({
 
         {/* Right controls */}
         <div className="flex items-center gap-1.5 sm:gap-3">
-          <span className="hidden sm:inline relative inline-flex items-center">
+          <span className="hidden sm:inline relative inline-flex items-center gap-1.5">
             {navLink("/dashboard", "Dashboard")}
             {newInsightCount > 0 && (
               <span
-                className="absolute -top-2 -right-2 min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[9px] font-bold px-1 pointer-events-none"
-                style={{ background: "var(--acc)", color: "var(--acc-txt)" }}
+                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold leading-none"
+                style={{ background: "var(--acc)", color: "#fff" }}
+                title={`${newInsightCount} new insight${newInsightCount !== 1 ? "s" : ""} since your last visit`}
               >
-                {newInsightCount > 99 ? "99+" : newInsightCount}
+                {newInsightCount > 99 ? "99+" : newInsightCount} new
               </span>
             )}
           </span>
