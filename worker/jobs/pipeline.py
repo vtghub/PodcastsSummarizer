@@ -440,24 +440,24 @@ def _send_per_user_digests(storage, date_str: str):
     print(f"[Email] Sending digests to {len(users)} user(s)")
 
     def _send_one(user):
-        # Check if the current hour in the user's timezone matches their chosen send hour
+        # Resolve user's local time once — used for hour check, DOW check, and date lookup
         try:
             user_tz = ZoneInfo(user.digest_timezone)
             local_now = datetime.now(user_tz)
-            if local_now.hour != user.digest_hour:
-                print(f"[Email] {user.email} — not their send hour (local={local_now.hour}, want={user.digest_hour}), skipping")
-                return
+            user_local_date = local_now.strftime("%Y-%m-%d")
         except ZoneInfoNotFoundError:
-            print(f"[Email] {user.email} — unknown timezone '{user.digest_timezone}', sending anyway")
+            print(f"[Email] {user.email} — unknown timezone '{user.digest_timezone}', using UTC date")
+            local_now = datetime.now(timezone.utc)
+            user_local_date = date_str  # fall back to the UTC date
+
+        # Check if the current hour in the user's timezone matches their chosen send hour
+        if local_now.hour != user.digest_hour:
+            print(f"[Email] {user.email} — not their send hour (local={local_now.hour}, want={user.digest_hour}), skipping")
+            return
 
         # Weekly users only receive on their chosen day of week (0=Monday…6=Sunday)
         if user.digest_frequency == "weekly":
-            try:
-                user_tz = ZoneInfo(user.digest_timezone)
-                today_dow = datetime.now(user_tz).weekday()
-            except ZoneInfoNotFoundError:
-                today_dow = date.fromisoformat(date_str).weekday()
-            if today_dow != user.digest_day_of_week:
+            if local_now.weekday() != user.digest_day_of_week:
                 print(f"[Email] {user.email} — weekly digest not scheduled today, skipping")
                 return
 
@@ -465,17 +465,22 @@ def _send_per_user_digests(storage, date_str: str):
         if not source_ids:
             print(f"[Email] {user.email} — no subscriptions, skipping")
             return
-        insights = storage.get_insights_by_date_and_sources(date_str, source_ids)
+        # Use the user's LOCAL date so that evening sends (e.g. 8 PM EST = midnight UTC)
+        # look up insights for the correct day rather than the next UTC day.
+        insights = storage.get_insights_by_date_and_sources(user_local_date, source_ids)
         if not insights:
-            print(f"[Email] {user.email} — no insights for subscribed sources, skipping")
+            print(f"[Email] {user.email} — no insights for {user_local_date}, skipping")
             return
         by_domain: dict[str, list] = defaultdict(list)
         for ins in insights:
             if user.digest_domains is None or ins.domain in user.digest_domains:
                 by_domain[ins.domain].append(ins)
-        ok = email.send_digest(user.email, date_str, dict(by_domain))
+        if not by_domain:
+            print(f"[Email] {user.email} — no insights match domain filter, skipping")
+            return
+        ok = email.send_digest(user.email, user_local_date, dict(by_domain))
         status = "sent" if ok else "failed"
-        print(f"[Email] {user.email} — {len(insights)} insight(s) — {status}")
+        print(f"[Email] {user.email} — {len(insights)} insight(s) for {user_local_date} — {status}")
 
     with ThreadPoolExecutor(max_workers=min(len(users), _EMAIL_WORKERS)) as ex:
         futures = {ex.submit(_send_one, u): u for u in users}
