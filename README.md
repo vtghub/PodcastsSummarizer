@@ -50,7 +50,7 @@ PodcastsSummarizer/
 │   │   │   ├── rss_source.py        # RSS feed fetching + audio download
 │   │   │   └── youtube_source.py    # YouTube transcript + audio
 │   │   ├── transcription/
-│   │   │   └── local_whisper.py     # OpenAI Whisper (runs on Actions runner)
+│   │   │   └── local_whisper.py     # OpenAI Whisper (runs on Actions runner); domain-aware initial_prompt per source domain reduces proper-noun transcription errors
 │   │   ├── llm/
 │   │   │   ├── gemini_llm.py        # Google Gemini (default)
 │   │   │   └── groq_llm.py          # Groq free-tier auto-fallback on quota error

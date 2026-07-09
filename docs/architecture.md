@@ -13,7 +13,7 @@ graph TB
         FETCH["Fetch Episodes\n(parallel, 8 workers)"]
         TXT["Text Transcript\n(captions / subtitles)"]
         AUDIO["Download Audio"]
-        WHISPER["Whisper STT\n(tiny model, local)"]
+        WHISPER["Whisper STT\n(tiny model, local)\ndomain-aware initial_prompt"]
         LLM["LLM Insight Extraction\nGemini → Groq fallback"]
         FANOUT["Per-User Digest Fan-out\nuser_profiles × user_subscriptions"]
         EMAIL["Gmail SMTP\nPersonalized HTML email"]

@@ -41,7 +41,8 @@ sequenceDiagram
             RSS-->>PY: text transcript
         else no captions
             PY->>RSS: download_audio()
-            PY->>W: transcribe(audio)
+            PY->>W: transcribe(audio, domain=source.domain)
+            Note right of W: domain-aware initial_prompt selected<br/>per source domain (8 domain vocab hints)
             W-->>PY: transcript text
         end
         PY->>LLM: extract_insights(episode, transcript)
