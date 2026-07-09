@@ -91,7 +91,7 @@ export default function AboutPage() {
           <Link
             href="/register"
             className="inline-flex items-center justify-center px-6 py-2.5 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
-            style={{ background: "var(--acc)", color: "var(--acc-txt, #fff)" }}
+            style={{ background: "var(--acc)", color: "#fff" }}
           >
             Get started
           </Link>
