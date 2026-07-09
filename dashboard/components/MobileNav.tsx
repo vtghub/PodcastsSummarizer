@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Headphones, BarChart2, User } from "lucide-react";
+import { LayoutDashboard, Headphones, MessageCircle, User } from "lucide-react";
 
 interface MobileNavProps {
   newInsightCount?: number;
@@ -11,7 +11,7 @@ interface MobileNavProps {
 const TABS = [
   { href: "/dashboard",  label: "Dashboard", icon: LayoutDashboard },
   { href: "/podcasts",   label: "Podcasts",  icon: Headphones },
-  { href: "/analytics",  label: "Analytics", icon: BarChart2 },
+  { href: "/ask",        label: "Ask",       icon: MessageCircle },
   { href: "/profile",    label: "Profile",   icon: User },
 ] as const;
 

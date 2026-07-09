@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X } from "lucide-react";
+import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X, MessageCircle } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
@@ -172,6 +172,19 @@ export default function NavBar({
           <span className="hidden sm:inline">{navLink("/podcasts", "My Podcasts")}</span>
           {userEmail && <span className="hidden sm:inline">{navLink("/analytics", "Analytics")}</span>}
           {userEmail && <span className="hidden sm:inline">{navLink("/saved", "Saved")}</span>}
+          {userEmail && (
+            <span className="hidden sm:inline">
+              <Link
+                href="/ask"
+                className={`transition-colors text-sm flex items-center gap-1 ${pathname === "/ask" ? "font-medium" : "hover:opacity-80"}`}
+                style={{ color: pathname === "/ask" ? "var(--acc)" : "var(--txt-3)" }}
+                title="Ask questions about your podcasts"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                Ask
+              </Link>
+            </span>
+          )}
           {navLink("/about", "About")}
 
           {/* Search */}
