@@ -120,6 +120,21 @@ class LLMProvider(ABC):
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
         ...
 
+    def rank_insights(self, insights: list[Insight], domains: list[str], top_n: int = 5) -> list[Insight]:
+        """
+        Select the top_n most relevant insights for the given domains.
+        Default: sort by richness (key_points + key_quotes count) — no LLM call.
+        Concrete providers may override with an actual LLM ranking call.
+        """
+        if not insights:
+            return []
+        scored = sorted(
+            insights,
+            key=lambda i: len(i.key_points) + len(i.key_quotes),
+            reverse=True,
+        )
+        return scored[:top_n]
+
 
 class StorageProvider(ABC):
     """Persists and retrieves all domain objects."""
@@ -195,6 +210,16 @@ class StorageProvider(ABC):
     def mark_platform_links_attempted(self, source_id: str) -> None:
         """Set platform_links_attempted_at=NOW() after a discovery attempt. Default: no-op."""
 
+    def get_insights_for_week(self, source_ids: list[str], days: int = 7) -> list[Insight]:
+        """Return insights from the past `days` days for the given source IDs. Default: empty list."""
+        return []
+
+    def get_trending_sources(
+        self, domains: list[str], exclude_ids: list[str], days: int = 7, limit: int = 5
+    ) -> list[dict]:
+        """Return trending sources not in exclude_ids for the given domains. Default: empty list."""
+        return []
+
     def get_insights_by_date_and_sources(self, date: str, source_ids: list[str]) -> list[Insight]:
         """Return insights for a specific date filtered to the given source IDs."""
         all_insights = self.get_insights_by_date(date)
@@ -210,3 +235,13 @@ class EmailProvider(ABC):
     @abstractmethod
     def send_digest(self, to: str, date: str, insights_by_domain: dict[str, list[Insight]]) -> bool:
         ...
+
+    def send_weekly_recommendations(
+        self,
+        to: str,
+        week_of: str,
+        top_insights: list[Insight],
+        recommended_sources: list[dict],
+    ) -> bool:
+        """Send the weekly recommendations email. Default: no-op (local dev)."""
+        return True
