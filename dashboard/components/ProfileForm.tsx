@@ -254,19 +254,28 @@ export default function ProfileForm({
               </div>
 
               {/* Domain filter */}
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>Email domains</label>
+                  <span className="text-xs" style={{ color: "var(--txt-4)" }}>
+                    {digestDomains === null
+                      ? "All included"
+                      : `${digestDomains.length} of ${DOMAINS.length} included`}
+                  </span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  {/* All chip */}
                   <button
                     type="button"
                     onClick={() => setDigestDomains(null)}
-                    className="text-xs underline"
-                    style={{ color: digestDomains === null ? "var(--acc)" : "var(--txt-4)" }}
+                    className="flex-shrink-0 flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-full border font-medium transition-all"
+                    style={digestDomains === null
+                      ? { background: "var(--acc)", color: "#fff", borderColor: "var(--acc)" }
+                      : { background: "var(--bg-elevated)", color: "var(--txt-4)", borderColor: "var(--bdr)" }}
                   >
-                    All domains
+                    {digestDomains === null && <Check className="w-3 h-3" />}
+                    All
                   </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
                   {DOMAINS.map((domain) => {
                     const active = digestDomains === null || digestDomains.includes(domain);
                     const colors = getDomainColor(domain);
@@ -275,20 +284,26 @@ export default function ProfileForm({
                         key={domain}
                         type="button"
                         onClick={() => toggleDomain(domain)}
-                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-all ${colors.bg} ${colors.text} ${colors.border}`}
-                        style={{ opacity: active ? 1 : 0.35 }}
+                        className={`flex-shrink-0 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full border font-medium transition-all ${
+                          active ? `${colors.bg} ${colors.text} ${colors.border}` : ""
+                        }`}
+                        style={active ? {} : {
+                          background: "var(--bg-elevated)",
+                          color: "var(--txt-4)",
+                          borderColor: "var(--bdr)",
+                          textDecoration: "line-through",
+                          opacity: 0.6,
+                        }}
+                        title={active ? `Remove ${domain} from digest` : `Add ${domain} to digest`}
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full ${colors.dot}`} />
+                        {active
+                          ? <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${colors.dot}`} />
+                          : <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-current opacity-30" />}
                         {domain}
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-xs" style={{ color: "var(--txt-4)" }}>
-                  {digestDomains === null
-                    ? "All domains included in your digest."
-                    : `Only ${digestDomains.length} domain${digestDomains.length !== 1 ? "s" : ""} included.`}
-                </p>
               </div>
             </div>
           )}
