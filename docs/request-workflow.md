@@ -42,8 +42,8 @@ sequenceDiagram
         else no captions
             PY->>RSS: download_audio()
             PY->>W: transcribe(audio, domain=source.domain)
-            Note right of W: domain-aware initial_prompt selected<br/>per source domain (8 domain vocab hints)
-            W-->>PY: transcript text
+            Note right of W: domain-aware initial_prompt (8 domains)<br/>+ post-processing corrections for known mishearings
+            W-->>PY: corrected transcript text
         end
         PY->>LLM: extract_insights(episode, transcript)
         alt Gemini quota error
@@ -51,7 +51,8 @@ sequenceDiagram
         end
         alt success
             LLM-->>PY: Insight (summary, key_points, quotes, actions, tags)
-            PY->>DB: save_insight(insight, date=today)
+            Note over PY: insight.date = episode.published_at (UTC)<br/>falls back to pipeline run date if missing/pre-2020
+            PY->>DB: save_insight(insight, date=episode.published_at)
             PY->>DB: mark_episode_done(episode_id)
         else failure
             PY->>DB: increment_episode_retry(episode_id, retry_after=exponential)

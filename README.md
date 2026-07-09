@@ -10,7 +10,7 @@ Automatically extracts daily insights from podcasts and surfaces them via a pers
 
 | Layer | Technology | Role |
 |---|---|---|
-| **Scheduler** | GitHub Actions (cron) | Triggers pipeline daily at midnight UTC (8 PM EDT) |
+| **Scheduler** | GitHub Actions (cron) | Triggers pipeline daily at 6 AM UTC; hourly digest fan-out |
 | **Source** | Python — RSS / yt-dlp | Fetches episode metadata and audio (8 parallel RSS workers; 4 concurrent LLM/transcript workers; Gemini → Groq retry chain) |
 | **Transcription** | OpenAI Whisper (local, `tiny` model) | Converts audio to text when no caption available |
 | **LLM** | Gemini (primary) → Groq (quota fallback) | Extracts summary, key points, quotes, action items |
@@ -50,7 +50,7 @@ PodcastsSummarizer/
 │   │   │   ├── rss_source.py        # RSS feed fetching + audio download
 │   │   │   └── youtube_source.py    # YouTube transcript + audio
 │   │   ├── transcription/
-│   │   │   └── local_whisper.py     # OpenAI Whisper (runs on Actions runner); domain-aware initial_prompt per source domain reduces proper-noun transcription errors
+│   │   │   └── local_whisper.py     # OpenAI Whisper (runs on Actions runner); domain-aware initial_prompt per source domain; post-processing corrections for known proper-noun mishearings (e.g. "Cloud AI" → "Claude AI", "Claude co-work" → "Claude Cowork")
 │   │   ├── llm/
 │   │   │   ├── gemini_llm.py        # Google Gemini (default)
 │   │   │   └── groq_llm.py          # Groq free-tier auto-fallback on quota error
@@ -80,7 +80,8 @@ PodcastsSummarizer/
 │       ├── 009_pipeline_resilience.sql  # retry_count + retry_after on episode_queue; backoff_until + fetch_error_count + platform_links_attempted_at on sources
 │       ├── 010_bookmarks.sql        # insight_bookmarks table with RLS (per-user SELECT/INSERT/DELETE)
 │       ├── 011_last_visited.sql     # last_visited_at TIMESTAMPTZ on user_profiles (new-insight badge)
-│       └── 012_digest_frequency.sql # digest_frequency ('daily'|'weekly') + digest_day_of_week (0=Mon…6=Sun) on user_profiles
+│       ├── 012_digest_frequency.sql # digest_frequency ('daily'|'weekly') + digest_day_of_week (0=Mon…6=Sun) on user_profiles
+│       └── 013_backfill_insight_dates.sql # One-time backfill: sets insight.date = episode.published_at for all existing rows
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
