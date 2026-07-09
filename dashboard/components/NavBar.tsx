@@ -17,6 +17,12 @@ interface SearchResult {
   episode_title: string;
 }
 
+interface SourceOption {
+  id: string;
+  name: string;
+  domain: string;
+}
+
 export default function NavBar({
   userEmail,
   displayName,
@@ -39,13 +45,15 @@ export default function NavBar({
   const [filterDomain, setFilterDomain]     = useState("");
   const [filterFrom, setFilterFrom]         = useState("");
   const [filterTo, setFilterTo]             = useState("");
+  const [filterSource, setFilterSource]     = useState("");
+  const [sourceOptions, setSourceOptions]   = useState<SourceOption[]>([]);
   const pickerRef    = useRef<HTMLDivElement>(null);
   const userMenuRef  = useRef<HTMLDivElement>(null);
   const searchRef    = useRef<HTMLDivElement>(null);
   const searchInput  = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
 
-  const runSearch = useCallback(async (q: string, domain: string, from: string, to: string) => {
+  const runSearch = useCallback(async (q: string, domain: string, from: string, to: string, source: string) => {
     if (q.length < 2) { setSearchResults([]); return; }
     setSearchLoading(true);
     try {
@@ -53,6 +61,7 @@ export default function NavBar({
       if (domain) params.set("domain", domain);
       if (from)   params.set("from", from);
       if (to)     params.set("to", to);
+      if (source) params.set("source", source);
       const res = await fetch(`/api/insights/search?${params}`);
       const data = await res.json();
       setSearchResults(data.results ?? []);
@@ -64,13 +73,19 @@ export default function NavBar({
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => runSearch(searchQuery, filterDomain, filterFrom, filterTo), 300);
+    const timer = setTimeout(() => runSearch(searchQuery, filterDomain, filterFrom, filterTo, filterSource), 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, filterDomain, filterFrom, filterTo, runSearch]);
+  }, [searchQuery, filterDomain, filterFrom, filterTo, filterSource, runSearch]);
 
   function openSearch() {
     setSearchOpen(true);
     setTimeout(() => searchInput.current?.focus(), 50);
+    if (sourceOptions.length === 0) {
+      fetch("/api/sources/list")
+        .then((r) => r.json())
+        .then((d) => setSourceOptions(d.sources ?? []))
+        .catch(() => {});
+    }
   }
 
   function closeSearch() {
@@ -80,6 +95,7 @@ export default function NavBar({
     setFilterDomain("");
     setFilterFrom("");
     setFilterTo("");
+    setFilterSource("");
   }
 
   function handleResultClick(result: SearchResult) {
@@ -351,8 +367,8 @@ export default function NavBar({
           </div>
 
           {/* Filters */}
-          <div className="px-3 py-2 border-b flex flex-wrap gap-2 items-center" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
-            {/* Domain chips */}
+          <div className="px-3 py-2 border-b flex flex-col gap-2" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
+            {/* Row 1: Domain chips */}
             <div className="flex flex-wrap gap-1.5">
               {DOMAINS.map((d) => {
                 const c = getDomainColor(d);
@@ -373,35 +389,51 @@ export default function NavBar({
               })}
             </div>
 
-            {/* Date range */}
-            <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
-              <input
-                type="date"
-                value={filterFrom}
-                onChange={(e) => setFilterFrom(e.target.value)}
-                title="From date"
-                className="text-xs px-2 py-1 rounded-lg border outline-none"
-                style={{ background: "var(--bg-surface)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
-              />
-              <span className="text-xs" style={{ color: "var(--txt-4)" }}>–</span>
-              <input
-                type="date"
-                value={filterTo}
-                onChange={(e) => setFilterTo(e.target.value)}
-                title="To date"
-                className="text-xs px-2 py-1 rounded-lg border outline-none"
-                style={{ background: "var(--bg-surface)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
-              />
-              {(filterDomain || filterFrom || filterTo) && (
-                <button
-                  onClick={() => { setFilterDomain(""); setFilterFrom(""); setFilterTo(""); }}
-                  className="text-xs px-2 py-1 rounded-lg border transition-colors"
-                  style={{ background: "var(--bg-surface)", color: "var(--txt-4)", borderColor: "var(--bdr)" }}
-                  title="Clear filters"
-                >
-                  Clear
-                </button>
-              )}
+            {/* Row 2: Podcast + Date range + Clear */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Podcast channel dropdown */}
+              <select
+                value={filterSource}
+                onChange={(e) => setFilterSource(e.target.value)}
+                className="text-xs px-2 py-1 rounded-lg border outline-none flex-1 min-w-0"
+                style={{ background: "var(--bg-surface)", color: filterSource ? "var(--txt-1)" : "var(--txt-4)", borderColor: filterSource ? "var(--acc)" : "var(--bdr)", maxWidth: "200px" }}
+              >
+                <option value="">All podcasts</option>
+                {sourceOptions.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+
+              {/* Date range */}
+              <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+                <input
+                  type="date"
+                  value={filterFrom}
+                  onChange={(e) => setFilterFrom(e.target.value)}
+                  title="From date"
+                  className="text-xs px-2 py-1 rounded-lg border outline-none"
+                  style={{ background: "var(--bg-surface)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
+                />
+                <span className="text-xs" style={{ color: "var(--txt-4)" }}>–</span>
+                <input
+                  type="date"
+                  value={filterTo}
+                  onChange={(e) => setFilterTo(e.target.value)}
+                  title="To date"
+                  className="text-xs px-2 py-1 rounded-lg border outline-none"
+                  style={{ background: "var(--bg-surface)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
+                />
+                {(filterDomain || filterFrom || filterTo || filterSource) && (
+                  <button
+                    onClick={() => { setFilterDomain(""); setFilterFrom(""); setFilterTo(""); setFilterSource(""); }}
+                    className="text-xs px-2 py-1 rounded-lg border transition-colors"
+                    style={{ background: "var(--bg-surface)", color: "var(--txt-4)", borderColor: "var(--bdr)" }}
+                    title="Clear filters"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
