@@ -35,7 +35,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               newInsightCount={newInsightCount}
             />
             <main className="max-w-6xl mx-auto px-6 py-8 pb-20 sm:pb-8">{children}</main>
-            <MobileNav />
+            <MobileNav newInsightCount={newInsightCount} />
           </TTSProvider>
         </ThemeProvider>
       </body>
