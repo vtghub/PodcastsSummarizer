@@ -156,7 +156,7 @@ export default function NavBar({
         </Link>
 
         {/* Right controls */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3">
           <span className="hidden sm:inline relative inline-flex items-center">
             {navLink("/dashboard", "Dashboard")}
             {newInsightCount > 0 && (
@@ -168,7 +168,7 @@ export default function NavBar({
               </span>
             )}
           </span>
-          {navLink("/podcasts", "My Podcasts")}
+          <span className="hidden sm:inline">{navLink("/podcasts", "My Podcasts")}</span>
           {userEmail && <span className="hidden sm:inline">{navLink("/analytics", "Analytics")}</span>}
           {userEmail && <span className="hidden sm:inline">{navLink("/saved", "Saved")}</span>}
           {navLink("/about", "About")}

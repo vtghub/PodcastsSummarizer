@@ -5,73 +5,73 @@ const features = [
   {
     icon: Mic2,
     title: "Daily Digest Email",
-    body: "Every morning you get a personalized email with key takeaways from only the podcasts you follow. No fluff, just the insights that matter to you.",
+    body: "Personalized key takeaways from only the podcasts you follow — no fluff, delivered every morning.",
   },
   {
     icon: Search,
     title: "Instant Search",
-    body: "Can't remember which episode covered a topic? Search across everything — by keyword, guest name, podcast channel, or episode title — and jump straight to the card.",
+    body: "Search by keyword, guest name, podcast channel, or episode title and jump straight to the card.",
   },
   {
     icon: Bookmark,
     title: "Bookmark & Revisit",
-    body: "Star any insight to save it. Your bookmarks live on a dedicated page so you can come back to the best ideas anytime.",
+    body: "Star any insight to save it. Your bookmarks live on a dedicated page, ready whenever you need them.",
   },
   {
     icon: CalendarDays,
     title: "Browse by Date & Topic",
-    body: "The dashboard organizes insights by date and domain — Technology & AI, Business, Health, Finance, and more — so you can catch up on what you missed.",
+    body: "Insights organized by date and domain — Technology, Business, Health, Finance, and more.",
   },
   {
     icon: Bell,
     title: "Never Miss an Episode",
-    body: "Fresh episodes are picked up every 4 hours and added to your feed automatically. New cards appear on your dashboard in real time — no refresh needed.",
+    body: "Fresh episodes picked up every 4 hours. New cards appear on your dashboard in real time.",
   },
   {
     icon: Mail,
-    title: "Send Digest On Demand",
-    body: 'Want your digest right now? Hit "Send Digest Now" from your profile and it lands in your inbox instantly.',
+    title: "On-Demand Digest",
+    body: 'Hit "Send Digest Now" from your profile and your digest lands in your inbox instantly.',
   },
   {
     icon: Volume2,
     title: "Listen to Insights",
-    body: "Short on time? Enable Read Aloud and the dashboard reads the cards to you.",
+    body: "Enable Read Aloud and the dashboard reads the cards to you — hands-free.",
   },
 ];
 
 export default function AboutPage() {
   return (
-    <main className="max-w-3xl mx-auto px-4 sm:px-6 py-16">
+    <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-16">
       {/* Hero */}
-      <div className="mb-14 text-center">
-        <div className="text-5xl mb-4">🎙</div>
-        <h1 className="text-3xl sm:text-4xl font-bold mb-4" style={{ color: "var(--txt-1)" }}>
+      <div className="mb-8 sm:mb-12 text-center">
+        <div className="text-4xl sm:text-5xl mb-3">🎙</div>
+        <h1 className="text-2xl sm:text-4xl font-bold mb-3" style={{ color: "var(--txt-1)" }}>
           Podcast Insights
         </h1>
-        <p className="text-base sm:text-lg leading-relaxed max-w-xl mx-auto" style={{ color: "var(--txt-3)" }}>
-          A personal knowledge system that listens to your podcasts, extracts what matters, and delivers it straight to you — daily, searchable, and always up to date.
+        <p className="text-sm sm:text-base leading-relaxed max-w-md mx-auto" style={{ color: "var(--txt-3)" }}>
+          Listens to your podcasts, extracts what matters, and delivers it to you — daily, searchable, always up to date.
         </p>
       </div>
 
       {/* Features */}
-      <div className="space-y-6 mb-14">
+      <div className="space-y-2.5 sm:space-y-4 mb-8 sm:mb-12">
         {features.map(({ icon: Icon, title, body }) => (
           <div
             key={title}
-            className="flex gap-4 p-5 rounded-xl border card-lift"
+            className="flex items-start gap-3 px-3.5 py-3 sm:p-5 rounded-xl border card-lift"
             style={{ background: "var(--bg-card)", borderColor: "var(--bdr)" }}
           >
             <div
-              className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center"
+              className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center mt-0.5"
               style={{ background: "var(--acc-bg, rgba(194,65,12,0.08))" }}
             >
-              <Icon className="w-5 h-5" style={{ color: "var(--acc)" }} />
+              <Icon className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: "var(--acc)" }} />
             </div>
-            <div>
-              <h2 className="font-semibold text-base mb-1" style={{ color: "var(--txt-1)" }}>
+            <div className="min-w-0">
+              <h2 className="font-semibold text-sm sm:text-base leading-snug mb-0.5" style={{ color: "var(--txt-1)" }}>
                 {title}
               </h2>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--txt-3)" }}>
+              <p className="text-xs sm:text-sm leading-relaxed" style={{ color: "var(--txt-3)" }}>
                 {body}
               </p>
             </div>
@@ -81,13 +81,13 @@ export default function AboutPage() {
 
       {/* CTA */}
       <div
-        className="text-center rounded-2xl border px-6 py-10"
+        className="text-center rounded-2xl border px-5 py-7 sm:px-6 sm:py-10"
         style={{ background: "var(--bg-card)", borderColor: "var(--bdr)" }}
       >
-        <p className="text-base mb-6" style={{ color: "var(--txt-2)" }}>
-          Getting started is simple — pick the podcasts you care about, subscribe, and let the system do the rest.
+        <p className="text-sm sm:text-base mb-5" style={{ color: "var(--txt-2)" }}>
+          Pick the podcasts you care about, subscribe, and let the system do the rest.
         </p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+        <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 justify-center">
           <Link
             href="/register"
             className="inline-flex items-center justify-center px-6 py-2.5 rounded-lg text-sm font-medium transition-opacity hover:opacity-90"
