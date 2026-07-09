@@ -290,7 +290,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
       ) : (
         <>
           {/* Domain tabs */}
-          <div className="flex flex-wrap gap-2 mb-8">
+          <div className="flex gap-2 mb-6 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0 no-scrollbar">
             {activeDomains.map((domain) => {
               const c = getDomainColor(domain);
               const active = domain === selectedDomain;
@@ -298,7 +298,7 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
                 <button
                   key={domain}
                   onClick={() => setSelectedDomain(domain)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all flex-shrink-0 ${
                     active ? `${c.bg} ${c.text} ${c.border} shadow-sm` : "opacity-50 hover:opacity-80"
                   }`}
                   style={active ? {} : { background: "var(--bg-elevated)", borderColor: "var(--bdr)", color: "var(--txt-3)" }}
