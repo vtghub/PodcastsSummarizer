@@ -12,6 +12,10 @@ on:
         description: "Date to send digest for (YYYY-MM-DD). Defaults to today."
         required: false
         default: ""
+      force:
+        description: "Skip the hour check and send to all eligible users immediately (true/false)."
+        required: false
+        default: "false"
 
 jobs:
   send-digests:
@@ -39,6 +43,7 @@ jobs:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           DIGEST_DATE: ${{ github.event.inputs.date || '' }}
+          DIGEST_FORCE: ${{ github.event.inputs.force || 'false' }}
           PYTHONUTF8: "1"
         run: |
           python - <<'EOF'
@@ -47,5 +52,6 @@ jobs:
           from worker.jobs.pipeline import run_digest_fanout
 
           date_str = os.environ.get("DIGEST_DATE", "").strip() or None
-          run_digest_fanout(date_str)
+          force = os.environ.get("DIGEST_FORCE", "false").lower() == "true"
+          run_digest_fanout(date_str, force=force)
           EOF
