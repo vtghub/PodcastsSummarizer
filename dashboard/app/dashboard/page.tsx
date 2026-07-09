@@ -1,6 +1,7 @@
-import { getInsightsByDate, getAvailableDates, getUserSubscriptions, type Insight } from "@/lib/db";
+import { getInsightsByDate, getAvailableDates, getUserSubscriptions, getUserTimezone, type Insight } from "@/lib/db";
 import { getUserId, getDisplayName } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import LocalDateGuard from "@/components/LocalDateGuard";
 import DateNav from "@/components/DateNav";
 import ExportDropdown from "@/components/ExportDropdown";
 import DomainInsightView from "@/components/DomainInsightView";
@@ -16,9 +17,15 @@ interface Props {
 
 export default async function DashboardPage({ searchParams }: Props) {
   const { date, domain, insight } = await searchParams;
-  const today = format(new Date(), "yyyy-MM-dd");
-  const selectedDate = date ?? today;
   const userId = await getUserId();
+
+  // Compute "today" in the user's local timezone so the dashboard doesn't
+  // flip to the next day when Vercel's UTC clock is ahead of the user's clock.
+  // For guests, fall back to UTC; the LocalDateGuard component below will
+  // correct it client-side once the browser knows the real local date.
+  const userTz = userId ? await getUserTimezone(userId) : "UTC";
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: userTz });
+  const selectedDate = date ?? today;
 
   // Redirect new users (no subscriptions) to onboarding wizard
   if (userId) {
@@ -59,6 +66,9 @@ export default async function DashboardPage({ searchParams }: Props) {
 
   return (
     <div>
+      {/* Silently navigate to the correct local date if the server's timezone
+          guess doesn't match the browser's actual local date */}
+      {!date && <LocalDateGuard serverDate={today} />}
       {userId && <VisitStamp />}
 
       {/* Onboarding — new signed-in users with no subscriptions */}
