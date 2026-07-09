@@ -1,11 +1,11 @@
 name: Daily Podcast Pipeline
 # Ingestion only — fetches RSS, transcribes, extracts insights.
-# Runs at 06:00 UTC so insights are ready before most users' digest hour.
+# Runs every 4 hours so fresh episodes are picked up throughout the day.
 # Email fan-out is handled separately by hourly_digest.yml.
 
 on:
   schedule:
-    - cron: "0 6 * * *"   # 6:00 AM UTC daily
+    - cron: "0 */4 * * *"   # every 4 hours (0:00, 4:00, 8:00, 12:00, 16:00, 20:00 UTC)
   workflow_dispatch:        # allow manual trigger from Actions tab
     inputs:
       since_days:
