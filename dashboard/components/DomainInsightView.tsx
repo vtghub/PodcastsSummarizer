@@ -56,7 +56,7 @@ export default function DomainInsightView({ byDomain, isAuthed, initialDomain, i
   return (
     <div>
       {/* Domain tabs */}
-      <div className="flex flex-wrap gap-2 mb-8">
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0 no-scrollbar">
         {domains.map((domain) => {
           const c = getDomainColor(domain);
           const active = domain === selected;
@@ -64,7 +64,7 @@ export default function DomainInsightView({ byDomain, isAuthed, initialDomain, i
             <button
               key={domain}
               onClick={() => setSelected(domain)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all flex-shrink-0 ${
                 active ? `${c.bg} ${c.text} ${c.border} shadow-sm` : "opacity-50 hover:opacity-80"
               }`}
               style={
