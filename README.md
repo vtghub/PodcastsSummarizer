@@ -314,7 +314,8 @@ npm run dev      # http://localhost:3000
 | **Analytics** | `/analytics` page (signed-in only) — four KPI cards (total insights, views, subscribed sources, days with insights); SVG bar chart of insights per day (last 30 days); domain breakdown with proportional horizontal bars; top-10 most-viewed insights ranked list with deep links back to the insight card |
 | **About Page** | Public `/about` page — no auth required; hero, 7 feature cards with Lucide icons, and Get Started / Sign in CTA; "About" link visible in the navbar for all visitors |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
-| **Mobile** | Responsive layout — single-column cards, compact NavBar on small screens |
+| **New Insights Indicator** | When new episodes have been processed since the user's last visit, a **"N new"** orange pill appears inline next to the Dashboard link on desktop (with a tooltip); on mobile, the Dashboard bottom-tab icon shows a count badge and a **"new"** sublabel beneath the tab text. Count is derived from `last_visited_at` on `user_profiles` vs. `insights.created_at` for the user's subscribed sources. |
+| **Mobile** | Responsive layout — single-column cards, compact NavBar (My Podcasts hidden — accessible via bottom tab bar), fixed bottom tab bar (Dashboard · Podcasts · Analytics · Profile); domain filter strips are horizontally scrollable on mobile across Dashboard and Podcast Catalog |
 
 ---
 
