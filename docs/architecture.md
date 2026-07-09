@@ -2,8 +2,10 @@
 
 ```mermaid
 graph TB
-    subgraph CI["⚙️ GitHub Actions — daily_pipeline.yml"]
-        CRON["🕛 Cron: midnight UTC daily\n+ workflow_dispatch\n(since_days, force_email,\nepisode_audio_url, source_id, target_email)"]
+    subgraph CI["⚙️ GitHub Actions"]
+        CRON["🕛 daily_pipeline.yml\nCron: 6 AM UTC (ingestion)\n+ workflow_dispatch\n(since_days, force_email,\nepisode_audio_url, source_id, target_email)"]
+        HCRON["🕐 hourly_digest.yml\nCron: every hour\nper-user digest fan-out"]
+        WCRON["📅 weekly_recommendations.yml\nCron: Sundays 10 AM UTC\nweekly recommendations email"]
     end
 
     subgraph PIPELINE["🐍 Python Worker Pipeline"]
@@ -15,6 +17,7 @@ graph TB
         LLM["LLM Insight Extraction\nGemini → Groq fallback"]
         FANOUT["Per-User Digest Fan-out\nuser_profiles × user_subscriptions"]
         EMAIL["Gmail SMTP\nPersonalized HTML email"]
+        RECJOB["Weekly Recommendations Job\nLLM rank_insights + get_trending_sources"]
     end
 
     subgraph STORE["🗄️ Supabase PostgreSQL"]
@@ -50,6 +53,7 @@ graph TB
         PROF["profile/page.tsx\nDisplay name · digest prefs"]
         APAGE["analytics/page.tsx\nKPI cards · chart · top insights"]
         SPAGE["saved/page.tsx\nBookmarked insights list"]
+        ONBOARD["onboarding/page.tsx\nDomain picker + subscribe wizard"]
         REG["register/page.tsx"]
         LOGIN["login/page.tsx"]
         CACHE["unstable_cache\n1h TTL — public views only"]
@@ -65,6 +69,7 @@ graph TB
         ARDIGPROC["/api/digest/process\ntriggers workflow_dispatch"]
         ARDIGSTAT["/api/digest/status\npoll for insights"]
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
+        ARREC["/api/recommendations/podcasts\nGET ?domains= → catalog + iTunes suggestions"]
         ARENG["/api/insights/[id]/engagement\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
         AREXP["/api/insights/export\nGET ?format=csv|pdf&date=\nauthed — download insights"]
         ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
@@ -72,6 +77,11 @@ graph TB
         ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]
     end
 
+    HCRON --> FANOUT
+    WCRON --> RECJOB
+    RECJOB --> INSIGHTS
+    RECJOB --> SUBS
+    RECJOB --> EMAIL
     CRON --> SRC
     SRC --> FETCH
     FETCH --> TXT
@@ -102,6 +112,7 @@ graph TB
     LAYOUT --> PROF
     LAYOUT --> APAGE
     LAYOUT --> SPAGE
+    LAYOUT --> ONBOARD
     LAYOUT --> REG
     LAYOUT --> LOGIN
 
@@ -122,6 +133,10 @@ graph TB
     ARDIGEPI -.->|RSS feed| SOURCES
     ARDIGPROC -.->|workflow_dispatch| CI
     ARDIGSTAT --> INSIGHTS
+    ARREC --> SOURCES
+    ARREC -.->|iTunes API| ARSEARCH
+    ONBOARD --> ARREC
+    ONBOARD --> ARSUBS
     ARSEARCH -.->|iTunes API| SOURCES
     ARENG --> VIEWS
     ARENG --> REACTIONS
@@ -164,6 +179,7 @@ erDiagram
         text[] digest_domains
         text digest_frequency
         int  digest_day_of_week
+        text digest_timezone
         timestamptz last_visited_at
     }
     user_subscriptions {

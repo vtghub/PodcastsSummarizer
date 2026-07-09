@@ -734,3 +734,99 @@ sequenceDiagram
     Note over B,DIV: New insight card appears without manual reload
     DIV->>RT: removeChannel() on unmount
 ```
+
+---
+
+## 21. Onboarding Wizard (New User)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant MW as middleware.ts
+    participant DASH as dashboard/page.tsx
+    participant ONB as onboarding/page.tsx
+    participant WIZ as OnboardingWizard (client)
+    participant API as /api/recommendations/podcasts
+    participant ITUNES as iTunes Search API
+    participant DB as Supabase
+
+    B->>MW: GET /dashboard (first login, JWT cookie)
+    MW-->>DASH: pass through
+    DASH->>DB: getUserSubscriptions(userId)
+    DB-->>DASH: [] (no subscriptions yet)
+    DASH-->>B: redirect /onboarding
+
+    B->>MW: GET /onboarding
+    MW-->>ONB: pass through
+    ONB->>DB: getUserId() → userId
+    ONB->>DB: getUserSubscriptions(userId)
+    DB-->>ONB: [] → render wizard
+    ONB-->>B: OnboardingWizard (Step 1: domain picker)
+
+    Note over B,WIZ: Step 1 — User selects domains (e.g. "Technology & AI", "Finance")
+    B->>WIZ: click Next (domains selected)
+
+    WIZ->>API: GET /api/recommendations/podcasts?domains=Technology+%26+AI%2CFinance
+    API->>DB: SELECT * FROM sources WHERE domain IN (...) AND enabled AND NOT deleted
+    DB-->>API: catalog sources
+    API->>ITUNES: search "artificial intelligence technology" (limit 8)
+    ITUNES-->>API: iTunes results
+    API->>ITUNES: search "finance investing personal finance" (limit 8)
+    ITUNES-->>API: iTunes results
+    API->>API: deduplicate iTunes results against catalog feedUrls
+    API-->>WIZ: { catalog: [...], suggestions: [...] }
+
+    Note over B,WIZ: Step 2 — User toggles subscribe on podcasts
+    B->>WIZ: click Get Started
+
+    loop per selected source
+        WIZ->>DB: POST /api/subscriptions { sourceId }
+        DB-->>WIZ: { ok: true }
+    end
+    WIZ->>DB: PUT /api/profile { digest_domains: selectedDomains }
+    DB-->>WIZ: { ok: true }
+    WIZ-->>B: redirect /dashboard
+```
+
+---
+
+## 22. Weekly Recommendations Email
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub Actions (weekly_recommendations.yml)
+    participant JOB as worker/jobs/recommendations.py
+    participant LLM as LLM Provider (Groq/Gemini)
+    participant DB as Supabase DB
+    participant MAIL as Gmail SMTP
+
+    GH->>JOB: trigger (cron Sundays 10 AM UTC or workflow_dispatch)
+    JOB->>DB: get_users_with_digest_enabled()
+    DB-->>JOB: [user1, user2, ...] (digest_enabled=TRUE)
+
+    loop per user
+        JOB->>DB: get_user_subscribed_source_ids(user_id)
+        DB-->>JOB: [source_id_1, source_id_2, ...]
+
+        Note over JOB,DB: Section 1 — Best insights from the past 7 days
+        JOB->>DB: get_insights_for_week(source_ids, days=7)
+        DB-->>JOB: insights (JOIN episodes + sources, last 7 days)
+        JOB->>LLM: rank_insights(insights, digest_domains, top_n=5)
+        alt LLM ranking succeeds
+            LLM-->>JOB: top 5 insight IDs (JSON array)
+        else LLM error
+            JOB->>JOB: fallback — sort by len(key_points)+len(key_quotes)
+        end
+
+        Note over JOB,DB: Section 2 — Podcast discovery
+        JOB->>DB: get_trending_sources(domains, exclude_ids=source_ids, days=7, limit=5)
+        DB-->>JOB: sources ranked by insight_count DESC (not already subscribed)
+
+        alt no insights AND no trending sources
+            JOB->>JOB: skip user
+        else has content
+            JOB->>MAIL: send_weekly_recommendations(email, week_of, top_insights, trending_sources)
+            MAIL-->>JOB: sent (two-section HTML: Best Insights + Podcasts You Might Like)
+        end
+    end
+```
