@@ -109,7 +109,7 @@ class TranscriptionProvider(ABC):
     """Converts audio file → text transcript."""
 
     @abstractmethod
-    def transcribe(self, audio_path: str) -> Transcript:
+    def transcribe(self, audio_path: str, domain: str = "") -> Transcript:
         ...
 
 
