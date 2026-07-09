@@ -141,11 +141,11 @@ export default function NavBar({
 
         {/* Right controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <span className="hidden sm:inline relative">
+          <span className="hidden sm:inline relative inline-flex items-center">
             {navLink("/dashboard", "Dashboard")}
             {newInsightCount > 0 && (
               <span
-                className="absolute -top-1.5 -right-4 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold px-1"
+                className="absolute -top-2 -right-2 min-w-[16px] h-[16px] flex items-center justify-center rounded-full text-[9px] font-bold px-1 pointer-events-none"
                 style={{ background: "var(--acc)", color: "var(--acc-txt)" }}
               >
                 {newInsightCount > 99 ? "99+" : newInsightCount}

@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import type { Insight, PlatformLinks } from "@/lib/db";
 import {
   ChevronDown, ChevronUp, Quote, Zap, Tag, Volume2, VolumeX, Globe,
-  CalendarDays, ThumbsUp, ThumbsDown, Share2, Eye, MessageCircle,
+  CalendarDays, ThumbsUp, ThumbsDown, Share2, Eye, EyeOff, MessageCircle,
   Link2, Check, Send, Trash2, X, Copy, Bookmark,
 } from "lucide-react";
 import { useTTS } from "@/contexts/TTSContext";
@@ -266,6 +266,22 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
       setBookmarking(false);
     }
   }, [insight.id, isAuthed, bookmarked, bookmarking]);
+
+  const handleMarkUnread = useCallback(async () => {
+    if (!isAuthed || !isRead) return;
+    setIsRead(false);
+    setViews((v) => (v !== null && v > 0 ? v - 1 : 0));
+    try {
+      const res = await fetch(`/api/insights/${insight.id}/engagement/unread`, { method: "DELETE" });
+      if (!res.ok) {
+        setIsRead(true);
+        setViews((v) => (v !== null ? v + 1 : 1));
+      }
+    } catch {
+      setIsRead(true);
+      setViews((v) => (v !== null ? v + 1 : 1));
+    }
+  }, [insight.id, isAuthed, isRead]);
 
   // Permalink is the canonical share URL; deep-link is used internally for in-page navigation
   const permalink = typeof window !== "undefined"
@@ -576,6 +592,18 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
         >
           <Bookmark className={`w-3.5 h-3.5 ${bookmarked ? "fill-current" : ""}`} />
         </EngagementButton>
+
+        {/* Mark as Unread — only shown when card is read and user is signed in */}
+        {isAuthed && isRead && (
+          <EngagementButton
+            onClick={handleMarkUnread}
+            active={false}
+            title="Mark as unread"
+            activeColor="var(--acc)"
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+          </EngagementButton>
+        )}
 
         {/* Copy + Share (right-aligned) */}
         <div className="flex items-center gap-1 ml-auto">
