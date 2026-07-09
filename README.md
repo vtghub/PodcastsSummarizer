@@ -10,7 +10,7 @@ Automatically extracts daily insights from podcasts and surfaces them via a pers
 
 | Layer | Technology | Role |
 |---|---|---|
-| **Scheduler** | GitHub Actions (cron) | Triggers pipeline daily at 6 AM UTC; hourly digest fan-out |
+| **Scheduler** | GitHub Actions (cron) | Ingestion pipeline every 4 hours; hourly digest fan-out; weekly recommendations Sundays 10 AM UTC |
 | **Source** | Python — RSS / yt-dlp | Fetches episode metadata and audio (8 parallel RSS workers; 4 concurrent LLM/transcript workers; Gemini → Groq retry chain) |
 | **Transcription** | OpenAI Whisper (local, `tiny` model) | Converts audio to text when no caption available |
 | **LLM** | Gemini (primary) → Groq (quota fallback) | Extracts summary, key points, quotes, action items |
@@ -122,7 +122,7 @@ PodcastsSummarizer/
 │   │       ├── insights/search/     # GET ?q= — full-text websearch across summary, key_points, quotes, tags; optional ?domain= ?from= ?to= filters
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
-│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved links (signed-in), About link (always visible), user dropdown, TTS toggle, theme picker
+│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved + My Podcasts links (signed-in, desktop only), About link (always visible), "N new" pill when unread insights exist, user dropdown, TTS toggle, theme picker
 │   │   ├── AnalyticsDashboard.tsx   # Client component — KPI cards, SVG bar chart (insights/day), domain breakdown bars, top-10 most-viewed list
 │   │   ├── ExportDropdown.tsx       # Client component — "↓ Export ▾" button with CSV / JSON / PDF options
 │   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud, bookmark toggle (☆/★), engagement bar
@@ -155,7 +155,7 @@ PodcastsSummarizer/
 │   └── request-workflow.md          # Mermaid request flow sequence diagrams
 │
 ├── .github/workflows/
-│   ├── daily_pipeline.yml           # Cron at 6 AM UTC (ingestion only, no email); workflow_dispatch with since_days + force_email
+│   ├── daily_pipeline.yml           # Cron every 4 hours (ingestion only, no email); workflow_dispatch with since_days + force_email
 │   ├── hourly_digest.yml            # Cron every hour — per-user digest fan-out (checks digest_hour in user's timezone)
 │   ├── weekly_recommendations.yml   # Cron Sundays 10 AM UTC — LLM-ranked best-of-week + trending podcast discovery email
 │   ├── backfill_platform_links.yml  # Manual workflow_dispatch — backfills platform URLs; optional source_id input
@@ -321,7 +321,7 @@ npm run dev      # http://localhost:3000
 
 ## CI/CD & Deployment
 
-- **Pipeline** (`daily_pipeline.yml`): runs at **6 AM UTC** daily — ingestion only (`send_email=False`).
+- **Pipeline** (`daily_pipeline.yml`): runs **every 4 hours** (0:00, 4:00, 8:00, 12:00, 16:00, 20:00 UTC) — ingestion only (`send_email=False`).
   - `since_days` input: look-back window (default: 1)
   - `force_email` input: send digest from existing DB insights even if no new episodes (for testing)
   - `episode_audio_url` + `source_id` + `target_email` inputs: single-episode on-demand mode (triggered by `/api/digest/process`)
