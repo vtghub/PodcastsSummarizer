@@ -1,11 +1,16 @@
 import Link from "next/link";
-import { Mic2, Search, Bookmark, CalendarDays, Bell, Mail, Volume2 } from "lucide-react";
+import { Mic2, Search, Bookmark, CalendarDays, Bell, Mail, Volume2, Download, MessageCircle } from "lucide-react";
 
 const features = [
   {
     icon: Mic2,
     title: "Daily Digest Email",
     body: "Personalized key takeaways from only the podcasts you follow — no fluff, delivered every morning.",
+  },
+  {
+    icon: MessageCircle,
+    title: "Ask Your Podcasts (AI)",
+    body: "Ask any question in plain language and the AI searches your subscribed episodes to answer it — with citations linking back to the exact insight.",
   },
   {
     icon: Search,
@@ -31,6 +36,11 @@ const features = [
     icon: Mail,
     title: "On-Demand Digest",
     body: 'Hit "Send Digest Now" from your profile and your digest lands in your inbox instantly.',
+  },
+  {
+    icon: Download,
+    title: "Export Your Insights",
+    body: "Download a day's insights as a CSV, JSON, or PDF — useful for sharing, archiving, or piping into other tools.",
   },
   {
     icon: Volume2,
