@@ -3,10 +3,11 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const q = searchParams.get("q")?.trim() ?? "";
-  const domain = searchParams.get("domain")?.trim() ?? "";
-  const from   = searchParams.get("from")?.trim() ?? "";
-  const to     = searchParams.get("to")?.trim() ?? "";
+  const q        = searchParams.get("q")?.trim() ?? "";
+  const domain   = searchParams.get("domain")?.trim() ?? "";
+  const from     = searchParams.get("from")?.trim() ?? "";
+  const to       = searchParams.get("to")?.trim() ?? "";
+  const sourceId = searchParams.get("source")?.trim() ?? "";
 
   if (q.length < 2) return NextResponse.json({ results: [] });
 
@@ -16,9 +17,10 @@ export async function GET(request: Request) {
     .select("id, date, domain, summary, sources!inner(name), episodes(title)")
     .textSearch("search_vector", q, { type: "websearch", config: "english" });
 
-  if (domain) query = query.eq("domain", domain);
-  if (from)   query = query.gte("date", from);
-  if (to)     query = query.lte("date", to);
+  if (domain)   query = query.eq("domain", domain);
+  if (from)     query = query.gte("date", from);
+  if (to)       query = query.lte("date", to);
+  if (sourceId) query = query.eq("source_id", sourceId);
 
   const { data, error } = await query.order("date", { ascending: false }).limit(20);
 
