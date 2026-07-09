@@ -790,6 +790,49 @@ sequenceDiagram
 
 ---
 
+## 23. Hourly Digest Fan-Out (Timezone-Aware)
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub Actions (hourly_digest.yml)
+    participant PY as worker/jobs/pipeline.py
+    participant DB as Supabase DB
+    participant MAIL as Gmail SMTP
+
+    GH->>PY: trigger (cron every hour, or workflow_dispatch with date/force/target_email)
+    PY->>DB: get_users_with_digest_enabled()
+    DB-->>PY: [user1, user2, ...] (digest_enabled=TRUE)
+    opt target_email set
+        PY->>PY: filter users to target_email only
+    end
+
+    loop per user (parallel)
+        PY->>PY: user_tz = ZoneInfo(user.digest_timezone)
+        PY->>PY: local_now = datetime.now(user_tz)
+        PY->>PY: user_local_date = local_now.strftime("%Y-%m-%d")
+        alt force=False and local_now.hour != user.digest_hour
+            PY->>PY: skip — not their send hour
+        else send hour matches (or force=True)
+            alt digest_frequency == 'weekly' and local_now.weekday() != digest_day_of_week
+                PY->>PY: skip — not their send day
+            else daily or weekly on correct day
+                PY->>DB: get_user_subscribed_source_ids(user_id)
+                PY->>DB: get_insights_by_date_and_sources(user_local_date, source_ids)
+                Note right of DB: uses user's LOCAL date, not UTC — avoids next-day mismatch for late-night sends
+                PY->>PY: filter by user.digest_domains (null = all domains)
+                alt has insights after domain filter
+                    PY->>MAIL: send_digest(user.email, user_local_date, insights_by_domain)
+                    MAIL-->>PY: sent
+                else no matching insights
+                    PY->>PY: skip — nothing to send
+                end
+            end
+        end
+    end
+```
+
+---
+
 ## 22. Weekly Recommendations Email
 
 ```mermaid

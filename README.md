@@ -128,6 +128,7 @@ PodcastsSummarizer/
 │   │   ├── ProfileForm.tsx          # Display name, digest toggle, Daily/Weekly frequency toggle, day-of-week picker, UTC hour picker, per-domain digest filter chips
 │   │   ├── OnboardingWizard.tsx     # 3-step onboarding: domain picker → catalog + iTunes recommendations → subscribe & finish
 │   │   ├── WelcomeOnboarding.tsx    # Fallback first-run card shown on dashboard if user skips onboarding — 3-step guide + CTA to /onboarding
+│   │   ├── LocalDateGuard.tsx       # Client component — corrects dashboard date when browser timezone differs from server UTC (runs once on mount; no-op if dates match)
 │   │   ├── SendDigestButton.tsx     # On-demand digest send + Preview button (opens /api/digest/preview in new tab)
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
 │   │   ├── SignOutButton.tsx        # POST /api/auth/logout → redirect
@@ -192,14 +193,17 @@ auth.users  (Supabase Auth)
 
 ## Digest Fan-Out
 
-The pipeline runs once and sends N personalized emails in parallel:
+The hourly digest job (`hourly_digest.yml`) sends N personalized emails in parallel, one per user whose local hour matches their configured `digest_hour`:
 
 1. Query `user_profiles JOIN auth.users` for all users with `digest_enabled=TRUE`
-2. For each user (up to 8 concurrent SMTP workers): fetch their `user_subscriptions` → filter today's insights to those source IDs
-3. Apply per-user domain filter: if `digest_domains` is set, drop insights outside those domains (`NULL` = all domains)
-4. Apply frequency filter: users with `digest_frequency = 'weekly'` are skipped unless `date.weekday() == digest_day_of_week` (0=Monday…6=Sunday)
-5. Send one HTML email per user via Gmail SMTP — failures are isolated per-user and logged without blocking other recipients
-6. Users with no subscriptions or no matching insights are skipped
+2. For each user (up to 8 concurrent SMTP workers):
+   - Compute the user's **local date** using `datetime.now(ZoneInfo(digest_timezone))` — avoids UTC date mismatch for users in negative-offset timezones late at night
+   - Check `local_now.hour == digest_hour`; skip if not their send hour (unless `force=True`)
+3. Fetch their `user_subscriptions` → look up insights for **user's local date** and those source IDs
+4. Apply per-user domain filter: if `digest_domains` is set, drop insights outside those domains (`NULL` = all domains)
+5. Apply frequency filter: users with `digest_frequency = 'weekly'` are skipped unless `local_now.weekday() == digest_day_of_week` (0=Monday…6=Sunday)
+6. Send one HTML email per user via Gmail SMTP — failures are isolated per-user and logged without blocking other recipients
+7. Users with no subscriptions or no matching insights are skipped
 
 ---
 
@@ -316,6 +320,9 @@ npm run dev      # http://localhost:3000
   - `force_email` input: send digest from existing DB insights even if no new episodes (for testing)
   - `episode_audio_url` + `source_id` + `target_email` inputs: single-episode on-demand mode (triggered by `/api/digest/process`)
 - **Hourly Digest** (`hourly_digest.yml`): runs every hour — checks each user's `digest_hour` in their `digest_timezone` and sends digest email to users whose local hour matches.
+  - `date` input: override date (YYYY-MM-DD); defaults to today (UTC).
+  - `force` input: skip the hour check and send to all eligible users immediately (`true`/`false`; default: `false`).
+  - `target_email` input: restrict send to a single email address (leave blank for all users; useful for testing).
 - **Weekly Recommendations** (`weekly_recommendations.yml`): runs **Sundays at 10 AM UTC (~6 AM EST)** — sends all digest-enabled users a two-section email: LLM-ranked best insights from their subscriptions + trending podcasts they aren't subscribed to in their domains.
   - `date` input: override date (YYYY-MM-DD); defaults to today.
 - **Backfill platform links**: `backfill_platform_links.yml` — manual `workflow_dispatch`; optional `source_id` input to run for a single source (leave blank to backfill all).
