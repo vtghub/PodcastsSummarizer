@@ -3,7 +3,7 @@
 ```mermaid
 graph TB
     subgraph CI["⚙️ GitHub Actions"]
-        CRON["🕛 daily_pipeline.yml\nCron: 6 AM UTC (ingestion)\n+ workflow_dispatch\n(since_days, force_email,\nepisode_audio_url, source_id, target_email)"]
+        CRON["🕛 daily_pipeline.yml\nCron: every 4 hours (ingestion)\n+ workflow_dispatch\n(since_days, force_email,\nepisode_audio_url, source_id, target_email)"]
         HCRON["🕐 hourly_digest.yml\nCron: every hour\nper-user digest fan-out\n+ workflow_dispatch\n(date, force, target_email)"]
         WCRON["📅 weekly_recommendations.yml\nCron: Sundays 10 AM UTC\nweekly recommendations email"]
     end
