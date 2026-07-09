@@ -361,6 +361,56 @@ class SupabaseStorageProvider(StorageProvider):
                 return [r["source_id"] for r in cur.fetchall()]
 
     # ------------------------------------------------------------------
+    # Weekly recommendations helpers
+    # ------------------------------------------------------------------
+    def get_insights_for_week(self, source_ids: list[str], days: int = 7) -> list[Insight]:
+        if not source_ids:
+            return []
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT i.*, e.title AS episode_title, s.name AS source_name
+                    FROM insights i
+                    LEFT JOIN episodes e ON e.id = i.episode_id
+                    LEFT JOIN sources s ON s.id = i.source_id
+                    WHERE i.source_id = ANY(%s)
+                      AND i.date >= (NOW() - make_interval(days => %s))::date
+                    ORDER BY i.date DESC, i.created_at DESC
+                    """,
+                    (source_ids, days),
+                )
+                return [self._row_to_insight(r) for r in cur.fetchall()]
+
+    def get_trending_sources(
+        self,
+        domains: list[str],
+        exclude_ids: list[str],
+        days: int = 7,
+        limit: int = 5,
+    ) -> list[dict]:
+        """Returns sources not in exclude_ids ranked by insight count in the past `days` days."""
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT s.id, s.name, s.domain, COUNT(i.id) AS insight_count
+                    FROM sources s
+                    JOIN insights i ON i.source_id = s.id
+                    WHERE s.domain = ANY(%s)
+                      AND s.id != ALL(%s)
+                      AND s.deleted = FALSE
+                      AND s.enabled = TRUE
+                      AND i.date >= (NOW() - make_interval(days => %s))::date
+                    GROUP BY s.id, s.name, s.domain
+                    ORDER BY insight_count DESC
+                    LIMIT %s
+                    """,
+                    (domains, exclude_ids or [], days, limit),
+                )
+                return [dict(r) for r in cur.fetchall()]
+
+    # ------------------------------------------------------------------
     # Row → dataclass helpers
     # ------------------------------------------------------------------
     @staticmethod

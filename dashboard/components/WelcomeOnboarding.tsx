@@ -67,11 +67,11 @@ export default function WelcomeOnboarding({ displayName }: { displayName?: strin
 
       {/* CTA */}
       <Link
-        href="/podcasts"
+        href="/onboarding"
         className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-opacity hover:opacity-90"
         style={{ background: "var(--acc)", color: "var(--acc-txt)" }}
       >
-        Browse podcasts
+        Set up my feed
         <ArrowRight className="w-4 h-4" />
       </Link>
     </div>

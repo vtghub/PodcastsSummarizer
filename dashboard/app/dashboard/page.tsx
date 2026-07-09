@@ -1,5 +1,6 @@
-import { getInsightsByDate, getAvailableDates, type Insight } from "@/lib/db";
+import { getInsightsByDate, getAvailableDates, getUserSubscriptions, type Insight } from "@/lib/db";
 import { getUserId, getDisplayName } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import DateNav from "@/components/DateNav";
 import ExportDropdown from "@/components/ExportDropdown";
 import DomainInsightView from "@/components/DomainInsightView";
@@ -18,6 +19,16 @@ export default async function DashboardPage({ searchParams }: Props) {
   const today = format(new Date(), "yyyy-MM-dd");
   const selectedDate = date ?? today;
   const userId = await getUserId();
+
+  // Redirect new users (no subscriptions) to onboarding wizard
+  if (userId) {
+    try {
+      const subs = await getUserSubscriptions(userId);
+      if (subs.length === 0) redirect("/onboarding");
+    } catch {
+      // if subscription check fails, continue to dashboard normally
+    }
+  }
 
   let insights: Insight[] = [];
   let availableDates: string[] = [];

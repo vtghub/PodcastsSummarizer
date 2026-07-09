@@ -1,0 +1,42 @@
+name: Weekly Recommendations Email
+
+on:
+  schedule:
+    # Sundays at 10:00 UTC (~6 AM EST / 7 AM EDT)
+    - cron: "0 10 * * 0"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Override date (YYYY-MM-DD). Defaults to today."
+        required: false
+        default: ""
+
+jobs:
+  send-recommendations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install -r worker/requirements.txt
+
+      - name: Run weekly recommendations
+        env:
+          STORAGE_PROVIDER: supabase
+          EMAIL_PROVIDER: gmail_smtp
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER || 'groq' }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python -c "
+          from worker.jobs.recommendations import run_weekly_recommendations
+          date_str = '${{ github.event.inputs.date }}' or None
+          run_weekly_recommendations(date_str or None)
+          "
