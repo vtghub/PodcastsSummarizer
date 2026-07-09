@@ -3,10 +3,10 @@
 import { useState, useRef, useEffect } from "react";
 
 const FORMATS = [
-  { label: "CSV",  value: "csv",  description: "Spreadsheet" },
-  { label: "Word", value: "word", description: ".doc file"   },
-  { label: "JSON", value: "json", description: "Raw data"    },
   { label: "PDF",  value: "pdf",  description: "Download"    },
+  { label: "Word", value: "word", description: ".doc file"   },
+  { label: "CSV",  value: "csv",  description: "Spreadsheet" },
+  { label: "JSON", value: "json", description: "Raw data"    },
 ] as const;
 
 interface JsonInsight {
