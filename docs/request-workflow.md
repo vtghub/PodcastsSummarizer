@@ -446,8 +446,8 @@ sequenceDiagram
     CARD->>EAPI: GET ?view=1 — user_id from cookie if signed in
     EAPI->>DB: UPSERT insight_views (deduped per user, anonymous inserts freely)
     EAPI->>DB: Promise.all — COUNT insight_views, SELECT insight_reactions, COUNT insight_comments, SELECT insight_bookmarks (authed only)
-    EAPI-->>CARD: { views, likes, dislikes, mine, commentCount, bookmarked }
-    CARD->>CARD: render engagement bar (eye, thumbs, bookmark ☆/★, comment count, share)
+    EAPI-->>CARD: { views, likes, dislikes, mine, commentCount, bookmarked, is_read }
+    CARD->>CARD: render engagement bar (eye, thumbs, EyeOff if is_read, bookmark ☆/★, comment count, share)
 
     Note over B,CARD: Like / Dislike (requires sign-in)
     B->>CARD: click Like
@@ -831,6 +831,47 @@ sequenceDiagram
             end
         end
     end
+```
+
+---
+
+## 24. Mark as Unread
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant CARD as InsightCard.tsx
+    participant API as /api/insights/[id]/engagement/unread
+    participant DB as Supabase
+
+    Note over CARD: Card is dimmed (opacity 55%) — is_read=true, user is signed in
+    Note over CARD: EyeOff icon visible in engagement bar
+
+    B->>CARD: click EyeOff (Mark as unread)
+    CARD->>CARD: optimistic update — setIsRead(false), views -= 1, card back to full opacity
+    CARD->>API: DELETE /api/insights/[id]/engagement/unread (JWT cookie)
+    API->>DB: getUserId() from cookie
+    alt not signed in
+        API-->>CARD: 401 Unauthorized
+        CARD->>CARD: revert — setIsRead(true), views += 1
+    else signed in
+        API->>DB: DELETE FROM insight_views WHERE insight_id=? AND user_id=?
+        alt delete succeeds
+            DB-->>API: ok
+            API-->>CARD: 200 { ok: true }
+            Note over CARD: EyeOff icon hidden — card stays at full opacity
+        else DB error
+            DB-->>API: error
+            API-->>CARD: 500 { error: message }
+            CARD->>CARD: revert — setIsRead(true), views += 1
+        end
+    end
+
+    Note over B,CARD: Next time user scrolls past or revisits the card
+    CARD->>API: GET ?view=1 (on mount)
+    API->>DB: INSERT insight_views (re-records the view)
+    API-->>CARD: { is_read: false, views: N+1 }
+    CARD->>CARD: card dims again, EyeOff icon reappears
 ```
 
 ---

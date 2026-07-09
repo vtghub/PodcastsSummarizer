@@ -70,7 +70,7 @@ graph TB
         ARDIGSTAT["/api/digest/status\npoll for insights"]
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
         ARREC["/api/recommendations/podcasts\nGET ?domains= → catalog + iTunes suggestions"]
-        ARENG["/api/insights/[id]/engagement\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
+        ARENG["/api/insights/[id]/engagement\nGET ?view=1 · /unread DELETE\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
         AREXP["/api/insights/export\nGET ?format=csv|pdf&date=\nauthed — download insights"]
         ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
