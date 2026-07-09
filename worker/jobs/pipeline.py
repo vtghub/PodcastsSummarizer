@@ -323,17 +323,22 @@ def run_single_episode(
     return {"stat": stat, "error": error_msg, "date": date_str}
 
 
-def run_digest_fanout(date_str: str | None = None) -> None:
+def run_digest_fanout(date_str: str | None = None, force: bool = False) -> None:
     """
     Send digest emails to all eligible users for a given date.
     Called by the hourly digest workflow — no ingestion, just email fan-out.
     Respects each user's digest_hour and digest_timezone preferences.
+
+    Args:
+        date_str: Override the lookup date (YYYY-MM-DD). Defaults to UTC today.
+        force:    Skip the hour check — send immediately to all eligible users.
+                  Use for manual test runs only.
     """
     storage = get_storage_provider()
     if date_str is None:
         date_str = datetime.now().strftime("%Y-%m-%d")
-    print(f"[DigestFanout] Running for date={date_str}")
-    _send_per_user_digests(storage, date_str)
+    print(f"[DigestFanout] Running for date={date_str}{' (forced)' if force else ''}")
+    _send_per_user_digests(storage, date_str, force=force)
 
 
 def _process_episode(
@@ -421,7 +426,7 @@ def _get_source_provider(source: PodcastSource):
 _EMAIL_WORKERS = 8  # max concurrent SMTP connections for digest fan-out
 
 
-def _send_per_user_digests(storage, date_str: str):
+def _send_per_user_digests(storage, date_str: str, force: bool = False):
     """Fan out personalised digest emails to every user with digest_enabled=TRUE."""
     email = get_email_provider()
 
@@ -451,7 +456,7 @@ def _send_per_user_digests(storage, date_str: str):
             user_local_date = date_str  # fall back to the UTC date
 
         # Check if the current hour in the user's timezone matches their chosen send hour
-        if local_now.hour != user.digest_hour:
+        if not force and local_now.hour != user.digest_hour:
             print(f"[Email] {user.email} — not their send hour (local={local_now.hour}, want={user.digest_hour}), skipping")
             return
 
