@@ -373,7 +373,7 @@ def _process_episode(
         try:
             transcriber = get_transcription_provider()  # singleton — no I/O after first call
             with _WHISPER_LOCK:
-                result = transcriber.transcribe(audio_path)
+                result = transcriber.transcribe(audio_path, domain=source.domain)
             transcript_text = result.text
             transcript_source = "whisper"
             print(f"  {tag} Whisper: {len(transcript_text):,} chars")
