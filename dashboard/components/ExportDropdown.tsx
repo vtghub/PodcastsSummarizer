@@ -3,10 +3,9 @@
 import { useState, useRef, useEffect } from "react";
 
 const FORMATS = [
-  { label: "PDF",  value: "pdf",  description: "Download"    },
-  { label: "Word", value: "word", description: ".docx file"  },
-  { label: "CSV",  value: "csv",  description: "Spreadsheet" },
-  { label: "JSON", value: "json", description: "Raw data"    },
+  { label: "PDF",   value: "pdf",   description: "Download"   },
+  { label: "Excel", value: "excel", description: ".xlsx file" },
+  { label: "Word",  value: "word",  description: ".docx file" },
 ] as const;
 
 interface JsonInsight {
@@ -332,7 +331,7 @@ export default function ExportDropdown({ date }: { date: string }) {
       }
       return;
     }
-    const ext = fmt === "word" ? "docx" : fmt;
+    const ext = fmt === "word" ? "docx" : fmt === "excel" ? "xlsx" : fmt;
     const url = `/api/insights/export?format=${fmt}&date=${date}`;
     const a = document.createElement("a");
     a.href = url;
