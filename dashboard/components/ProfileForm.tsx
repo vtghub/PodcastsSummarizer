@@ -108,6 +108,7 @@ export default function ProfileForm({
         return;
       }
       setSaved(true);
+      window.dispatchEvent(new CustomEvent("profile:displayname", { detail: displayName }));
       router.refresh();
     } finally {
       setSaving(false);
