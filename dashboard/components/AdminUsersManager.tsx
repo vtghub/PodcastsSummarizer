@@ -157,7 +157,22 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
                 return (
                   <div key={u.id} style={{ borderColor: "var(--bdr)" }}>
                   <div className="flex items-center gap-4 px-4 py-3">
-                    <div className="min-w-0 flex-1">
+                    <button
+                      onClick={() => setExpandedId(expanded ? null : u.id)}
+                      className="flex-shrink-0 self-start mt-1 p-0.5"
+                      title={expanded ? "Collapse" : "Expand"}
+                    >
+                      {expanded ? (
+                        <ChevronUp className="w-4 h-4" style={{ color: "var(--txt-4)" }} />
+                      ) : (
+                        <ChevronDown className="w-4 h-4" style={{ color: "var(--txt-4)" }} />
+                      )}
+                    </button>
+
+                    <div
+                      className="min-w-0 flex-1 cursor-pointer"
+                      onClick={() => setExpandedId(expanded ? null : u.id)}
+                    >
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>
                           {u.display_name || u.email.split("@")[0]}
@@ -180,52 +195,46 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
                           {u.email_confirmed ? <Mail className="w-3 h-3" /> : <MailX className="w-3 h-3" />}
                           {u.email_confirmed ? "verified" : "unverified"}
                         </span>
+                        <span>
+                          {u.subscription_count === 0
+                            ? "No subscriptions"
+                            : `${u.subscription_count} subscription${u.subscription_count !== 1 ? "s" : ""} across ${u.domains.length} domain${u.domains.length !== 1 ? "s" : ""}`}
+                        </span>
                         {!u.has_profile && (
                           <span style={{ color: "#F59E0B" }}>no profile row</span>
                         )}
                       </div>
 
-                      {u.subscription_count > 0 ? (
-                        <button
-                          onClick={() => setExpandedId(expanded ? null : u.id)}
-                          className="flex items-center flex-wrap gap-1 mt-2"
-                        >
-                          {u.domains.map((d) => {
-                            const c = getDomainColor(d);
-                            const count = channelsByDomain[d]?.length ?? 0;
-                            return (
-                              <span
-                                key={d}
-                                className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}
-                              >
-                                <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-                                {d} ({count})
-                              </span>
-                            );
-                          })}
-                          {expanded ? (
-                            <ChevronUp className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
-                          ) : (
-                            <ChevronDown className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
-                          )}
-                        </button>
-                      ) : (
-                        <p className="text-[11px] mt-2" style={{ color: "var(--txt-4)" }}>No subscriptions</p>
-                      )}
-
                       {expanded && u.subscription_count > 0 && (
-                        <div className="mt-2.5 space-y-1.5">
-                          {u.domains.map((d) => {
-                            const c = getDomainColor(d);
-                            return (
-                              <div key={d} className="flex items-start gap-2 text-xs">
-                                <span className={`flex-shrink-0 font-medium ${c.text} w-36 truncate`}>{d}</span>
-                                <span style={{ color: "var(--txt-3)" }}>
-                                  {channelsByDomain[d].join(", ")}
+                        <div className="mt-3 space-y-2.5" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center flex-wrap gap-1">
+                            {u.domains.map((d) => {
+                              const c = getDomainColor(d);
+                              const count = channelsByDomain[d]?.length ?? 0;
+                              return (
+                                <span
+                                  key={d}
+                                  className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                                  {d} ({count})
                                 </span>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
+                          <div className="space-y-1.5">
+                            {u.domains.map((d) => {
+                              const c = getDomainColor(d);
+                              return (
+                                <div key={d} className="flex items-start gap-2 text-xs">
+                                  <span className={`flex-shrink-0 font-medium ${c.text} w-36 truncate`}>{d}</span>
+                                  <span style={{ color: "var(--txt-3)" }}>
+                                    {channelsByDomain[d].join(", ")}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
