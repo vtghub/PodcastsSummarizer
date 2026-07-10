@@ -40,7 +40,7 @@ const features = [
   {
     icon: Download,
     title: "Export Your Insights",
-    body: "Download a day's insights as a CSV, JSON, or PDF — useful for sharing, archiving, or piping into other tools.",
+    body: "Download a day's insights as a PDF, Excel spreadsheet, or Word document — useful for sharing, archiving, or building a personal knowledge base.",
   },
   {
     icon: Volume2,
