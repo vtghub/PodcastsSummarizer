@@ -586,7 +586,7 @@ sequenceDiagram
 
 ---
 
-## 17. Export Insights (PDF / Word / CSV / JSON)
+## 17. Export Insights (PDF / Excel / Word)
 
 ```mermaid
 sequenceDiagram
@@ -597,7 +597,7 @@ sequenceDiagram
     participant DB as Supabase
 
     B->>DD: click "↓ Export ▾"
-    DD->>DD: setOpen(true) — show PDF / Word / CSV / JSON options (left-aligned, mobile-compact)
+    DD->>DD: setOpen(true) — show PDF / Excel / Word options (left-aligned, mobile-compact)
 
     B->>DD: select format
     DD->>DD: setOpen(false)
@@ -608,8 +608,8 @@ sequenceDiagram
         API-->>DD: JSON insights array
         DD->>DD: render domain-colored cards, badges, quotes, page breaks
         DD->>B: jsPDF.save() — downloads insights-YYYY-MM-DD.pdf (client-side, no server round-trip)
-    else format=word|csv|json
-        DD->>B: anchor click → GET /api/insights/export?format=word|csv|json&date=YYYY-MM-DD
+    else format=excel|word
+        DD->>B: anchor click → GET /api/insights/export?format=excel|word&date=YYYY-MM-DD
 
         B->>MW: GET /api/insights/export?format=...&date=YYYY-MM-DD
         MW->>MW: rate limit check (pass — GET not in RATE_LIMIT_METHODS)
@@ -624,19 +624,16 @@ sequenceDiagram
             API->>DB: SELECT insights JOIN sources JOIN episodes WHERE date=? AND source_id IN (...)
             DB-->>API: insights with source name + episode title
 
-            alt format=word
+            alt format=excel
+                API->>API: insightsToExcel() — SheetJS builds .xlsx workbook
+                Note over API: named sheet · preset column widths<br/>Date, Domain, Source, Episode, Summary<br/>Key Points, Key Quotes, Action Items, Tags
+                API-->>B: 200 application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+                B->>B: downloads insights-YYYY-MM-DD.xlsx
+            else format=word
                 API->>API: insightsToWordBuffer() — docx pkg builds Open XML document
                 Note over API: colored domain badge (ShadingType.SOLID)<br/>bold section labels · bullet key points<br/>italic key quotes with colored left border<br/>action item arrows · hashtag tags
                 API-->>B: 200 application/vnd.openxmlformats-officedocument.wordprocessingml.document
                 B->>B: downloads insights-YYYY-MM-DD.docx (Word 2007+)
-            else format=csv
-                API->>API: insightsToCsv() — pipe-separated key_points/quotes/actions
-                API-->>B: 200 text/csv · Content-Disposition: attachment
-                B->>B: downloads insights-YYYY-MM-DD.csv
-            else format=json
-                API->>API: insightsToJson() — pretty-printed JSON with arrays
-                API-->>B: 200 application/json · Content-Disposition: attachment
-                B->>B: downloads insights-YYYY-MM-DD.json
             end
         end
     end
