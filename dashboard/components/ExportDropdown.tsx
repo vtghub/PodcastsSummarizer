@@ -3,9 +3,10 @@
 import { useState, useRef, useEffect } from "react";
 
 const FORMATS = [
+  { label: "PDF",  value: "pdf",  description: "Download"    },
+  { label: "Word", value: "word", description: ".docx file"  },
   { label: "CSV",  value: "csv",  description: "Spreadsheet" },
   { label: "JSON", value: "json", description: "Raw data"    },
-  { label: "PDF",  value: "pdf",  description: "Download"    },
 ] as const;
 
 interface JsonInsight {
@@ -331,10 +332,11 @@ export default function ExportDropdown({ date }: { date: string }) {
       }
       return;
     }
+    const ext = fmt === "word" ? "docx" : fmt;
     const url = `/api/insights/export?format=${fmt}&date=${date}`;
     const a = document.createElement("a");
     a.href = url;
-    a.download = `insights-${date}.${fmt}`;
+    a.download = `insights-${date}.${ext}`;
     a.click();
   }
 
@@ -360,14 +362,14 @@ export default function ExportDropdown({ date }: { date: string }) {
 
       {open && (
         <div
-          className="absolute right-0 top-full mt-1 rounded-xl border shadow-xl z-50 overflow-hidden"
-          style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)", minWidth: 148 }}
+          className="absolute left-0 top-full mt-1 rounded-xl border shadow-xl z-50 overflow-hidden"
+          style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)", minWidth: 132 }}
         >
           {FORMATS.map(({ label, value, description }) => (
             <button
               key={value}
               onClick={() => handleSelect(value)}
-              className="w-full flex items-center justify-between gap-4 px-3 py-2 text-xs text-left transition-colors"
+              className="w-full flex items-center justify-between gap-3 px-2.5 py-1.5 text-xs text-left transition-colors"
               style={{ color: "var(--txt-2)" }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
