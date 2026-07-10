@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Shield, ShieldOff, RotateCcw, Trash2, Loader2, Search, Mail, MailX, Users, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
-import { getDomainColor } from "@/lib/domain-colors";
+import { Shield, ShieldOff, RotateCcw, Trash2, Loader2, Search, Mail, MailX, Users, ChevronDown, ChevronUp, RefreshCw, Bell, BellOff } from "lucide-react";
+import { getDomainColor, DOMAINS as DOMAIN_ORDER } from "@/lib/domain-colors";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 interface SubChannel { name: string; domain: string }
+interface CatalogSource { id: string; name: string; domain: string }
 
 interface AdminUser {
   id: string;
@@ -21,6 +22,11 @@ interface AdminUser {
   has_profile: boolean;
 }
 
+interface UserCatalog {
+  sources: CatalogSource[];
+  subscribedIds: Set<string>;
+}
+
 export default function AdminUsersManager({ currentUserId }: { currentUserId: string }) {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -30,6 +36,9 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const knownIds = useRef<Set<string> | null>(null);
+  const [catalogs, setCatalogs] = useState<Record<string, UserCatalog>>({});
+  const [catalogLoading, setCatalogLoading] = useState<string | null>(null);
+  const [subBusyKey, setSubBusyKey] = useState<string | null>(null);
 
   const [toast, setToast] = useState<{ msg: string; type: "error" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,6 +139,11 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to reset onboarding");
       setUsers((prev) => prev?.map((x) => (x.id === u.id ? { ...x, subscription_count: 0, domains: [], channels: [] } : x)) ?? null);
+      setCatalogs((prev) => {
+        const existing = prev[u.id];
+        if (!existing) return prev;
+        return { ...prev, [u.id]: { ...existing, subscribedIds: new Set() } };
+      });
       showToast(`${u.email} will see onboarding on next visit`, "success");
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Failed to reset onboarding", "error");
@@ -151,6 +165,79 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
     } finally {
       setActionId(null);
       setConfirmDeleteId(null);
+    }
+  }
+
+  async function toggleExpand(u: AdminUser) {
+    const next = expandedId === u.id ? null : u.id;
+    setExpandedId(next);
+    if (next && !catalogs[u.id]) {
+      setCatalogLoading(u.id);
+      try {
+        const res = await fetch(`/api/admin/users/${u.id}/subscriptions`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to load subscriptions");
+        setCatalogs((prev) => ({
+          ...prev,
+          [u.id]: { sources: data.sources, subscribedIds: new Set(data.subscribedIds) },
+        }));
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : "Failed to load subscriptions", "error");
+      } finally {
+        setCatalogLoading(null);
+      }
+    }
+  }
+
+  // Recompute a user's domains/channels/subscription_count from a catalog's
+  // subscribedIds so the collapsed summary line stays in sync with edits
+  // made in the subscription manager below.
+  function syncUserFromCatalog(userId: string, catalog: UserCatalog) {
+    const subscribed = catalog.sources.filter((s) => catalog.subscribedIds.has(s.id));
+    const domains = Array.from(new Set(subscribed.map((s) => s.domain))).sort();
+    const channels = subscribed.map((s) => ({ name: s.name, domain: s.domain }));
+    setUsers((prev) =>
+      prev?.map((x) =>
+        x.id === userId
+          ? { ...x, subscription_count: subscribed.length, domains, channels }
+          : x
+      ) ?? null
+    );
+  }
+
+  async function toggleUserSubscription(u: AdminUser, source: CatalogSource, currentlySubscribed: boolean) {
+    const key = `${u.id}:${source.id}`;
+    setSubBusyKey(key);
+    try {
+      const res = await fetch(`/api/admin/users/${u.id}/subscriptions`, {
+        method: currentlySubscribed ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceId: source.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to update subscription");
+
+      setCatalogs((prev) => {
+        const existing = prev[u.id];
+        if (!existing) return prev;
+        const subscribedIds = new Set(existing.subscribedIds);
+        if (currentlySubscribed) subscribedIds.delete(source.id);
+        else subscribedIds.add(source.id);
+        const updated = { ...existing, subscribedIds };
+        syncUserFromCatalog(u.id, updated);
+        return { ...prev, [u.id]: updated };
+      });
+
+      showToast(
+        currentlySubscribed
+          ? `Unsubscribed ${u.email} from ${source.name}`
+          : `Subscribed ${u.email} to ${source.name}`,
+        "success"
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Failed to update subscription", "error");
+    } finally {
+      setSubBusyKey(null);
     }
   }
 
@@ -215,7 +302,7 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
                   <div key={u.id} style={{ borderColor: "var(--bdr)" }}>
                   <div className="flex items-center gap-4 px-4 py-3">
                     <button
-                      onClick={() => setExpandedId(expanded ? null : u.id)}
+                      onClick={() => toggleExpand(u)}
                       className="flex-shrink-0 self-start mt-1 p-0.5"
                       title={expanded ? "Collapse" : "Expand"}
                     >
@@ -228,7 +315,7 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
 
                     <div
                       className="min-w-0 flex-1 cursor-pointer"
-                      onClick={() => setExpandedId(expanded ? null : u.id)}
+                      onClick={() => toggleExpand(u)}
                     >
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>
@@ -263,35 +350,81 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
                       </div>
 
                       {expanded && u.subscription_count > 0 && (
-                        <div className="mt-3 space-y-2.5" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center flex-wrap gap-1">
-                            {u.domains.map((d) => {
-                              const c = getDomainColor(d);
-                              const count = channelsByDomain[d]?.length ?? 0;
-                              return (
-                                <span
-                                  key={d}
-                                  className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}
-                                >
-                                  <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-                                  {d} ({count})
-                                </span>
-                              );
-                            })}
-                          </div>
-                          <div className="space-y-1.5">
-                            {u.domains.map((d) => {
-                              const c = getDomainColor(d);
-                              return (
-                                <div key={d} className="flex items-start gap-2 text-xs">
-                                  <span className={`flex-shrink-0 font-medium ${c.text} w-36 truncate`}>{d}</span>
-                                  <span style={{ color: "var(--txt-3)" }}>
-                                    {channelsByDomain[d].join(", ")}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
+                        <div className="flex items-center flex-wrap gap-1 mt-3" onClick={(e) => e.stopPropagation()}>
+                          {u.domains.map((d) => {
+                            const c = getDomainColor(d);
+                            const count = channelsByDomain[d]?.length ?? 0;
+                            return (
+                              <span
+                                key={d}
+                                className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                                {d} ({count})
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {expanded && (
+                        <div
+                          className="mt-3 rounded-xl border p-3"
+                          style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--txt-4)" }}>
+                            Manage subscriptions
+                          </p>
+                          {catalogLoading === u.id ? (
+                            <div className="flex items-center justify-center py-6">
+                              <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--txt-4)" }} />
+                            </div>
+                          ) : catalogs[u.id] ? (
+                            <div className="space-y-3 max-h-80 overflow-y-auto">
+                              {DOMAIN_ORDER.filter((d) => catalogs[u.id].sources.some((s) => s.domain === d)).map((d) => {
+                                const c = getDomainColor(d);
+                                const sourcesInDomain = catalogs[u.id].sources.filter((s) => s.domain === d);
+                                return (
+                                  <div key={d}>
+                                    <p className={`text-[10px] font-semibold uppercase tracking-wide mb-1.5 ${c.text}`}>{d}</p>
+                                    <div className="space-y-1">
+                                      {sourcesInDomain.map((s) => {
+                                        const subscribed = catalogs[u.id].subscribedIds.has(s.id);
+                                        const key = `${u.id}:${s.id}`;
+                                        const subBusy = subBusyKey === key;
+                                        return (
+                                          <div key={s.id} className="flex items-center justify-between gap-2 text-xs">
+                                            <span className="truncate" style={{ color: "var(--txt-2)" }}>{s.name}</span>
+                                            <button
+                                              onClick={() => toggleUserSubscription(u, s, subscribed)}
+                                              disabled={subBusy}
+                                              className="flex items-center gap-1 flex-shrink-0 text-[11px] font-medium px-2 py-1 rounded-full border transition-colors disabled:opacity-50"
+                                              style={subscribed
+                                                ? { background: "var(--acc-bg)", borderColor: "var(--acc)", color: "var(--acc)" }
+                                                : { background: "transparent", borderColor: "var(--bdr)", color: "var(--txt-3)" }
+                                              }
+                                            >
+                                              {subBusy ? (
+                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                              ) : subscribed ? (
+                                                <BellOff className="w-3 h-3" />
+                                              ) : (
+                                                <Bell className="w-3 h-3" />
+                                              )}
+                                              {subscribed ? "Subscribed" : "Subscribe"}
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-xs" style={{ color: "var(--txt-4)" }}>No podcasts in catalog.</p>
+                          )}
                         </div>
                       )}
                     </div>
