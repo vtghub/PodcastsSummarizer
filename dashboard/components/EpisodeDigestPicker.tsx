@@ -53,13 +53,45 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
 
   const [podcastQuery, setPodcastQuery] = useState("");
   const [podcastOpen, setPodcastOpen]   = useState(false);
-  const [panelPos, setPanelPos] = useState({ top: 0, left: 0, width: 0 });
+  const [panelPos, setPanelPos] = useState({ top: 0, left: 0, width: 0, maxHeight: 320 });
   const podcastRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  function openPodcastDropdown() {
+  // Computes the panel's position AND how tall it's allowed to be, capped to
+  // whatever space is actually visible around the trigger. On mobile this
+  // visible area shrinks to whatever's above the on-screen keyboard — since
+  // the panel is position:fixed, page scrolling can never bring an
+  // off-screen (behind-the-keyboard) portion into view, so instead of
+  // overflowing we shrink the panel to always fit entirely on screen. If the
+  // trigger itself sits too close to the visible area's bottom edge (e.g.
+  // the keyboard now covers most of the space below it), flip the panel to
+  // open above the trigger instead, same as a standard popover would.
+  const MIN_PANEL_HEIGHT = 120;
+  const MAX_PANEL_HEIGHT = 320;
+  const GAP = 4;
+
+  function computePanelRect() {
     const rect = podcastRef.current?.getBoundingClientRect();
-    if (rect) setPanelPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    if (!rect) return null;
+    const vv = window.visualViewport;
+    const visibleTop = vv ? vv.offsetTop : 0;
+    const visibleBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+
+    const spaceBelow = visibleBottom - (rect.bottom + GAP) - 8;
+    const spaceAbove = (rect.top - GAP) - visibleTop - 8;
+
+    if (spaceBelow >= MIN_PANEL_HEIGHT || spaceBelow >= spaceAbove) {
+      const maxHeight = Math.max(MIN_PANEL_HEIGHT, Math.min(MAX_PANEL_HEIGHT, spaceBelow));
+      return { top: rect.bottom + GAP, left: rect.left, width: rect.width, maxHeight };
+    }
+
+    const maxHeight = Math.max(MIN_PANEL_HEIGHT, Math.min(MAX_PANEL_HEIGHT, spaceAbove));
+    return { top: rect.top - GAP - maxHeight, left: rect.left, width: rect.width, maxHeight };
+  }
+
+  function openPodcastDropdown() {
+    const next = computePanelRect();
+    if (next) setPanelPos(next);
     setPodcastOpen(true);
   }
 
@@ -91,8 +123,8 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   useEffect(() => {
     if (!podcastOpen) return;
     function reposition() {
-      const rect = podcastRef.current?.getBoundingClientRect();
-      if (rect) setPanelPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      const next = computePanelRect();
+      if (next) setPanelPos(next);
     }
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
@@ -314,17 +346,18 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
       {podcastOpen && typeof document !== "undefined" && createPortal(
         <div
           ref={panelRef}
-          className="fixed rounded-xl border shadow-xl overflow-hidden"
+          className="fixed rounded-xl border shadow-xl overflow-hidden flex flex-col"
           style={{
             top: panelPos.top,
             left: panelPos.left,
             width: panelPos.width,
+            maxHeight: panelPos.maxHeight,
             zIndex: 100,
             background: "var(--bg-nav)",
             borderColor: "var(--bdr-hov)",
           }}
         >
-          <div className="relative p-2 border-b" style={{ borderColor: "var(--bdr)" }}>
+          <div className="relative p-2 border-b flex-shrink-0" style={{ borderColor: "var(--bdr)" }}>
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--txt-4)" }} />
             <input
               value={podcastQuery}
@@ -335,7 +368,7 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
               autoComplete="off"
             />
           </div>
-          <ul className="max-h-56 overflow-y-auto">
+          <ul className="overflow-y-auto" style={{ minHeight: 0 }}>
             {filteredSources.length === 0 ? (
               <li className="px-3 py-2.5 text-xs" style={{ color: "var(--txt-4)" }}>No podcasts match.</li>
             ) : (
