@@ -184,7 +184,7 @@ export default function OnboardingWizard() {
                 onClick={goToRecommendations}
                 disabled={selectedDomains.length === 0 || loadingRecs}
                 className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-50"
-                style={{ background: "var(--acc)", color: "var(--acc-txt)" }}
+                style={{ background: "var(--acc)", color: "#fff" }}
               >
                 {loadingRecs ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 {loadingRecs ? "Loading…" : "Next"}
@@ -295,7 +295,7 @@ export default function OnboardingWizard() {
                 onClick={finish}
                 disabled={finishing}
                 className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-sm transition-opacity disabled:opacity-50"
-                style={{ background: "var(--acc)", color: "var(--acc-txt)" }}
+                style={{ background: "var(--acc)", color: "#fff" }}
               >
                 {finishing && <Loader2 className="w-4 h-4 animate-spin" />}
                 {finishing ? "Setting up…" : "Get Started"}
