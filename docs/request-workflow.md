@@ -586,7 +586,7 @@ sequenceDiagram
 
 ---
 
-## 17. Export Insights (CSV / JSON / PDF)
+## 17. Export Insights (PDF / Word / CSV / JSON)
 
 ```mermaid
 sequenceDiagram
@@ -597,36 +597,47 @@ sequenceDiagram
     participant DB as Supabase
 
     B->>DD: click "↓ Export ▾"
-    DD->>DD: setOpen(true) — show CSV / JSON / PDF options
+    DD->>DD: setOpen(true) — show PDF / Word / CSV / JSON options (left-aligned, mobile-compact)
 
-    B->>DD: select format (e.g. CSV)
+    B->>DD: select format
     DD->>DD: setOpen(false)
-    DD->>B: fetch /api/insights/export?format=csv&date=YYYY-MM-DD
 
-    B->>MW: GET /api/insights/export?format=csv&date=2026-07-07
-    MW->>MW: rate limit check (pass — GET not in RATE_LIMIT_METHODS)
-    MW->>MW: supabase.auth.getUser()
-    alt not signed in
-        API-->>B: 401 Unauthorized
-    else signed in
-        MW-->>API: pass through
-        API->>DB: getUserId() → user_id
-        API->>DB: SELECT source_id FROM user_subscriptions WHERE user_id=?
-        DB-->>API: subscribed source IDs
-        API->>DB: SELECT insights JOIN sources JOIN episodes WHERE date=? AND source_id IN (...)
-        DB-->>API: insights with source name + episode title
-        alt format=csv
-            API->>API: insightsToCsv() — pipe-separated key_points/quotes/actions
-            API-->>B: 200 text/csv · Content-Disposition: attachment
-            B->>B: browser downloads insights-YYYY-MM-DD.csv
-        else format=json
-            API->>API: insightsToJson() — pretty-printed JSON with arrays
-            API-->>B: 200 application/json · Content-Disposition: attachment
-            B->>B: browser downloads insights-YYYY-MM-DD.json
-        else format=pdf
-            API->>API: insightsToPrintHtml() — styled HTML with @media print CSS
-            API-->>B: 200 text/html · Content-Disposition: attachment
-            DD->>B: window.open(url, "_blank") — opens printable page in new tab
+    alt format=pdf
+        DD->>DD: generatePdf(date) — dynamic import jsPDF
+        DD->>API: GET /api/insights/export?format=json&date=YYYY-MM-DD (fetch insights)
+        API-->>DD: JSON insights array
+        DD->>DD: render domain-colored cards, badges, quotes, page breaks
+        DD->>B: jsPDF.save() — downloads insights-YYYY-MM-DD.pdf (client-side, no server round-trip)
+    else format=word|csv|json
+        DD->>B: anchor click → GET /api/insights/export?format=word|csv|json&date=YYYY-MM-DD
+
+        B->>MW: GET /api/insights/export?format=...&date=YYYY-MM-DD
+        MW->>MW: rate limit check (pass — GET not in RATE_LIMIT_METHODS)
+        MW->>MW: supabase.auth.getUser()
+        alt not signed in
+            API-->>B: 401 Unauthorized
+        else signed in
+            MW-->>API: pass through
+            API->>DB: getUserId() → user_id
+            API->>DB: SELECT source_id FROM user_subscriptions WHERE user_id=? AND enabled=true
+            DB-->>API: subscribed source IDs
+            API->>DB: SELECT insights JOIN sources JOIN episodes WHERE date=? AND source_id IN (...)
+            DB-->>API: insights with source name + episode title
+
+            alt format=word
+                API->>API: insightsToWordBuffer() — docx pkg builds Open XML document
+                Note over API: colored domain badge (ShadingType.SOLID)<br/>bold section labels · bullet key points<br/>italic key quotes with colored left border<br/>action item arrows · hashtag tags
+                API-->>B: 200 application/vnd.openxmlformats-officedocument.wordprocessingml.document
+                B->>B: downloads insights-YYYY-MM-DD.docx (Word 2007+)
+            else format=csv
+                API->>API: insightsToCsv() — pipe-separated key_points/quotes/actions
+                API-->>B: 200 text/csv · Content-Disposition: attachment
+                B->>B: downloads insights-YYYY-MM-DD.csv
+            else format=json
+                API->>API: insightsToJson() — pretty-printed JSON with arrays
+                API-->>B: 200 application/json · Content-Disposition: attachment
+                B->>B: downloads insights-YYYY-MM-DD.json
+            end
         end
     end
 ```
