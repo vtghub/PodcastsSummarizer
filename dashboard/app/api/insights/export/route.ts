@@ -5,6 +5,7 @@ import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   BorderStyle, ShadingType, convertInchesToTwip,
 } from "docx";
+import * as XLSX from "xlsx";
 
 function escapeCsv(val: unknown): string {
   const s = String(val ?? "").replace(/"/g, '""');
@@ -258,6 +259,39 @@ async function insightsToWordBuffer(date: string, insights: Insight[]): Promise<
   return Packer.toBuffer(doc);
 }
 
+function insightsToExcel(date: string, insights: Insight[]): Uint8Array {
+  const rows = insights.map((ins) => ({
+    Date:           date,
+    Domain:         ins.domain,
+    Source:         ins.source_name ?? "",
+    Episode:        ins.episode_title ?? "",
+    Summary:        ins.summary,
+    "Key Points":   ins.key_points.join(" | "),
+    "Key Quotes":   ins.key_quotes.join(" | "),
+    "Action Items": ins.action_items.join(" | "),
+    Tags:           ins.tags.join(", "),
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+
+  // Column widths
+  ws["!cols"] = [
+    { wch: 12 }, // Date
+    { wch: 24 }, // Domain
+    { wch: 28 }, // Source
+    { wch: 36 }, // Episode
+    { wch: 60 }, // Summary
+    { wch: 60 }, // Key Points
+    { wch: 60 }, // Key Quotes
+    { wch: 60 }, // Action Items
+    { wch: 30 }, // Tags
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, `Insights ${date}`);
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array;
+}
+
 function insightsToJson(date: string, insights: Insight[]): string {
   return JSON.stringify(
     {
@@ -296,6 +330,15 @@ export async function GET(req: Request) {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": `attachment; filename="insights-${date}.docx"`,
+      },
+    });
+  }
+
+  if (fmt === "excel") {
+    return new Response(new Uint8Array(insightsToExcel(date, insights)), {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="insights-${date}.xlsx"`,
       },
     });
   }
