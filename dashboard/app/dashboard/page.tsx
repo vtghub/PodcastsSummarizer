@@ -27,14 +27,19 @@ export default async function DashboardPage({ searchParams }: Props) {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: userTz });
   const selectedDate = date ?? today;
 
-  // Redirect new users (no subscriptions) to onboarding wizard
+  // Redirect new users (no subscriptions) to onboarding wizard.
+  // redirect() throws internally, so the subscription fetch must be
+  // awaited inside its own try/catch — calling redirect() from within a
+  // try/catch would silently swallow the redirect's thrown signal.
   if (userId) {
+    let subs: string[] = [];
+    let subsCheckFailed = false;
     try {
-      const subs = await getUserSubscriptions(userId);
-      if (subs.length === 0) redirect("/onboarding");
+      subs = await getUserSubscriptions(userId);
     } catch {
-      // if subscription check fails, continue to dashboard normally
+      subsCheckFailed = true; // if subscription check fails, continue to dashboard normally
     }
+    if (!subsCheckFailed && subs.length === 0) redirect("/onboarding");
   }
 
   let insights: Insight[] = [];

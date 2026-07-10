@@ -123,8 +123,9 @@ PodcastsSummarizer/
 │   │       ├── insights/export/     # GET ?format=csv|word|json|pdf&date=YYYY-MM-DD — download insights for a date (authed)
 │   │       ├── insights/search/     # GET ?q= — full-text websearch across summary, key_points, quotes, tags; optional ?domain= ?from= ?to= filters
 │   │       ├── ask/                 # POST — LLM Q&A: FTS context retrieval + 6-model waterfall (Gemini→Groq→Mistral→Together→Cohere)
-│   │       ├── admin/users/         # GET — list all users (auth.users + user_profiles + subscription counts), admin only
+│   │       ├── admin/users/         # GET — list all users (auth.users + user_profiles + per-domain subscription channels), admin only
 │   │       ├── admin/users/[id]/    # PATCH { is_admin } or { reset_onboarding } · DELETE — auth.admin.deleteUser cascades to all user_id-FK tables; admin only, self-protected
+│   │       ├── admin/users/[id]/subscriptions/ # GET catalog + user's subscribedIds · POST/DELETE { sourceId } — admin subscribes/unsubscribes any user to/from any podcast
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
 │   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved + My Podcasts + Ask links (signed-in, desktop only), About link (always visible), "N new" pill when unread insights exist, user dropdown (Profile, admin-only "Manage Users" link, Sign out), TTS toggle, theme picker; listens for custom "profile:displayname" event to update display name instantly on profile save
@@ -137,7 +138,7 @@ PodcastsSummarizer/
 │   │   ├── ProfileForm.tsx          # Display name, digest toggle, Daily/Weekly frequency toggle, day-of-week picker, UTC hour picker, per-domain digest filter chips
 │   │   ├── OnboardingWizard.tsx     # 3-step onboarding: domain picker → catalog + iTunes recommendations → subscribe & finish
 │   │   ├── WelcomeOnboarding.tsx    # Fallback first-run card shown on dashboard if user skips onboarding — 3-step guide + CTA to /onboarding
-│   │   ├── AdminUsersManager.tsx    # Client component for /admin/users — search, grant/revoke admin, reset onboarding, cascade-delete (self-delete and self-demote blocked)
+│   │   ├── AdminUsersManager.tsx    # Client component for /admin/users — search, grant/revoke admin, reset onboarding, cascade-delete (self-delete and self-demote blocked); each row collapsible (default collapsed) showing domain badges + per-domain channel names; expanding lazy-loads a "Manage subscriptions" panel to subscribe/unsubscribe the user to/from any catalog podcast; live updates via Supabase Realtime on user_profiles INSERT/DELETE (no polling) + manual Refresh button
 │   │   ├── LocalDateGuard.tsx       # Client component — corrects dashboard date when browser timezone differs from server UTC (runs once on mount; no-op if dates match)
 │   │   ├── SendDigestButton.tsx     # On-demand digest send + Preview button (opens /api/digest/preview in new tab)
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
@@ -196,8 +197,8 @@ auth.users  (Supabase Auth)
 
 - **Guests**: see all public insights (unfiltered preview); views are tracked anonymously
 - **Signed-in users**: see only insights from their subscribed sources; can like, dislike, and comment
-- **Admins** (`is_admin=TRUE`): full catalog management (add/enable/disable/delete sources); `/admin/users` page for listing users, granting/revoking admin, resetting onboarding, and cascade-deleting a user (`auth.admin.deleteUser` removes `auth.users` and every `ON DELETE CASCADE` row across `user_profiles`, `user_subscriptions`, `insight_bookmarks`, `insight_reactions`, `insight_comments`, `comment_reactions` in one call — the safe way to fully remove a user, vs. manually deleting rows from individual tables)
-- **RLS**: `user_profiles`, `user_subscriptions`, `sources`, `insight_reactions`, `insight_bookmarks`, `insight_comments`, `comment_reactions` all have row-level security; `insights` and `insight_views` are public-readable; `insight_views` additionally allows authenticated users to delete their own rows (Mark as Unread)
+- **Admins** (`is_admin=TRUE`): full catalog management (add/enable/disable/delete sources); `/admin/users` page for listing users, granting/revoking admin, resetting onboarding, subscribing/unsubscribing any user to/from any podcast, and cascade-deleting a user (`auth.admin.deleteUser` removes `auth.users` and every `ON DELETE CASCADE` row across `user_profiles`, `user_subscriptions`, `insight_bookmarks`, `insight_reactions`, `insight_comments`, `comment_reactions` in one call — the safe way to fully remove a user, vs. manually deleting rows from individual tables)
+- **RLS**: `user_profiles`, `user_subscriptions`, `sources`, `insight_reactions`, `insight_bookmarks`, `insight_comments`, `comment_reactions` all have row-level security; `insights` and `insight_views` are public-readable; `insight_views` additionally allows authenticated users to delete their own rows (Mark as Unread); migration 016 adds `is_admin_user()` (SECURITY DEFINER) and a `profiles_admin_select_all` policy so admins can read every `user_profiles` row (previously self-only) — required for the Manage Users page and its live Realtime updates; migration 016 also adds `user_profiles` to the `supabase_realtime` publication
 
 ---
 
