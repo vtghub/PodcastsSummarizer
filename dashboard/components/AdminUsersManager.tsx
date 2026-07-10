@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Shield, ShieldOff, RotateCcw, Trash2, Loader2, Search, Mail, MailX, Users, ChevronDown, ChevronUp } from "lucide-react";
+import { Shield, ShieldOff, RotateCcw, Trash2, Loader2, Search, Mail, MailX, Users, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { getDomainColor } from "@/lib/domain-colors";
+
+const POLL_INTERVAL_MS = 30_000;
 
 interface SubChannel { name: string; domain: string }
 
@@ -27,6 +29,8 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
   const [actionId, setActionId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const knownIds = useRef<Set<string> | null>(null);
 
   const [toast, setToast] = useState<{ msg: string; type: "error" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -36,18 +40,42 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
     toastTimer.current = setTimeout(() => setToast(null), 4000);
   }
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setRefreshing(true);
     try {
       const res = await fetch("/api/admin/users");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load users");
-      setUsers(data.users);
+      const nextUsers: AdminUser[] = data.users;
+
+      if (knownIds.current) {
+        const newOnes = nextUsers.filter((u) => !knownIds.current!.has(u.id));
+        if (newOnes.length > 0) {
+          showToast(
+            newOnes.length === 1
+              ? `New user registered: ${newOnes[0].email}`
+              : `${newOnes.length} new users registered`,
+            "success"
+          );
+        }
+      }
+      knownIds.current = new Set(nextUsers.map((u) => u.id));
+
+      setUsers(nextUsers);
+      setLoadError("");
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load users");
+    } finally {
+      if (!opts?.silent) setRefreshing(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const interval = setInterval(() => load({ silent: true }), POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [load]);
 
   const filtered = (users ?? []).filter((u) => {
     const q = query.trim().toLowerCase();
@@ -111,12 +139,24 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
 
   return (
     <div className="max-w-5xl mx-auto">
-      <div className="flex items-center gap-3 mb-1">
-        <Users className="w-6 h-6" style={{ color: "var(--acc)" }} />
-        <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>Manage Users</h1>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-3">
+          <Users className="w-6 h-6" style={{ color: "var(--acc)" }} />
+          <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>Manage Users</h1>
+        </div>
+        <button
+          onClick={() => load()}
+          disabled={refreshing}
+          title="Refresh user list"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60"
+          style={{ background: "var(--bg-elevated)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
       </div>
       <p className="text-sm mb-6" style={{ color: "var(--txt-3)" }}>
-        {users ? `${users.length} user${users.length !== 1 ? "s" : ""}` : "Loading…"}
+        {users ? `${users.length} user${users.length !== 1 ? "s" : ""} · auto-refreshes every 30s` : "Loading…"}
       </p>
 
       <div className="relative mb-4">
