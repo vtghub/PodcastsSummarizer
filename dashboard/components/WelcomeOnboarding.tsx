@@ -69,7 +69,7 @@ export default function WelcomeOnboarding({ displayName }: { displayName?: strin
       <Link
         href="/onboarding"
         className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-opacity hover:opacity-90"
-        style={{ background: "var(--acc)", color: "var(--acc-txt)" }}
+        style={{ background: "var(--acc)", color: "#fff" }}
       >
         Set up my feed
         <ArrowRight className="w-4 h-4" />
