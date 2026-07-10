@@ -46,6 +46,19 @@ select option {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* Thin, themed horizontal scrollbar — visible so users can drag it directly */
+.scrollbar-x {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bdr-hov, #C7BFB4) transparent;
+}
+.scrollbar-x::-webkit-scrollbar { height: 6px; }
+.scrollbar-x::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-x::-webkit-scrollbar-thumb {
+  background: var(--bdr-hov, #C7BFB4);
+  border-radius: 999px;
+}
+.scrollbar-x::-webkit-scrollbar-thumb:hover { background: var(--txt-4, #A8A29E); }
+
 /* Card hover lift */
 .card-lift {
   transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;

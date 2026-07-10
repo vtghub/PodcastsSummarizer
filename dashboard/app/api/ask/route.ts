@@ -209,6 +209,70 @@ export async function POST(request: Request) {
   const insightSelect =
     "id, date, domain, summary, key_points, key_quotes, action_items, sources!inner(name), episodes(title)";
 
+  // 0. Does the question name a specific subscribed podcast? FTS below searches insight
+  // content (summaries/quotes), not podcast names — so "what's the latest from <show>"
+  // finds nothing unless the show name happens to appear inside an insight's text. When a
+  // subscribed source is named directly, go fetch that source's own insights first so the
+  // answer is grounded in the right podcast instead of falling back to unrelated recent ones.
+  let namedSourceInsights: InsightRow[] = [];
+  let namedSourceWithNoInsights: string | null = null;
+
+  if (subscribedSourceIds.length > 0) {
+    const { data: subSources } = await sb
+      .from("sources")
+      .select("id, name")
+      .in("id", subscribedSourceIds);
+
+    const questionLower = question.toLowerCase();
+    let mentionedSources = (subSources ?? []).filter(
+      (s: { id: string; name: string }) => s.name.length >= 4 && questionLower.includes(s.name.toLowerCase())
+    );
+
+    // Some catalog names contain another's as a substring (e.g. "Claude AI" is
+    // itself a substring of "Claude AI Genius Podcast ..."), so mentioning the
+    // longer name spuriously also "mentions" the shorter one. Keep only the
+    // most specific (longest) match(es) so its insights aren't crowded out.
+    mentionedSources = mentionedSources.filter(
+      (s: { name: string }) =>
+        !mentionedSources.some(
+          (other: { name: string }) =>
+            other.name.length > s.name.length && other.name.toLowerCase().includes(s.name.toLowerCase())
+        )
+    );
+
+    if (mentionedSources.length > 0) {
+      // Fetch each mentioned source's insights separately (rather than one
+      // shared-limit query) so a prolific podcast can't crowd out a quieter
+      // one when more than one is named in the same question.
+      const perSourceResults = await Promise.all(
+        mentionedSources.map((s: { id: string }) =>
+          sb
+            .from("insights")
+            .select(insightSelect)
+            .eq("source_id", s.id)
+            .order("date", { ascending: false })
+            .limit(5)
+        )
+      );
+      namedSourceInsights = perSourceResults.flatMap((r) => (r.data ?? []) as InsightRow[]);
+
+      if (namedSourceInsights.length === 0 && mentionedSources.length === 1) {
+        namedSourceWithNoInsights = mentionedSources[0].name;
+      }
+    }
+  }
+
+  // A named podcast is subscribed but has no processed episodes yet — answer honestly
+  // instead of letting the LLM see unrelated context and guess.
+  if (namedSourceWithNoInsights) {
+    return NextResponse.json({
+      answer:
+        `You're subscribed to ${namedSourceWithNoInsights}, but no episodes from it have been processed into insights yet. ` +
+        `Episodes are picked up automatically every few hours, or you can process one now from the Episode Digest section on your Profile page.`,
+      citations: [],
+    });
+  }
+
   // 1. FTS search restricted to user's subscriptions
   let ftsQuery = sb
     .from("insights")
@@ -227,6 +291,15 @@ export async function POST(request: Request) {
   }
 
   let insights: InsightRow[] = (ftsData ?? []) as InsightRow[];
+
+  // Merge in the named-podcast insights (if any), prioritized first and deduped
+  if (namedSourceInsights.length > 0) {
+    const merged = [...namedSourceInsights];
+    for (const ins of insights) {
+      if (!merged.some((m) => m.id === ins.id)) merged.push(ins);
+    }
+    insights = merged.slice(0, 8);
+  }
 
   // 2. Fallback: most recent insights from subscriptions
   if (insights.length === 0 && subscribedSourceIds.length > 0) {
@@ -267,7 +340,7 @@ export async function POST(request: Request) {
 
   const prompt = `You are a helpful assistant that answers questions based on podcast insights.
 
-A user subscribes to several podcasts. Below are the most relevant insight summaries from their subscribed episodes. Answer the user's question using only this context. Be concise, specific, and cite which source(s) you draw from using [1], [2], etc. If the context doesn't adequately answer the question, say so honestly rather than guessing.
+A user subscribes to several podcasts. Below are the most relevant insight summaries from their subscribed episodes. For any single podcast, its entries are listed newest episode first. If the user asks for the "latest" or "most recent" episode from a specific podcast, that is simply the first entry belonging to that podcast in the list below — you don't need to compare dates yourself. Answer the user's question using only this context. Be concise, specific, and cite which source(s) you draw from using [1], [2], etc. If the context doesn't adequately answer the question, say so honestly rather than guessing.
 
 === PODCAST INSIGHTS ===
 ${contextText}

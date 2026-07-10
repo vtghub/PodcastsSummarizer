@@ -75,7 +75,7 @@ graph TB
         ARENG["/api/insights/[id]/engagement\nGET ?view=1 · /unread DELETE\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
         AREXP["/api/insights/export\nGET ?format=excel|word&date=\nauthed — download insights\n(PDF generated client-side via jsPDF)"]
         ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
-        ARASK["/api/ask\nPOST — LLM Q&A\nFTS context + 6-model waterfall\nGemini→Groq→Mistral→Together→Cohere"]
+        ARASK["/api/ask\nPOST — LLM Q&A\nnamed-podcast lookup + FTS context\n6-model waterfall: Gemini→Groq→Mistral→Together→Cohere"]
         ARADMINUSERS["/api/admin/users\nGET list (admin only)\n/[id] PATCH is_admin|reset_onboarding\n/[id] DELETE — auth.admin.deleteUser cascade\n/[id]/subscriptions GET catalog+subs · POST/DELETE sourceId"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
         ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]

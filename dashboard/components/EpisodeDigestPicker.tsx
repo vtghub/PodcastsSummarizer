@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, Send, CheckCircle, AlertCircle, Zap, Clock } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Loader2, Send, CheckCircle, AlertCircle, Zap, Clock, Search, ChevronDown } from "lucide-react";
 import type { Source, EpisodeItem } from "@/lib/db";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -49,6 +50,43 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   const [state, setState]           = useState<ButtonState>("idle");
   const [message, setMessage]       = useState("");
   const [queuedIds, setQueuedIds]   = useState<Set<string>>(new Set());
+
+  const [podcastQuery, setPodcastQuery] = useState("");
+  const [podcastOpen, setPodcastOpen]   = useState(false);
+  const [panelPos, setPanelPos] = useState({ top: 0, left: 0, width: 0 });
+  const podcastRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  function openPodcastDropdown() {
+    const rect = podcastRef.current?.getBoundingClientRect();
+    if (rect) setPanelPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    setPodcastOpen(true);
+  }
+
+  // Click outside either the trigger or the portal'd panel closes it
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (podcastRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setPodcastOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  // Scrolling or resizing while open would leave the portal panel misaligned
+  // with its trigger (it's positioned in viewport coordinates) — just close it.
+  useEffect(() => {
+    if (!podcastOpen) return;
+    function close() { setPodcastOpen(false); }
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [podcastOpen]);
 
   // Tracks which episode ID should be auto-sent once processing completes.
   // Using a ref avoids stale-closure issues inside the Realtime useEffect.
@@ -227,23 +265,87 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   // Is the currently-selected episode the one pending auto-send?
   const isAutoSendPending = selectedEpisode && pendingSendRef.current === selectedEpisode.id;
 
+  const selectedSource = subscribedSources.find((s) => s.id === sourceId);
+  const filteredSources = podcastQuery
+    ? subscribedSources.filter((s) => s.name.toLowerCase().includes(podcastQuery.toLowerCase()))
+    : subscribedSources;
+
   return (
     <div className="space-y-3">
       {/* Podcast selector */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>Podcast</label>
-        <select
-          value={sourceId}
-          onChange={(e) => setSourceId(e.target.value)}
-          className="input"
-          disabled={busy}
-        >
-          <option value="">— choose a podcast —</option>
-          {subscribedSources.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+        <div ref={podcastRef} className="relative">
+          <button
+            type="button"
+            onClick={() => (podcastOpen ? setPodcastOpen(false) : openPodcastDropdown())}
+            disabled={busy}
+            className="input flex items-center justify-between gap-2 disabled:opacity-60"
+          >
+            <span className="truncate" style={{ color: selectedSource ? "var(--txt-1)" : "var(--txt-4)" }}>
+              {selectedSource ? selectedSource.name : "— choose a podcast —"}
+            </span>
+            <ChevronDown
+              className="w-4 h-4 flex-shrink-0 transition-transform"
+              style={{ color: "var(--txt-4)", transform: podcastOpen ? "rotate(180deg)" : undefined }}
+            />
+          </button>
+        </div>
       </div>
+
+      {podcastOpen && typeof document !== "undefined" && createPortal(
+        <div
+          ref={panelRef}
+          className="fixed rounded-xl border shadow-xl overflow-hidden"
+          style={{
+            top: panelPos.top,
+            left: panelPos.left,
+            width: panelPos.width,
+            zIndex: 100,
+            background: "var(--bg-nav)",
+            borderColor: "var(--bdr-hov)",
+          }}
+        >
+          <div className="relative p-2 border-b" style={{ borderColor: "var(--bdr)" }}>
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--txt-4)" }} />
+            <input
+              autoFocus
+              value={podcastQuery}
+              onChange={(e) => setPodcastQuery(e.target.value)}
+              placeholder="Search podcasts…"
+              className="input"
+              style={{ paddingLeft: "2.25rem" }}
+              autoComplete="off"
+            />
+          </div>
+          <ul className="max-h-56 overflow-y-auto">
+            {filteredSources.length === 0 ? (
+              <li className="px-3 py-2.5 text-xs" style={{ color: "var(--txt-4)" }}>No podcasts match.</li>
+            ) : (
+              filteredSources.map((s) => (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSourceId(s.id);
+                      setPodcastOpen(false);
+                      setPodcastQuery("");
+                    }}
+                    className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:opacity-80"
+                    style={{
+                      color: "var(--txt-1)",
+                      background: s.id === sourceId ? "var(--bg-elevated)" : "transparent",
+                    }}
+                  >
+                    {s.name}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>,
+        document.body
+      )}
 
       {/* Episode selector */}
       {sourceId && (

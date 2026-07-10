@@ -229,6 +229,22 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
     }
   }, [activeDomains, selectedDomain]);
 
+  // Catalog-wide search — matches across all domains, not just the active tab
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const trimmedQuery = catalogQuery.trim().toLowerCase();
+  const isSearching = trimmedQuery.length > 0;
+
+  const catalogResults = isSearching
+    ? localSources.filter((s) => s.name.toLowerCase().includes(trimmedQuery))
+    : [];
+
+  const searchDomainGroups = DOMAIN_ORDER.reduce<Record<string, Source[]>>((acc, domain) => {
+    const inDomain = catalogResults.filter((s) => s.domain === domain);
+    if (inDomain.length > 0) acc[domain] = inDomain;
+    return acc;
+  }, {});
+  const searchActiveDomains = DOMAIN_ORDER.filter((d) => searchDomainGroups[d]);
+
   return (
     <>
       {/* Header */}
@@ -289,44 +305,105 @@ export default function PodcastManager({ sources, subscribedIds, isAuthed, isAdm
         </div>
       ) : (
         <>
-          {/* Domain tabs */}
-          <div className="flex gap-2 mb-6 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0 no-scrollbar">
-            {activeDomains.map((domain) => {
-              const c = getDomainColor(domain);
-              const active = domain === selectedDomain;
-              return (
-                <button
-                  key={domain}
-                  onClick={() => setSelectedDomain(domain)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all flex-shrink-0 ${
-                    active ? `${c.bg} ${c.text} ${c.border} shadow-sm` : "opacity-50 hover:opacity-80"
-                  }`}
-                  style={active ? {} : { background: "var(--bg-elevated)", borderColor: "var(--bdr)", color: "var(--txt-3)" }}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-                  {domain}
-                  <span className={active ? "opacity-70" : "opacity-50"}>
-                    ({domainGroups[domain].length})
-                  </span>
-                </button>
-              );
-            })}
+          {/* Catalog search — matches across all domains */}
+          <div className="relative mb-6">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--txt-4)" }} />
+            <input
+              value={catalogQuery}
+              onChange={(e) => setCatalogQuery(e.target.value)}
+              placeholder="Search all podcasts…"
+              className="input"
+              style={{ paddingLeft: "2.25rem", paddingRight: catalogQuery ? "2.25rem" : undefined }}
+              autoComplete="off"
+            />
+            {catalogQuery && (
+              <button
+                type="button"
+                onClick={() => setCatalogQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+                style={{ color: "var(--txt-4)" }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
-          {/* Active domain cards */}
-          {selectedDomain && domainGroups[selectedDomain] && (
-            <DomainSection
-              domain={selectedDomain}
-              sources={domainGroups[selectedDomain]}
-              subscribedIds={localSubs}
-              actionId={actionId}
-              isAuthed={isAuthed}
-              isAdmin={isAdmin}
-              onSubscribe={handleSubscribe}
-              onToggle={handleToggle}
-              onDelete={handleDelete}
-              onClassify={handleClassify}
-            />
+          {isSearching ? (
+            <>
+              <p className="text-xs mb-4" style={{ color: "var(--txt-4)" }}>
+                {catalogResults.length} result{catalogResults.length !== 1 ? "s" : ""} for &quot;{catalogQuery.trim()}&quot;
+                {searchActiveDomains.length > 0 &&
+                  ` across ${searchActiveDomains.length} domain${searchActiveDomains.length !== 1 ? "s" : ""}`}
+              </p>
+              {searchActiveDomains.length === 0 ? (
+                <div className="flex flex-col items-center py-16 text-center">
+                  <span className="text-4xl mb-3">🔍</span>
+                  <p className="text-sm" style={{ color: "var(--txt-3)" }}>
+                    No podcasts match &quot;{catalogQuery.trim()}&quot;.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {searchActiveDomains.map((domain) => (
+                    <DomainSection
+                      key={domain}
+                      domain={domain}
+                      sources={searchDomainGroups[domain]}
+                      subscribedIds={localSubs}
+                      actionId={actionId}
+                      isAuthed={isAuthed}
+                      isAdmin={isAdmin}
+                      onSubscribe={handleSubscribe}
+                      onToggle={handleToggle}
+                      onDelete={handleDelete}
+                      onClassify={handleClassify}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Domain tabs */}
+              <div className="flex gap-2 mb-6 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0 no-scrollbar">
+                {activeDomains.map((domain) => {
+                  const c = getDomainColor(domain);
+                  const active = domain === selectedDomain;
+                  return (
+                    <button
+                      key={domain}
+                      onClick={() => setSelectedDomain(domain)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all flex-shrink-0 ${
+                        active ? `${c.bg} ${c.text} ${c.border} shadow-sm` : "opacity-50 hover:opacity-80"
+                      }`}
+                      style={active ? {} : { background: "var(--bg-elevated)", borderColor: "var(--bdr)", color: "var(--txt-3)" }}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                      {domain}
+                      <span className={active ? "opacity-70" : "opacity-50"}>
+                        ({domainGroups[domain].length})
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Active domain cards */}
+              {selectedDomain && domainGroups[selectedDomain] && (
+                <DomainSection
+                  domain={selectedDomain}
+                  sources={domainGroups[selectedDomain]}
+                  subscribedIds={localSubs}
+                  actionId={actionId}
+                  isAuthed={isAuthed}
+                  isAdmin={isAdmin}
+                  onSubscribe={handleSubscribe}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                  onClassify={handleClassify}
+                />
+              )}
+            </>
           )}
         </>
       )}
