@@ -95,6 +95,7 @@ PodcastsSummarizer/
 │   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, digest frequency (daily/weekly), episode digest picker
 │   │   ├── onboarding/page.tsx      # New-user onboarding wizard (auth-required; redirects to /dashboard if already subscribed)
 │   │   ├── about/page.tsx           # Public About page — feature overview, CTA buttons (no auth required)
+│   │   ├── ask/page.tsx             # LLM Q&A chat — suggested questions, chat bubbles, citation cards (signed-in)
 │   │   ├── login/page.tsx           # Email + password sign-in
 │   │   ├── register/page.tsx        # New user registration
 │   │   └── api/
@@ -118,13 +119,14 @@ PodcastsSummarizer/
 │   │       ├── insights/[id]/bookmark/ # GET is-bookmarked · POST toggle bookmark on/off (authed)
 │   │       ├── insights/[id]/react/ # GET counts+mine · POST toggle like/dislike
 │   │       ├── insights/[id]/comments/ # GET list · POST add comment
-│   │       ├── insights/export/     # GET ?format=csv|pdf&date=YYYY-MM-DD — download insights for a date (authed)
+│   │       ├── insights/export/     # GET ?format=csv|word|json|pdf&date=YYYY-MM-DD — download insights for a date (authed)
 │   │       ├── insights/search/     # GET ?q= — full-text websearch across summary, key_points, quotes, tags; optional ?domain= ?from= ?to= filters
+│   │       ├── ask/                 # POST — LLM Q&A: FTS context retrieval + 6-model waterfall (Gemini→Groq→Mistral→Together→Cohere)
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
-│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved + My Podcasts links (signed-in, desktop only), About link (always visible), "N new" pill when unread insights exist, user dropdown, TTS toggle, theme picker
+│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved + My Podcasts + Ask links (signed-in, desktop only), About link (always visible), "N new" pill when unread insights exist, user dropdown, TTS toggle, theme picker
 │   │   ├── AnalyticsDashboard.tsx   # Client component — KPI cards, SVG bar chart (insights/day), domain breakdown bars, top-10 most-viewed list
-│   │   ├── ExportDropdown.tsx       # Client component — "↓ Export ▾" button with CSV / JSON / PDF options
+│   │   ├── ExportDropdown.tsx       # Client component — "↓ Export ▾" button with PDF / Word / CSV / JSON options; left-aligned dropdown for mobile
 │   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud, bookmark toggle (☆/★), engagement bar
 │   │   ├── SavedInsightsList.tsx    # Client wrapper for /saved — renders bookmarked InsightCards with empty state
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client) + Supabase Realtime subscription (auto-refresh on new insights)
@@ -254,6 +256,11 @@ All providers are swapped via `.env` — no code changes needed:
 | `GH_TOKEN` | Phase 2 episode processing | GitHub PAT with `workflow` scope — used by `/api/digest/process` to trigger `workflow_dispatch` |
 | `GH_OWNER` | No | GitHub repo owner (default: `vtghub`) |
 | `GH_REPO` | No | GitHub repo name (default: `PodcastsSummarizer`) |
+| `GEMINI_API_KEY` | Ask AI | Google AI Studio key — primary LLM for `/api/ask` |
+| `GROQ_API_KEY` | Ask AI | Groq key — fallback #2 and #3 (Llama 3.1 8B + Llama 3.3 70B) |
+| `MISTRAL_API_KEY` | Ask AI | Mistral AI key — fallback #4 (mistral-small-latest) |
+| `TOGETHER_API_KEY` | Ask AI | Together AI key — fallback #5 (Llama 3.1 8B Instruct Turbo) |
+| `COHERE_API_KEY` | Ask AI | Cohere key — fallback #6 (Command R) |
 
 ### GitHub Actions Secrets
 
@@ -309,13 +316,14 @@ npm run dev      # http://localhost:3000
 | **Episode Digest** | Pick a subscribed podcast + episode → instant email (✓) or fire-and-forget async processing (○, triggers GitHub Actions); clicking "Process & Send Digest" on an unprocessed episode queues the pipeline **and automatically sends the digest email when processing completes** — no second click needed; button shows "Processing — will send when ready…" during the wait; queued episodes show ⏳ in the dropdown; queued state persisted in localStorage (20-min TTL); when pipeline completes the ⏳ flips to ✓ live via Supabase Realtime (no page refresh); if pipeline fails, the `episode_queue` table receives a `failed` status row — Realtime pushes it to the browser instantly, resetting the episode to ○ with an error message (no polling) |
 | **Engagement** | Per-card: view count (auto-tracked, deduped per signed-in user), **Mark as Unread** (`EyeOff` icon — appears when a card is already read; deletes the caller's `insight_views` row so the card returns to full opacity and view count decrements; rolls back on error), like/dislike with optimistic UI and toggle-off, **copy-to-clipboard** button (writes both `text/html` and `text/plain` via `ClipboardItem` — pasting into Notion/Docs/email produces rich formatting with headings, bullets, and blockquotes; pasting into plain text gives clean ASCII; falls back to `writeText` on older browsers; icon swaps to ✓ for 2 s on success), share dropdown (Twitter/X, LinkedIn, Facebook, WhatsApp, Reddit, Telegram, Gmail, Copy link — share URL is a deep link encoding date + domain tab + card anchor so recipients land directly on the shared insight), collapsible comments panel with per-comment like/dislike and delete-own-comment; reactions and comments require sign-in; views tracked for all visitors |
 | **Platform Links** | Each insight card shows a "Listen on" icon row — Spotify (green), Apple Podcasts (purple), YouTube (red), Website — linked to the correct platform; URLs auto-discovered by the pipeline: Apple via iTunes Search API (public, no key), Spotify + YouTube via Podcast 2.0 namespace tags in the RSS feed, Website from RSS `<channel><link>`; no API key required; when a new podcast is added to the catalog, a fire-and-forget `workflow_dispatch` to `backfill_platform_links.yml` runs automatically so icons appear without manual backfill |
-| **Export** | Signed-in users click "↓ Export ▾" next to the date navigator to open a dropdown with three formats — **CSV** (download spreadsheet: Date, Domain, Source, Episode, Summary, Key Points, Key Quotes, Action Items, Tags; pipe-separated within cells), **JSON** (pretty-printed download with all fields as arrays), **PDF** (real binary PDF generated client-side via jsPDF — no new tab, no print dialog; insights grouped by domain with colored badges, white cards, blockquote-style quotes, section headers, page numbers, and automatic page-break logic that keeps domain badges with their content); all formats served by `GET /api/insights/export?format=csv|json|pdf&date=YYYY-MM-DD` (auth required) |
+| **Export** | Signed-in users click "↓ Export ▾" next to the date navigator to open a dropdown with four formats (ordered PDF, Word, CSV, JSON) — **PDF** (real binary PDF generated client-side via jsPDF — no new tab, no print dialog; insights grouped by domain with colored badges, white cards, blockquote-style quotes, section headers, page numbers, and automatic page-break logic), **Word** (rich `.docx` Open XML generated server-side via the `docx` npm package — colored domain badge shading, bold section labels, bullet key points, italic block-quoted key quotes with colored left border, action item arrows, hashtag tags; compatible with Word 2007+), **CSV** (spreadsheet: Date, Domain, Source, Episode, Summary, Key Points, Key Quotes, Action Items, Tags; pipe-separated within cells), **JSON** (pretty-printed download with all fields as arrays); all formats served by `GET /api/insights/export?format=pdf|word|csv|json&date=YYYY-MM-DD` (auth required); dropdown is left-aligned and compact for mobile |
 | **Bookmarks** | Signed-in users can bookmark any insight with the ☆/★ button on the engagement bar (amber when saved); toggle-style — click once to save, click again to remove; optimistic UI with server reconciliation; saved insights appear on `/saved` page sorted by bookmark date; **Saved** link in the navbar (signed-in users only) |
 | **Analytics** | `/analytics` page (signed-in only) — four KPI cards (total insights, views, subscribed sources, days with insights); SVG bar chart of insights per day (last 30 days); domain breakdown with proportional horizontal bars; top-10 most-viewed insights ranked list with deep links back to the insight card |
-| **About Page** | Public `/about` page — no auth required; hero, 7 feature cards with Lucide icons, and Get Started / Sign in CTA; "About" link visible in the navbar for all visitors |
+| **Ask AI (Q&A)** | Signed-in users can ask any question in plain language on the `/ask` page; the system searches their subscribed episode insights via Postgres FTS, builds a context block, and calls an LLM to answer with inline citations (e.g. [1], [2]); each citation card links directly to the exact insight on the dashboard. **6-model free-tier waterfall** — Gemini 2.0 Flash → Groq Llama 3.1 8B → Groq Llama 3.3 70B → Mistral Small → Together AI Llama 3.1 8B → Cohere Command R; providers are tried in order and skipped on 429/quota without surfacing errors to the user. "Ask" link in desktop navbar; **Ask** tab in mobile bottom bar. |
+| **About Page** | Public `/about` page — no auth required; hero, 9 feature cards with Lucide icons (including Ask AI and Export), and Get Started / Sign in CTA; "About" link visible in the navbar for all visitors |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **New Insights Indicator** | When new episodes have been processed since the user's last visit, a **"N new"** orange pill appears inline next to the Dashboard link on desktop (with a tooltip); on mobile, the Dashboard bottom-tab icon shows a count badge and a **"new"** sublabel beneath the tab text. Count is derived from `last_visited_at` on `user_profiles` vs. `insights.created_at` for the user's subscribed sources. |
-| **Mobile** | Responsive layout — single-column cards, compact NavBar (My Podcasts hidden — accessible via bottom tab bar), fixed bottom tab bar (Dashboard · Podcasts · Analytics · Profile); domain filter strips are horizontally scrollable on mobile across Dashboard and Podcast Catalog |
+| **Mobile** | Responsive layout — single-column cards, compact NavBar (My Podcasts hidden — accessible via bottom tab bar), fixed bottom tab bar (Dashboard · Podcasts · **Ask** · Profile); domain filter strips are horizontally scrollable on mobile across Dashboard and Podcast Catalog |
 
 ---
 
