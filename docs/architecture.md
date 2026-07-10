@@ -48,12 +48,14 @@ graph TB
     subgraph DASH["🌐 Next.js 15 Dashboard — Vercel"]
         MW["middleware.ts\nSession refresh · API guard"]
         LAYOUT["layout.tsx (async)\ngetUser() + getDisplayName()"]
-        DPAGE["dashboard/page.tsx\nPersonalized or public preview\n+ CSV export button"]
+        DPAGE["dashboard/page.tsx\nPersonalized or public preview\n+ PDF/Excel/Word export button"]
         PPAGE["podcasts/page.tsx\nCatalog + subscribe toggles"]
         PROF["profile/page.tsx\nDisplay name · digest prefs"]
         APAGE["analytics/page.tsx\nKPI cards · chart · top insights"]
         SPAGE["saved/page.tsx\nBookmarked insights list"]
+        ASKPAGE["ask/page.tsx\nLLM Q&A chat UI\nsuggested questions · citations"]
         ONBOARD["onboarding/page.tsx\nDomain picker + subscribe wizard"]
+        ADMINUSERS["admin/users/page.tsx\nAdmin-only — list/search users,\ngrant/revoke admin, reset onboarding,\ncascade-delete user"]
         REG["register/page.tsx"]
         LOGIN["login/page.tsx"]
         CACHE["unstable_cache\n1h TTL — public views only"]
@@ -71,8 +73,10 @@ graph TB
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
         ARREC["/api/recommendations/podcasts\nGET ?domains= → catalog + iTunes suggestions"]
         ARENG["/api/insights/[id]/engagement\nGET ?view=1 · /unread DELETE\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
-        AREXP["/api/insights/export\nGET ?format=csv|pdf&date=\nauthed — download insights"]
+        AREXP["/api/insights/export\nGET ?format=excel|word&date=\nauthed — download insights\n(PDF generated client-side via jsPDF)"]
         ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
+        ARASK["/api/ask\nPOST — LLM Q&A\nFTS context + 6-model waterfall\nGemini→Groq→Mistral→Together→Cohere"]
+        ARADMINUSERS["/api/admin/users\nGET list (admin only)\n/[id] PATCH is_admin|reset_onboarding\n/[id] DELETE — auth.admin.deleteUser cascade"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
         ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]
     end
@@ -113,6 +117,7 @@ graph TB
     LAYOUT --> APAGE
     LAYOUT --> SPAGE
     LAYOUT --> ONBOARD
+    LAYOUT --> ADMINUSERS
     LAYOUT --> REG
     LAYOUT --> LOGIN
 
@@ -145,6 +150,8 @@ graph TB
     ARENG --> CREACTIONS
     SPAGE --> BOOKMARKS
     ARFTS --> INSIGHTS
+    ARASK --> INSIGHTS
+    ARASK --> SUBS
     AREXP --> INSIGHTS
     APAGE --> INSIGHTS
     APAGE --> VIEWS
@@ -152,6 +159,11 @@ graph TB
     ARDIGPREV --> INSIGHTS
     LLM -.->|POST after insights saved| ARREV
     ARREV -.->|revalidateTag insights| CACHE
+
+    ADMINUSERS --> ARADMINUSERS
+    ARADMINUSERS --> AUTHUSERS
+    ARADMINUSERS --> PROFILES
+    ARADMINUSERS --> SUBS
 
     LLM --> EPQUEUE
     INSIGHTS -.->|Realtime broadcast| RT

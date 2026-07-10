@@ -993,3 +993,63 @@ sequenceDiagram
         end
     end
 ```
+
+---
+
+## 26. Admin — Manage Users
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (admin)
+    participant PAGE as admin/users/page.tsx
+    participant MGR as AdminUsersManager.tsx
+    participant MW as middleware.ts
+    participant LIST as GET /api/admin/users
+    participant DETAIL as /api/admin/users/[id]
+    participant AUTH as Supabase Auth Admin API
+    participant DB as Supabase (Postgres)
+
+    B->>PAGE: navigate to /admin/users
+    PAGE->>PAGE: getUser() — not signed in? redirect /login
+    PAGE->>PAGE: isAdmin() — false? redirect /dashboard
+    PAGE->>MGR: render (currentUserId)
+
+    MGR->>LIST: GET /api/admin/users
+    LIST->>LIST: isAdmin() check (403 if false)
+    LIST->>AUTH: auth.admin.listUsers({ perPage: 1000 })
+    AUTH-->>LIST: auth.users rows (id, email, created_at, email_confirmed_at)
+    LIST->>DB: SELECT user_id, display_name, is_admin, digest_enabled, created_at FROM user_profiles
+    LIST->>DB: SELECT user_id FROM user_subscriptions WHERE enabled=true
+    DB-->>LIST: profiles + subscription rows
+    LIST->>LIST: merge by user_id; has_profile=false if no matching profile row<br/>(surfaces orphaned auth.users left behind by manual DB deletes)
+    LIST-->>MGR: { users: [...] } sorted newest first
+    MGR->>B: render table — email, display name, ADMIN badge, subscription count,<br/>verified/unverified, "no profile row" warning
+
+    B->>MGR: type in search box
+    MGR->>MGR: client-side filter by email / display_name
+
+    alt Grant/Revoke admin
+        B->>MGR: click Shield icon
+        MGR->>DETAIL: PATCH /api/admin/users/[id] { is_admin: !current }
+        DETAIL->>DETAIL: isAdmin() check · block self-revoke (id===callerId && is_admin=false)
+        DETAIL->>DB: UPDATE user_profiles SET is_admin=? WHERE user_id=?
+        DETAIL-->>MGR: { ok: true }
+        MGR->>MGR: update row locally, show success toast
+    else Reset onboarding
+        B->>MGR: click RotateCcw icon
+        MGR->>DETAIL: PATCH /api/admin/users/[id] { reset_onboarding: true }
+        DETAIL->>DB: DELETE FROM user_subscriptions WHERE user_id=?
+        Note over DETAIL,DB: user's next /dashboard visit finds 0 subscriptions<br/>→ redirect("/onboarding") — same wizard new users see
+        DETAIL-->>MGR: { ok: true }
+        MGR->>MGR: subscription_count → 0 locally, show success toast
+    else Delete user
+        B->>MGR: click Trash icon → Confirm
+        MGR->>DETAIL: DELETE /api/admin/users/[id]
+        DETAIL->>DETAIL: isAdmin() check · block self-delete (id===callerId)
+        DETAIL->>AUTH: auth.admin.deleteUser(id)
+        Note over AUTH,DB: removes auth.users row; every table with a user_id FK<br/>(user_profiles, user_subscriptions, insight_bookmarks,<br/>insight_reactions, insight_comments, comment_reactions)<br/>is ON DELETE CASCADE and is cleaned up automatically
+        AUTH-->>DETAIL: { error: null }
+        DETAIL-->>MGR: { ok: true }
+        MGR->>MGR: remove row locally, show success toast
+    end
+```
