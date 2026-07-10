@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Shield, ShieldOff, RotateCcw, Trash2, Loader2, Search, Mail, MailX, Users, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { getDomainColor } from "@/lib/domain-colors";
-
-const POLL_INTERVAL_MS = 30_000;
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 interface SubChannel { name: string; domain: string }
 
@@ -72,10 +71,28 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
 
   useEffect(() => { load(); }, [load]);
 
+  // Push-based refresh: Supabase Realtime notifies us the instant a new
+  // user_profiles row is inserted (registration) or removed (deletion),
+  // instead of polling on a timer. Requires migration 016 (admin RLS +
+  // user_profiles added to the supabase_realtime publication).
   useEffect(() => {
-    const interval = setInterval(() => load({ silent: true }), POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [load]);
+    const supabase = getSupabaseBrowserClient();
+    const channel = supabase
+      .channel("admin-users")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "user_profiles" },
+        () => load({ silent: true })
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "user_profiles" },
+        () => load({ silent: true })
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = (users ?? []).filter((u) => {
     const q = query.trim().toLowerCase();
@@ -156,7 +173,7 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
         </button>
       </div>
       <p className="text-sm mb-6" style={{ color: "var(--txt-3)" }}>
-        {users ? `${users.length} user${users.length !== 1 ? "s" : ""} · auto-refreshes every 30s` : "Loading…"}
+        {users ? `${users.length} user${users.length !== 1 ? "s" : ""} · updates live` : "Loading…"}
       </p>
 
       <div className="relative mb-4">
