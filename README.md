@@ -124,7 +124,7 @@ PodcastsSummarizer/
 │   │       ├── ask/                 # POST — LLM Q&A: FTS context retrieval + 6-model waterfall (Gemini→Groq→Mistral→Together→Cohere)
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
-│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved + My Podcasts + Ask links (signed-in, desktop only), About link (always visible), "N new" pill when unread insights exist, user dropdown, TTS toggle, theme picker
+│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved + My Podcasts + Ask links (signed-in, desktop only), About link (always visible), "N new" pill when unread insights exist, user dropdown, TTS toggle, theme picker; listens for custom "profile:displayname" event to update display name instantly on profile save
 │   │   ├── AnalyticsDashboard.tsx   # Client component — KPI cards, SVG bar chart (insights/day), domain breakdown bars, top-10 most-viewed list
 │   │   ├── ExportDropdown.tsx       # Client component — "↓ Export ▾" button with PDF / Excel / Word options; left-aligned dropdown for mobile
 │   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud, bookmark toggle (☆/★), engagement bar
