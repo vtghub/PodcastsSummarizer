@@ -955,11 +955,25 @@ sequenceDiagram
         API->>DB: SELECT source_id FROM user_subscriptions WHERE user_id=? AND enabled=true
         DB-->>API: subscribedSourceIds[]
 
+        Note over API,DB: 0. Does the question name a subscribed podcast?
+        API->>DB: SELECT id, name FROM sources WHERE id IN (subscribedSourceIds)
+        API->>API: match source names as substrings of the question (min 4 chars);<br/>keep only the most specific match if one name contains another<br/>(e.g. "Claude AI" vs. "Claude AI Genius Podcast ...")
+
+        alt podcast named and matched
+            API->>DB: per matched source: SELECT insights WHERE source_id=? ORDER BY date DESC LIMIT 5
+            DB-->>API: namedSourceInsights[] (may be empty)
+            alt exactly one podcast matched AND it has zero insights
+                API-->>PAGE: { answer: "Subscribed but no processed episodes yet...", citations: [] }
+                PAGE->>PAGE: show assistant bubble (no citations)
+            end
+        end
+
         Note over API,DB: 1. FTS search restricted to user's subscriptions
         API->>DB: .textSearch("search_vector", question, {type:"websearch"}) .in("source_id", subscribedSourceIds) .limit(8)
         DB-->>API: matched insights (or empty)
+        API->>API: merge namedSourceInsights ahead of FTS results, dedupe by id, cap at 8
 
-        alt FTS returns 0 results
+        alt FTS + named-source merge returns 0 results
             Note over API,DB: 2. Fallback — most recent insights from subscriptions
             API->>DB: SELECT insights WHERE source_id IN (...) ORDER BY date DESC LIMIT 8
             DB-->>API: recent insights
@@ -970,7 +984,7 @@ sequenceDiagram
             PAGE->>PAGE: show assistant bubble (no citations)
         else has insights
             API->>API: build context block (summary + key_points + key_quotes per insight)
-            API->>API: compose prompt with [1][2]... citation instructions
+            API->>API: compose prompt — notes entries are newest-first per podcast,<br/>with [1][2]... citation instructions
 
             Note over API,LLM1: 6-model waterfall — try each until one succeeds
             API->>LLM1: POST generateContent (Gemini 2.0 Flash)
