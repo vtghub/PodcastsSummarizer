@@ -75,22 +75,25 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  // Scrolling the page (or resizing) while open would leave the portal panel
-  // misaligned with its trigger (it's positioned in viewport coordinates), so
-  // close it — but ignore scrolls inside the panel's own podcast list, since
-  // scroll events don't bubble and this capture-phase window listener would
-  // otherwise see (and close on) every scroll of that internal list too.
+  // Scrolling the page (or resizing — e.g. the on-screen keyboard opening on
+  // mobile when the search input autofocuses) would leave the portal panel
+  // misaligned with its trigger, since it's positioned in viewport
+  // coordinates. Reposition it from the trigger's current rect rather than
+  // closing it — closing on scroll also caught scrolls of the panel's own
+  // podcast list (scroll events don't bubble, so a capture-phase window
+  // listener sees them too), and closed the panel the instant it opened on
+  // mobile once the keyboard's resize/scroll fired.
   useEffect(() => {
     if (!podcastOpen) return;
-    function close(e: Event) {
-      if (panelRef.current?.contains(e.target as Node)) return;
-      setPodcastOpen(false);
+    function reposition() {
+      const rect = podcastRef.current?.getBoundingClientRect();
+      if (rect) setPanelPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
     }
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
     return () => {
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
     };
   }, [podcastOpen]);
 
