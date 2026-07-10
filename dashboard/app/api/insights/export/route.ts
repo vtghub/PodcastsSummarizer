@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getUserId } from "@/lib/auth";
 import { getInsightsByDate, type Insight } from "@/lib/db";
+import {
+  Document, Packer, Paragraph, TextRun, HeadingLevel,
+  BorderStyle, ShadingType, convertInchesToTwip,
+} from "docx";
 
 function escapeCsv(val: unknown): string {
   const s = String(val ?? "").replace(/"/g, '""');
@@ -73,6 +77,187 @@ ${sections}
 </html>`;
 }
 
+const DOMAIN_COLOR: Record<string, string> = {
+  "Technology & AI":           "3b82f6",
+  "Business & Startups":       "10b981",
+  "Health & Science":          "ec4899",
+  "Finance & Investing":       "f59e0b",
+  "Leadership & Productivity": "8b5cf6",
+  "Society & Culture":         "ef4444",
+  "General":                   "6b7280",
+  "Other":                     "6b7280",
+};
+
+async function insightsToWordBuffer(date: string, insights: Insight[]): Promise<Buffer> {
+  const pt = (n: number) => n * 20; // half-points → twips (docx uses half-points via `size`)
+
+  function sectionLabel(text: string, color: string): Paragraph {
+    return new Paragraph({
+      spacing: { before: pt(8), after: pt(3) },
+      children: [
+        new TextRun({
+          text,
+          bold: true,
+          size: 16, // 8pt
+          color,
+          allCaps: true,
+        }),
+      ],
+    });
+  }
+
+  function bullet(text: string): Paragraph {
+    return new Paragraph({
+      indent: { left: convertInchesToTwip(0.25) },
+      spacing: { after: pt(2) },
+      children: [
+        new TextRun({ text: "• ", color: "555555", size: 20 }),
+        new TextRun({ text, size: 20, color: "374151" }),
+      ],
+    });
+  }
+
+  function quote(text: string, color: string): Paragraph {
+    return new Paragraph({
+      indent: { left: convertInchesToTwip(0.3) },
+      spacing: { after: pt(4) },
+      border: {
+        left: { style: BorderStyle.SINGLE, size: 12, color, space: 8 },
+      },
+      children: [
+        new TextRun({ text: `"${text}"`, italics: true, size: 20, color: "555555" }),
+      ],
+    });
+  }
+
+  function actionItem(text: string): Paragraph {
+    return new Paragraph({
+      indent: { left: convertInchesToTwip(0.25) },
+      spacing: { after: pt(2) },
+      children: [
+        new TextRun({ text: "→ ", color: "555555", size: 20 }),
+        new TextRun({ text, size: 20, color: "374151" }),
+      ],
+    });
+  }
+
+  function divider(): Paragraph {
+    return new Paragraph({
+      spacing: { before: pt(10), after: pt(10) },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: "e5e7eb" } },
+      children: [],
+    });
+  }
+
+  const children: Paragraph[] = [
+    // Title
+    new Paragraph({
+      heading: HeadingLevel.TITLE,
+      spacing: { after: pt(4) },
+      children: [
+        new TextRun({ text: "Podcast Insights", bold: true, size: 48, color: "111827", font: "Calibri" }),
+      ],
+    }),
+    // Subtitle
+    new Paragraph({
+      spacing: { after: pt(16) },
+      children: [
+        new TextRun({ text: `${date}  ·  ${insights.length} insight${insights.length !== 1 ? "s" : ""}`, size: 20, color: "6b7280", font: "Calibri" }),
+      ],
+    }),
+    divider(),
+  ];
+
+  for (let i = 0; i < insights.length; i++) {
+    const ins = insights[i];
+    const color = DOMAIN_COLOR[ins.domain] ?? "6b7280";
+
+    // Source · episode line
+    const srcLine = [ins.source_name, ins.episode_title].filter(Boolean).join("  ·  ");
+
+    children.push(
+      new Paragraph({ spacing: { before: pt(12) }, children: [] }), // spacer
+    );
+    // We can't push a Table directly into children[] — collect as sections
+    // Instead use a paragraph with colored background via shading
+    children.push(
+      new Paragraph({
+        spacing: { before: pt(2), after: pt(6) },
+        shading: { type: ShadingType.SOLID, color, fill: color },
+        children: [
+          new TextRun({ text: `  ${ins.domain.toUpperCase()}  `, bold: true, size: 16, color: "ffffff", font: "Calibri" }),
+        ],
+      }),
+    );
+
+    if (srcLine) {
+      children.push(
+        new Paragraph({
+          spacing: { after: pt(4) },
+          children: [new TextRun({ text: srcLine, size: 18, color: "9ca3af", font: "Calibri" })],
+        }),
+      );
+    }
+
+    // Summary
+    children.push(
+      new Paragraph({
+        spacing: { after: pt(8) },
+        children: [new TextRun({ text: ins.summary, size: 22, color: "374151", font: "Calibri" })],
+      }),
+    );
+
+    // Key points
+    if (ins.key_points.length) {
+      children.push(sectionLabel("Key Points", color));
+      ins.key_points.forEach((p) => children.push(bullet(p)));
+    }
+
+    // Key quotes
+    if (ins.key_quotes.length) {
+      children.push(sectionLabel("Key Quotes", color));
+      ins.key_quotes.forEach((q) => children.push(quote(q, color)));
+    }
+
+    // Action items
+    if (ins.action_items.length) {
+      children.push(sectionLabel("Action Items", color));
+      ins.action_items.forEach((a) => children.push(actionItem(a)));
+    }
+
+    // Tags
+    if (ins.tags.length) {
+      children.push(
+        new Paragraph({
+          spacing: { before: pt(6), after: pt(2) },
+          children: [
+            new TextRun({ text: ins.tags.map((t) => `#${t}`).join("  "), size: 16, color: "9ca3af", font: "Calibri" }),
+          ],
+        }),
+      );
+    }
+
+    if (i < insights.length - 1) children.push(divider());
+  }
+
+  const doc = new Document({
+    creator: "Podcast Insights",
+    title: `Podcast Insights — ${date}`,
+    description: `${insights.length} insights for ${date}`,
+    styles: {
+      default: {
+        document: {
+          run: { font: "Calibri", size: 22, color: "374151" },
+          paragraph: { spacing: { line: 320 } },
+        },
+      },
+    },
+    sections: [{ children }],
+  });
+
+  return Packer.toBuffer(doc);
+}
+
 function insightsToJson(date: string, insights: Insight[]): string {
   return JSON.stringify(
     {
@@ -104,6 +289,16 @@ export async function GET(req: Request) {
   const fmt = searchParams.get("format") ?? "csv";
 
   const insights = await getInsightsByDate(date, userId);
+
+  if (fmt === "word") {
+    const buf = await insightsToWordBuffer(date, insights);
+    return new Response(new Uint8Array(buf), {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": `attachment; filename="insights-${date}.docx"`,
+      },
+    });
+  }
 
   if (fmt === "pdf") {
     return new Response(insightsToPrintHtml(date, insights), {
