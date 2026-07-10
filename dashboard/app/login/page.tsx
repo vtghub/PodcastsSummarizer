@@ -7,7 +7,9 @@ import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 
 function LoginForm() {
   const searchParams = useSearchParams();
-  const from = searchParams.get("from") ?? "/podcasts";
+  // Default to /dashboard (not /podcasts) — it's the only page that checks
+  // for zero subscriptions and redirects first-time users to /onboarding.
+  const from = searchParams.get("from") ?? "/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

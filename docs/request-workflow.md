@@ -1006,8 +1006,10 @@ sequenceDiagram
     participant MW as middleware.ts
     participant LIST as GET /api/admin/users
     participant DETAIL as /api/admin/users/[id]
+    participant SUBS as /api/admin/users/[id]/subscriptions
     participant AUTH as Supabase Auth Admin API
     participant DB as Supabase (Postgres)
+    participant RT as Supabase Realtime
 
     B->>PAGE: navigate to /admin/users
     PAGE->>PAGE: getUser() — not signed in? redirect /login
@@ -1019,14 +1021,44 @@ sequenceDiagram
     LIST->>AUTH: auth.admin.listUsers({ perPage: 1000 })
     AUTH-->>LIST: auth.users rows (id, email, created_at, email_confirmed_at)
     LIST->>DB: SELECT user_id, display_name, is_admin, digest_enabled, created_at FROM user_profiles
-    LIST->>DB: SELECT user_id FROM user_subscriptions WHERE enabled=true
-    DB-->>LIST: profiles + subscription rows
-    LIST->>LIST: merge by user_id; has_profile=false if no matching profile row<br/>(surfaces orphaned auth.users left behind by manual DB deletes)
-    LIST-->>MGR: { users: [...] } sorted newest first
-    MGR->>B: render table — email, display name, ADMIN badge, subscription count,<br/>verified/unverified, "no profile row" warning
+    LIST->>DB: SELECT user_id, sources(name, domain) FROM user_subscriptions WHERE enabled=true
+    DB-->>LIST: profiles + subscription rows joined with source name/domain
+    LIST->>LIST: merge by user_id; group channels by domain;<br/>has_profile=false if no matching profile row<br/>(surfaces orphaned auth.users left behind by manual DB deletes)
+    LIST-->>MGR: { users: [{ ...domains[], channels[] }] } sorted newest first
+    MGR->>B: render collapsed rows (default) — email, display name, ADMIN badge,<br/>"N subscriptions across M domains" summary, verified/unverified, "no profile row" warning
 
     B->>MGR: type in search box
     MGR->>MGR: client-side filter by email / display_name
+
+    Note over MGR,RT: Push-based refresh (migration 016) — no polling
+    MGR->>RT: subscribe channel "admin-users" — postgres_changes<br/>INSERT + DELETE on public.user_profiles
+    Note over RT,DB: requires profiles_admin_select_all RLS policy<br/>(is_admin_user() SECURITY DEFINER fn) + user_profiles<br/>added to supabase_realtime publication
+    par New user registers elsewhere
+        DB->>RT: INSERT on user_profiles broadcast
+        RT-->>MGR: postgres_changes event
+        MGR->>LIST: GET /api/admin/users (silent refetch)
+        LIST-->>MGR: updated list
+        MGR->>MGR: diff against previously known IDs → toast "New user registered: <email>"
+    end
+    B->>MGR: click Refresh button (manual, same silent-diff path)
+
+    B->>MGR: click row / chevron → expand (collapsed by default)
+    MGR->>SUBS: GET /api/admin/users/[id]/subscriptions (lazy — only on first expand)
+    SUBS->>SUBS: isAdmin() check
+    SUBS->>DB: getPublicSourcesAsync() + getUserSubscriptions(id)
+    DB-->>SUBS: full catalog + subscribedIds
+    SUBS-->>MGR: { sources[], subscribedIds[] }
+    MGR->>B: render domain badges + "Manage subscriptions" panel<br/>(catalog grouped by domain, Subscribe/Subscribed toggle per podcast)
+
+    alt Subscribe/Unsubscribe a podcast
+        B->>MGR: click Subscribe or Subscribed toggle
+        MGR->>SUBS: POST (subscribe) or DELETE (unsubscribe) { sourceId }
+        SUBS->>SUBS: isAdmin() check
+        SUBS->>DB: subscribeToSource(userId, sourceId) or unsubscribeFromSource(userId, sourceId)
+        DB-->>SUBS: ok
+        SUBS-->>MGR: { ok: true }
+        MGR->>MGR: update cached catalog + recompute domains/channels/subscription_count<br/>for that row's summary line, show success toast
+    end
 
     alt Grant/Revoke admin
         B->>MGR: click Shield icon
@@ -1041,7 +1073,7 @@ sequenceDiagram
         DETAIL->>DB: DELETE FROM user_subscriptions WHERE user_id=?
         Note over DETAIL,DB: user's next /dashboard visit finds 0 subscriptions<br/>→ redirect("/onboarding") — same wizard new users see
         DETAIL-->>MGR: { ok: true }
-        MGR->>MGR: subscription_count → 0 locally, show success toast
+        MGR->>MGR: subscription_count → 0, domains/channels cleared,<br/>cached subscription catalog reset locally, show success toast
     else Delete user
         B->>MGR: click Trash icon → Confirm
         MGR->>DETAIL: DELETE /api/admin/users/[id]
@@ -1050,6 +1082,7 @@ sequenceDiagram
         Note over AUTH,DB: removes auth.users row; every table with a user_id FK<br/>(user_profiles, user_subscriptions, insight_bookmarks,<br/>insight_reactions, insight_comments, comment_reactions)<br/>is ON DELETE CASCADE and is cleaned up automatically
         AUTH-->>DETAIL: { error: null }
         DETAIL-->>MGR: { ok: true }
+        DB->>RT: DELETE on user_profiles broadcast (other admins' tabs silently refetch)
         MGR->>MGR: remove row locally, show success toast
     end
 ```

@@ -42,7 +42,7 @@ graph TB
     end
 
     subgraph REALTIME["⚡ Supabase Realtime"]
-        RT["postgres_changes WebSocket\nINSERT on insights table\nINSERT/UPDATE on episode_queue"]
+        RT["postgres_changes WebSocket\nINSERT on insights table\nINSERT/UPDATE on episode_queue\nINSERT/DELETE on user_profiles (admin only, migration 016)"]
     end
 
     subgraph DASH["🌐 Next.js 15 Dashboard — Vercel"]
@@ -76,7 +76,7 @@ graph TB
         AREXP["/api/insights/export\nGET ?format=excel|word&date=\nauthed — download insights\n(PDF generated client-side via jsPDF)"]
         ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
         ARASK["/api/ask\nPOST — LLM Q&A\nFTS context + 6-model waterfall\nGemini→Groq→Mistral→Together→Cohere"]
-        ARADMINUSERS["/api/admin/users\nGET list (admin only)\n/[id] PATCH is_admin|reset_onboarding\n/[id] DELETE — auth.admin.deleteUser cascade"]
+        ARADMINUSERS["/api/admin/users\nGET list (admin only)\n/[id] PATCH is_admin|reset_onboarding\n/[id] DELETE — auth.admin.deleteUser cascade\n/[id]/subscriptions GET catalog+subs · POST/DELETE sourceId"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
         ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]
     end
@@ -164,6 +164,9 @@ graph TB
     ARADMINUSERS --> AUTHUSERS
     ARADMINUSERS --> PROFILES
     ARADMINUSERS --> SUBS
+    ARADMINUSERS --> SOURCES
+    PROFILES -.->|Realtime broadcast, migration 016| RT
+    RT -.->|WebSocket push| ADMINUSERS
 
     LLM --> EPQUEUE
     INSIGHTS -.->|Realtime broadcast| RT
