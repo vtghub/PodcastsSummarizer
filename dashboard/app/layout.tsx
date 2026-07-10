@@ -5,7 +5,7 @@ import { TTSProvider } from "@/contexts/TTSContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import NavBar from "@/components/NavBar";
 import MobileNav from "@/components/MobileNav";
-import { getUser, getDisplayName, getUserId } from "@/lib/auth";
+import { getUser, getDisplayName, getUserId, isAdmin } from "@/lib/auth";
 import { getNewInsightCount } from "@/lib/analytics";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -19,9 +19,10 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getUser();
   const userId = user ? await getUserId() : null;
-  const [displayName, newInsightCount] = await Promise.all([
+  const [displayName, newInsightCount, adminUser] = await Promise.all([
     user ? getDisplayName() : Promise.resolve(null),
     userId ? getNewInsightCount(userId) : Promise.resolve(0),
+    user ? isAdmin() : Promise.resolve(false),
   ]);
 
   return (
@@ -33,6 +34,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               userEmail={user?.email ?? null}
               displayName={displayName}
               newInsightCount={newInsightCount}
+              isAdmin={adminUser}
             />
             <main className="max-w-6xl mx-auto px-6 py-8 pb-20 sm:pb-8">{children}</main>
             <MobileNav newInsightCount={newInsightCount} />
