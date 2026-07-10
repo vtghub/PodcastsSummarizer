@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useRef, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Check } from "lucide-react";
 import { DOMAINS, getDomainColor } from "@/lib/domain-colors";
@@ -70,6 +70,21 @@ export default function ProfileForm({
   const [saving, setSaving]                     = useState(false);
   const [saved, setSaved]                       = useState(false);
   const [error, setError]                       = useState("");
+
+  // Domain chip row scrolls horizontally, but a desktop mouse wheel only emits
+  // vertical deltaY — translate it to horizontal scroll (touch already works).
+  const domainScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = domainScrollRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (e.deltaY === 0 || !el) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   function toggleDomain(domain: string) {
     setDigestDomains((prev) => {
@@ -264,7 +279,7 @@ export default function ProfileForm({
                       : `${digestDomains.length} of ${DOMAINS.length} included`}
                   </span>
                 </div>
-                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                <div ref={domainScrollRef} className="flex gap-2 overflow-x-auto pb-2 scrollbar-x">
                   {/* All chip */}
                   <button
                     type="button"
