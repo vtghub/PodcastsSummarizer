@@ -75,14 +75,19 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  // Scrolling the page (or resizing — e.g. the on-screen keyboard opening on
-  // mobile when the search input autofocuses) would leave the portal panel
+  // Scrolling the page (or resizing — e.g. an on-screen keyboard opening on
+  // mobile once the user taps the search field) would leave the portal panel
   // misaligned with its trigger, since it's positioned in viewport
   // coordinates. Reposition it from the trigger's current rect rather than
   // closing it — closing on scroll also caught scrolls of the panel's own
   // podcast list (scroll events don't bubble, so a capture-phase window
-  // listener sees them too), and closed the panel the instant it opened on
-  // mobile once the keyboard's resize/scroll fired.
+  // listener sees them too).
+  //
+  // Mobile keyboards resize the *visual* viewport, not the layout viewport —
+  // window/document scroll & resize events don't reliably fire for that, so
+  // a position computed only from those goes stale (the panel visibly
+  // "floats" away from its trigger). visualViewport's own resize/scroll
+  // events are what actually fire in that case, so listen there too.
   useEffect(() => {
     if (!podcastOpen) return;
     function reposition() {
@@ -91,9 +96,13 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
     }
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("scroll", reposition);
     return () => {
       window.removeEventListener("scroll", reposition, true);
       window.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("scroll", reposition);
     };
   }, [podcastOpen]);
 
@@ -318,7 +327,6 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
           <div className="relative p-2 border-b" style={{ borderColor: "var(--bdr)" }}>
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--txt-4)" }} />
             <input
-              autoFocus
               value={podcastQuery}
               onChange={(e) => setPodcastQuery(e.target.value)}
               placeholder="Search podcasts…"
