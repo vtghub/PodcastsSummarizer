@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Shield, ShieldOff, RotateCcw, Trash2, Loader2, Search, Mail, MailX, Users } from "lucide-react";
+import { Shield, ShieldOff, RotateCcw, Trash2, Loader2, Search, Mail, MailX, Users, ChevronDown, ChevronUp } from "lucide-react";
+import { getDomainColor } from "@/lib/domain-colors";
+
+interface SubChannel { name: string; domain: string }
 
 interface AdminUser {
   id: string;
@@ -10,6 +13,8 @@ interface AdminUser {
   is_admin: boolean;
   digest_enabled: boolean;
   subscription_count: number;
+  domains: string[];
+  channels: SubChannel[];
   email_confirmed: boolean;
   created_at: string;
   has_profile: boolean;
@@ -21,6 +26,7 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
   const [query, setQuery] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [toast, setToast] = useState<{ msg: string; type: "error" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,7 +84,7 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to reset onboarding");
-      setUsers((prev) => prev?.map((x) => (x.id === u.id ? { ...x, subscription_count: 0 } : x)) ?? null);
+      setUsers((prev) => prev?.map((x) => (x.id === u.id ? { ...x, subscription_count: 0, domains: [], channels: [] } : x)) ?? null);
       showToast(`${u.email} will see onboarding on next visit`, "success");
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Failed to reset onboarding", "error");
@@ -143,8 +149,14 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
               {filtered.map((u) => {
                 const busy = actionId === u.id;
                 const isSelf = u.id === currentUserId;
+                const expanded = expandedId === u.id;
+                const channelsByDomain = u.channels.reduce<Record<string, string[]>>((acc, c) => {
+                  (acc[c.domain] ??= []).push(c.name);
+                  return acc;
+                }, {});
                 return (
-                  <div key={u.id} className="flex items-center gap-4 px-4 py-3" style={{ borderColor: "var(--bdr)" }}>
+                  <div key={u.id} style={{ borderColor: "var(--bdr)" }}>
+                  <div className="flex items-center gap-4 px-4 py-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>
@@ -164,7 +176,6 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
                       </div>
                       <p className="text-xs truncate mt-0.5" style={{ color: "var(--txt-4)" }}>{u.email}</p>
                       <div className="flex items-center gap-3 mt-1 text-[11px]" style={{ color: "var(--txt-4)" }}>
-                        <span>{u.subscription_count} subscription{u.subscription_count !== 1 ? "s" : ""}</span>
                         <span className="flex items-center gap-1">
                           {u.email_confirmed ? <Mail className="w-3 h-3" /> : <MailX className="w-3 h-3" />}
                           {u.email_confirmed ? "verified" : "unverified"}
@@ -173,9 +184,53 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
                           <span style={{ color: "#F59E0B" }}>no profile row</span>
                         )}
                       </div>
+
+                      {u.subscription_count > 0 ? (
+                        <button
+                          onClick={() => setExpandedId(expanded ? null : u.id)}
+                          className="flex items-center flex-wrap gap-1 mt-2"
+                        >
+                          {u.domains.map((d) => {
+                            const c = getDomainColor(d);
+                            const count = channelsByDomain[d]?.length ?? 0;
+                            return (
+                              <span
+                                key={d}
+                                className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                                {d} ({count})
+                              </span>
+                            );
+                          })}
+                          {expanded ? (
+                            <ChevronUp className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                          )}
+                        </button>
+                      ) : (
+                        <p className="text-[11px] mt-2" style={{ color: "var(--txt-4)" }}>No subscriptions</p>
+                      )}
+
+                      {expanded && u.subscription_count > 0 && (
+                        <div className="mt-2.5 space-y-1.5">
+                          {u.domains.map((d) => {
+                            const c = getDomainColor(d);
+                            return (
+                              <div key={d} className="flex items-start gap-2 text-xs">
+                                <span className={`flex-shrink-0 font-medium ${c.text} w-36 truncate`}>{d}</span>
+                                <span style={{ color: "var(--txt-3)" }}>
+                                  {channelsByDomain[d].join(", ")}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0 self-start">
                       <button
                         onClick={() => toggleAdmin(u)}
                         disabled={busy || (isSelf && u.is_admin)}
@@ -226,6 +281,7 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
                         </button>
                       )}
                     </div>
+                  </div>
                   </div>
                 );
               })}
