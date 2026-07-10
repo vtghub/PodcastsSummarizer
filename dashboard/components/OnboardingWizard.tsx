@@ -140,7 +140,7 @@ export default function OnboardingWizard() {
                 className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                 style={{
                   background: step === s || (step === "recommendations" && i === 0) ? "var(--acc)" : "var(--bdr)",
-                  color: step === s || (step === "recommendations" && i === 0) ? "var(--acc-txt)" : "var(--txt-3)",
+                  color: step === s || (step === "recommendations" && i === 0) ? "#fff" : "var(--txt-3)",
                 }}
               >
                 {step === "recommendations" && i === 0 ? <Check className="w-3 h-3" /> : i + 1}
@@ -220,7 +220,7 @@ export default function OnboardingWizard() {
                           className="shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-all"
                           style={{
                             background: on ? "var(--acc)" : "var(--acc-bg)",
-                            color: on ? "var(--acc-txt)" : "var(--acc)",
+                            color: on ? "#fff" : "var(--acc)",
                           }}
                         >
                           {on ? "Subscribed ✓" : "Subscribe"}
@@ -263,7 +263,7 @@ export default function OnboardingWizard() {
                           className="shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-all"
                           style={{
                             background: on ? "var(--acc)" : "var(--acc-bg)",
-                            color: on ? "var(--acc-txt)" : "var(--acc)",
+                            color: on ? "#fff" : "var(--acc)",
                           }}
                         >
                           {on ? "Added ✓" : "Add"}
