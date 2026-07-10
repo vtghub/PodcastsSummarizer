@@ -25,13 +25,22 @@ interface SourceOption {
 
 export default function NavBar({
   userEmail,
-  displayName,
+  displayName: initialDisplayName,
   newInsightCount = 0,
 }: {
   userEmail?: string | null;
   displayName?: string | null;
   newInsightCount?: number;
 }) {
+  const [displayName, setDisplayName] = useState(initialDisplayName);
+  useEffect(() => {
+    function onNameChange(e: Event) {
+      setDisplayName((e as CustomEvent<string>).detail);
+    }
+    window.addEventListener("profile:displayname", onNameChange);
+    return () => window.removeEventListener("profile:displayname", onNameChange);
+  }, []);
+
   const { enabled, toggle } = useTTS();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
