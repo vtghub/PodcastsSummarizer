@@ -75,11 +75,17 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  // Scrolling or resizing while open would leave the portal panel misaligned
-  // with its trigger (it's positioned in viewport coordinates) — just close it.
+  // Scrolling the page (or resizing) while open would leave the portal panel
+  // misaligned with its trigger (it's positioned in viewport coordinates), so
+  // close it — but ignore scrolls inside the panel's own podcast list, since
+  // scroll events don't bubble and this capture-phase window listener would
+  // otherwise see (and close on) every scroll of that internal list too.
   useEffect(() => {
     if (!podcastOpen) return;
-    function close() { setPodcastOpen(false); }
+    function close(e: Event) {
+      if (panelRef.current?.contains(e.target as Node)) return;
+      setPodcastOpen(false);
+    }
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
     return () => {
