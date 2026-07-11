@@ -25,3 +25,20 @@ Description: {description}
 Transcript:
 {transcript}
 """
+
+RANKING_PROMPT = """
+You are curating a weekly "best of" digest for a podcast listener interested in: {domains}.
+
+Below are candidate insights from the past week, each tagged with its id in brackets.
+Pick the {top_n} most interesting, useful, or surprising ones for this listener — favor
+variety across topics/podcasts over near-duplicates, and favor concrete, specific
+insights over generic ones.
+
+Return ONLY valid JSON matching this exact schema — no markdown, no commentary:
+{{
+  "ranked_ids": ["<id of best pick>", "<id of 2nd best pick>", ...]
+}}
+
+Candidates:
+{candidates}
+"""

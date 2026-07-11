@@ -337,6 +337,40 @@ export interface Database {
         };
         Relationships: [];
       };
+      backfill_jobs: {
+        Row: {
+          id: string;
+          job_type: string;
+          status: string;
+          total_items: number;
+          processed_items: number;
+          succeeded_items: number;
+          failed_items: number;
+          batch_size: number;
+          cursor_created_at: string | null;
+          cursor_insight_id: string | null;
+          started_at: string;
+          updated_at: string;
+          completed_at: string | null;
+          last_error: string | null;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      backfill_failures: {
+        Row: {
+          id: number;
+          job_id: string;
+          insight_id: string;
+          episode_id: string;
+          error_msg: string | null;
+          failed_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

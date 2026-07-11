@@ -2,42 +2,65 @@ import { NextResponse } from "next/server";
 import { isAdmin, getUserId } from "@/lib/auth";
 import { getSupabaseClient } from "@/lib/supabase";
 
-type Scope = "pipeline" | "ask_ai";
-const SCOPES: Scope[] = ["pipeline", "ask_ai"];
+type Scope = "pipeline" | "ask_ai" | "recommendations";
+const SCOPES: Scope[] = ["pipeline", "ask_ai", "recommendations"];
 
 /**
- * Two independent places this app calls an LLM, each with its own waterfall:
+ * Three independent places this app calls an LLM, each with its own waterfall:
  *
  * "pipeline" — the worker's podcast insight extraction. Must stay in sync
  * with PROVIDER_SLOTS in worker/providers/llm/provider_registry.py, the
  * source of truth for which adapters actually exist there.
  *
  * "ask_ai" — the dashboard's own /api/ask chat waterfall (see
- * generateAnswer() in app/api/ask/route.ts, which reads this same config).
+ * lib/llm-waterfall.ts, which reads this same config).
+ *
+ * "recommendations" — weekly best-of-week insight ranking. Two call sites
+ * read this same scope: the worker's weekly_recommendations job (Python,
+ * pre-computed, uses the same 9 adapters as "pipeline" — see
+ * worker/providers/llm/waterfall_llm.py rank_insights()) and the dashboard's
+ * on-demand /api/recommendations refresh (TypeScript, via lib/llm-waterfall.ts
+ * — only able to call the 5 providers it has JS callers for, so any
+ * openrouter_* slots enabled here apply only to the pre-computed weekly
+ * email, not the live on-demand refresh).
  *
  * Either way, this list is only for displaying/toggling — adding a new
  * provider TYPE is still a code change in the relevant waterfall.
  */
-const PROVIDER_SLOTS: Record<Scope, { key: string; display_name: string; env_var: string }[]> = {
-  pipeline: [
-    { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY" },
-    { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY" },
-    { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY" },
-    { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY" },
-    { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY" },
-    { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
-    { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
-    { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
-    { key: "openrouter_hy3", display_name: "Tencent Hy3 (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
-  ],
+// runs_here: whether THIS dashboard process (Vercel/local Next.js) is ever
+// the one calling this provider directly — if false, checking
+// process.env[env_var] here would just check an environment this slot never
+// actually runs in, so the UI shouldn't claim to know its status.
+const PIPELINE_SLOTS = [
+  { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY", runs_here: false },
+  { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: false },
+  { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: false },
+  { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: false },
+  { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: false },
+  { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  { key: "openrouter_hy3", display_name: "Tencent Hy3 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+];
+
+// The on-demand /api/recommendations refresh runs in the dashboard and can
+// call the same 5 JS-callable providers as ask_ai — but not OpenRouter.
+const RECOMMENDATIONS_SLOTS = PIPELINE_SLOTS.map((slot) => ({
+  ...slot,
+  runs_here: !slot.key.startsWith("openrouter_"),
+}));
+
+const PROVIDER_SLOTS: Record<Scope, { key: string; display_name: string; env_var: string; runs_here: boolean }[]> = {
+  pipeline: PIPELINE_SLOTS,
   ask_ai: [
-    { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY" },
-    { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY" },
-    { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY" },
-    { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY" },
-    { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY" },
-    { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY" },
+    { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY", runs_here: true },
+    { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: true },
+    { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: true },
+    { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: true },
+    { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY", runs_here: true },
+    { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: true },
   ],
+  recommendations: RECOMMENDATIONS_SLOTS,
 };
 
 interface ConfigRow {
@@ -63,7 +86,7 @@ export async function GET() {
     (data ?? []).map((r) => [`${r.scope}:${r.provider_key}`, r as ConfigRow])
   );
 
-  const result: Record<Scope, unknown[]> = { pipeline: [], ask_ai: [] };
+  const result: Record<Scope, unknown[]> = { pipeline: [], ask_ai: [], recommendations: [] };
   for (const scope of SCOPES) {
     const providers = PROVIDER_SLOTS[scope].map((slot, index) => {
       const row = configByScopeAndKey.get(`${scope}:${slot.key}`);
@@ -71,10 +94,11 @@ export async function GET() {
         key: slot.key,
         display_name: slot.display_name,
         env_var: slot.env_var,
-        // Best-effort — reflects the DASHBOARD's own environment (Vercel).
-        // Authoritative for ask_ai (which runs on Vercel); only a hint for
-        // pipeline (which actually runs on the worker/GitHub Actions).
-        env_var_present_here: Boolean(process.env[slot.env_var]),
+        runs_here: slot.runs_here,
+        // Only meaningful when runs_here — this dashboard process never
+        // calls the worker-only providers, so checking its own env for them
+        // would be checking the wrong environment entirely.
+        env_var_present_here: slot.runs_here ? Boolean(process.env[slot.env_var]) : null,
         enabled: row?.enabled ?? true,
         priority: row?.priority ?? index,
       };
