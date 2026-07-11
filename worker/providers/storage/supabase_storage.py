@@ -452,6 +452,127 @@ class SupabaseStorageProvider(StorageProvider):
                 return [dict(r) for r in cur.fetchall()]
 
     # ------------------------------------------------------------------
+    # Episode / transcript lookups (used by the insight backfill job)
+    # ------------------------------------------------------------------
+    def get_episode(self, episode_id: str) -> Episode | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM episodes WHERE id = %s", (episode_id,))
+                row = cur.fetchone()
+                return self._row_to_episode(row) if row else None
+
+    def get_transcript(self, episode_id: str) -> Transcript | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM transcripts WHERE episode_id = %s", (episode_id,))
+                row = cur.fetchone()
+                return self._row_to_transcript(row) if row else None
+
+    # ------------------------------------------------------------------
+    # Insight backfill job tracking
+    # ------------------------------------------------------------------
+    def count_insights(self) -> int:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS n FROM insights")
+                return int(cur.fetchone()["n"])
+
+    def get_active_backfill_job(self, job_type: str) -> dict | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM backfill_jobs
+                    WHERE job_type = %s AND status = 'running'
+                    ORDER BY started_at DESC LIMIT 1
+                    """,
+                    (job_type,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def create_backfill_job(self, job_type: str, total_items: int, batch_size: int) -> str:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO backfill_jobs (job_type, total_items, batch_size)
+                    VALUES (%s, %s, %s)
+                    RETURNING id
+                    """,
+                    (job_type, total_items, batch_size),
+                )
+                return str(cur.fetchone()["id"])
+
+    def get_next_backfill_batch(self, job_id: str, limit: int) -> list[Insight]:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT cursor_created_at, cursor_insight_id FROM backfill_jobs WHERE id = %s",
+                    (job_id,),
+                )
+                job = cur.fetchone()
+                if not job:
+                    return []
+                cursor_created_at, cursor_insight_id = job["cursor_created_at"], job["cursor_insight_id"]
+
+                if cursor_created_at is None:
+                    cur.execute(
+                        "SELECT * FROM insights ORDER BY created_at ASC, id ASC LIMIT %s",
+                        (limit,),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT * FROM insights
+                        WHERE (created_at, id) > (%s, %s)
+                        ORDER BY created_at ASC, id ASC LIMIT %s
+                        """,
+                        (cursor_created_at, cursor_insight_id, limit),
+                    )
+                return [self._row_to_insight(r) for r in cur.fetchall()]
+
+    def advance_backfill_cursor(
+        self, job_id: str, insight: Insight, success: bool, error_msg: str | None = None
+    ) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE backfill_jobs SET
+                        cursor_created_at = %s,
+                        cursor_insight_id = %s,
+                        processed_items = processed_items + 1,
+                        succeeded_items = succeeded_items + %s,
+                        failed_items = failed_items + %s,
+                        last_error = COALESCE(%s, last_error),
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (
+                        insight.created_at, insight.id,
+                        1 if success else 0, 0 if success else 1,
+                        error_msg, job_id,
+                    ),
+                )
+                if not success:
+                    cur.execute(
+                        """
+                        INSERT INTO backfill_failures (job_id, insight_id, episode_id, error_msg)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (job_id, insight.id, insight.episode_id, error_msg),
+                    )
+
+    def complete_backfill_job(self, job_id: str) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE backfill_jobs SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = %s",
+                    (job_id,),
+                )
+
+    # ------------------------------------------------------------------
     # Row → dataclass helpers
     # ------------------------------------------------------------------
     @staticmethod
@@ -492,6 +613,26 @@ class SupabaseStorageProvider(StorageProvider):
             key_quotes=parse(row["key_quotes"]),
             action_items=parse(row["action_items"]),
             tags=parse(row["tags"]),
+            created_at=row["created_at"] if isinstance(row["created_at"], datetime)
+                       else datetime.fromisoformat(str(row["created_at"])),
+        )
+
+    @staticmethod
+    def _row_to_episode(row: dict) -> Episode:
+        return Episode(
+            id=row["id"], source_id=row["source_id"], title=row["title"], url=row["url"],
+            published_at=row["published_at"] if isinstance(row["published_at"], datetime)
+                         else datetime.fromisoformat(str(row["published_at"])),
+            duration_seconds=int(row.get("duration_seconds") or 0),
+            description=row.get("description") or "",
+            fetched_at=row["fetched_at"] if isinstance(row.get("fetched_at"), datetime)
+                       else datetime.fromisoformat(str(row["fetched_at"])) if row.get("fetched_at") else datetime.now(timezone.utc),
+        )
+
+    @staticmethod
+    def _row_to_transcript(row: dict) -> Transcript:
+        return Transcript(
+            episode_id=row["episode_id"], text=row["text"], language=row.get("language") or "en",
             created_at=row["created_at"] if isinstance(row["created_at"], datetime)
                        else datetime.fromisoformat(str(row["created_at"])),
         )

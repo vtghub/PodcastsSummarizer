@@ -269,6 +269,55 @@ class StorageProvider(ABC):
         source_set = set(source_ids)
         return [i for i in all_insights if i.source_id in source_set]
 
+    def get_episode(self, episode_id: str) -> "Episode | None":
+        """Return a single episode by id, or None. Default: None (local dev)."""
+        return None
+
+    def get_transcript(self, episode_id: str) -> "Transcript | None":
+        """Return the saved transcript for an episode, or None. Default: None (local dev)."""
+        return None
+
+    # ------------------------------------------------------------------
+    # Insight backfill job tracking (worker/jobs/backfill_insights.py) —
+    # re-runs existing insights through the current LLM waterfall as a
+    # resumable background job spanning multiple invocations/days, with
+    # progress visible on the dashboard's /admin/task-status page. All
+    # default to no-ops so local/SQLite dev doesn't need this machinery.
+    # ------------------------------------------------------------------
+
+    def count_insights(self) -> int:
+        """Total number of insight rows — used as a backfill job's total_items snapshot."""
+        return 0
+
+    def get_active_backfill_job(self, job_type: str) -> dict | None:
+        """Return the most recent non-completed job of this type, or None."""
+        return None
+
+    def create_backfill_job(self, job_type: str, total_items: int, batch_size: int) -> str:
+        """Create a new backfill job row. Returns its id (empty string if unsupported)."""
+        return ""
+
+    def get_next_backfill_batch(self, job_id: str, limit: int) -> list[Insight]:
+        """
+        Return up to `limit` insights not yet processed by this job — ordered
+        oldest-first (created_at, id) and starting strictly after the job's
+        current cursor, so repeated calls across separate process runs (and
+        separate days) resume correctly without reprocessing or skipping.
+        """
+        return []
+
+    def advance_backfill_cursor(
+        self, job_id: str, insight: Insight, success: bool, error_msg: str | None = None
+    ) -> None:
+        """
+        Record the outcome of processing one insight: advances the job's
+        resume cursor to this insight, increments processed/succeeded/failed
+        counters, and (on failure) logs a row for the admin status page.
+        """
+
+    def complete_backfill_job(self, job_id: str) -> None:
+        """Mark a backfill job status='completed'. Default: no-op."""
+
 
 class EmailProvider(ABC):
     """Sends the daily digest email."""

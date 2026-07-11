@@ -617,6 +617,123 @@ class TestWaterfallRanking:
         assert calls == []
 
 
+# ── Insight backfill job ─────────────────────────────────────────────────────
+
+class TestBackfillInsights:
+
+    def _make_storage(self, active_job=None, total=0, batch=None):
+        storage = MagicMock()
+        storage.get_active_backfill_job.return_value = active_job
+        storage.count_insights.return_value = total
+        storage.create_backfill_job.return_value = "job-1"
+        storage.get_next_backfill_batch.return_value = batch or []
+        storage.get_episode.side_effect = lambda eid: _make_episode(id=eid)
+        storage.get_transcript.side_effect = lambda eid: Transcript(episode_id=eid, text="full transcript text")
+        return storage
+
+    def _fake_waterfall_llm(self, **kw):
+        provider = MagicMock()
+        provider.extract_insights.return_value = _make_insight(
+            id="__will_be_overwritten__", summary="new improved summary", key_points=["new point"]
+        )
+        return provider
+
+    def test_starts_new_job_when_none_active(self):
+        from worker.jobs.backfill_insights import run_backfill
+        ins = _make_insight(id="a")
+        storage = self._make_storage(active_job=None, total=5, batch=[ins])
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            result = run_backfill(batch_size=10)
+
+        storage.create_backfill_job.assert_called_once_with("insight_reextraction", total_items=5, batch_size=10)
+        assert result["job_id"] == "job-1"
+        assert result["succeeded"] == 1
+        assert result["failed"] == 0
+
+    def test_resumes_existing_active_job(self):
+        from worker.jobs.backfill_insights import run_backfill
+        ins = _make_insight(id="a")
+        storage = self._make_storage(
+            active_job={"id": "existing-job", "processed_items": 3, "total_items": 10},
+            batch=[ins],
+        )
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            result = run_backfill(batch_size=10)
+
+        storage.create_backfill_job.assert_not_called()
+        assert result["job_id"] == "existing-job"
+
+    def test_empty_batch_completes_job(self):
+        from worker.jobs.backfill_insights import run_backfill
+        storage = self._make_storage(active_job={"id": "job-x", "processed_items": 10, "total_items": 10}, batch=[])
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage):
+            result = run_backfill(batch_size=10)
+
+        storage.complete_backfill_job.assert_called_once_with("job-x")
+        assert result["completed"] is True
+
+    def test_no_insights_and_no_active_job_is_a_noop(self):
+        from worker.jobs.backfill_insights import run_backfill
+        storage = self._make_storage(active_job=None, total=0)
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage):
+            result = run_backfill(batch_size=10)
+
+        storage.create_backfill_job.assert_not_called()
+        assert result["completed"] is True
+
+    def test_preserves_identity_fields_on_reextraction(self):
+        from worker.jobs.backfill_insights import run_backfill
+        original = _make_insight(id="orig-id", episode_id="ep-x", source_id="src-x", domain="Finance & Investing", date="2026-01-01")
+        storage = self._make_storage(active_job=None, total=1, batch=[original])
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            run_backfill(batch_size=10)
+
+        saved = storage.save_insight.call_args.args[0]
+        assert saved.id == "orig-id"
+        assert saved.episode_id == "ep-x"
+        assert saved.source_id == "src-x"
+        assert saved.domain == "Finance & Investing"
+        assert saved.date == "2026-01-01"
+        assert saved.summary == "new improved summary"  # content did change
+
+    def test_missing_transcript_is_recorded_as_failure(self):
+        from worker.jobs.backfill_insights import run_backfill
+        ins = _make_insight(id="a", episode_id="ep-missing")
+        storage = self._make_storage(active_job=None, total=1, batch=[ins])
+        storage.get_transcript.side_effect = lambda eid: None
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            result = run_backfill(batch_size=10)
+
+        storage.save_insight.assert_not_called()
+        args, kwargs = storage.advance_backfill_cursor.call_args
+        assert args[0] == "job-1"
+        assert kwargs["success"] is False
+        assert result["failed"] == 1
+
+    def test_no_providers_configured_aborts_without_processing(self):
+        from worker.jobs.backfill_insights import run_backfill
+        ins = _make_insight(id="a")
+        storage = self._make_storage(active_job=None, total=1, batch=[ins])
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=ValueError("no providers enabled")):
+            result = run_backfill(batch_size=10)
+
+        storage.save_insight.assert_not_called()
+        storage.advance_backfill_cursor.assert_not_called()
+        assert "error" in result
+
+
 # ── Plug-in/plug-out provider registry ─────────────────────────────────────
 
 class TestProviderRegistry:
