@@ -119,6 +119,30 @@ async function callCohere(apiKey: string, prompt: string): Promise<LLMResult> {
 
 // ── Waterfall ─────────────────────────────────────────────────────────────────
 
+// provider_key values must match the "ask_ai" scope slots in
+// app/api/admin/llm-providers/route.ts, so the admin page's toggle/reorder
+// controls actually take effect here.
+interface WaterfallStep {
+  provider_key: string;
+  name: string;
+  hasKey: boolean;
+  fn: () => Promise<LLMResult>;
+}
+
+async function loadAskAiConfig(): Promise<Map<string, { enabled: boolean; priority: number }>> {
+  try {
+    const sb = getSupabaseClient();
+    const { data, error } = await sb
+      .from("llm_provider_config")
+      .select("provider_key, enabled, priority")
+      .eq("scope", "ask_ai");
+    if (error || !data) return new Map();
+    return new Map(data.map((r: { provider_key: string; enabled: boolean; priority: number }) => [r.provider_key, r]));
+  } catch {
+    return new Map();
+  }
+}
+
 async function generateAnswer(prompt: string): Promise<{ text: string; model: string }> {
   const geminiKey  = process.env.GEMINI_API_KEY ?? "";
   const groqKey    = process.env.GROQ_API_KEY ?? "";
@@ -126,22 +150,27 @@ async function generateAnswer(prompt: string): Promise<{ text: string; model: st
   const togetherKey = process.env.TOGETHER_API_KEY ?? "";
   const cohereKey  = process.env.COHERE_API_KEY ?? "";
 
-  const steps: Array<{ name: string; fn: () => Promise<LLMResult> }> = [
-    { name: "gemini-2.0-flash",           fn: () => callGemini(geminiKey, prompt) },
-    { name: "groq/llama-3.1-8b-instant",  fn: () => callGroqModel(groqKey, "llama-3.1-8b-instant", prompt) },
-    { name: "groq/llama-3.3-70b",         fn: () => callGroqModel(groqKey, "llama-3.3-70b-versatile", prompt) },
-    { name: "mistral-small",              fn: () => callMistral(mistralKey, prompt) },
-    { name: "together/llama-3.1-8b",      fn: () => callTogether(togetherKey, prompt) },
-    { name: "cohere/command-r",           fn: () => callCohere(cohereKey, prompt) },
-  ].filter(({ name }) => {
-    // Skip steps whose key is missing
-    if (name.startsWith("gemini") && !geminiKey) return false;
-    if (name.startsWith("groq") && !groqKey) return false;
-    if (name.startsWith("mistral") && !mistralKey) return false;
-    if (name.startsWith("together") && !togetherKey) return false;
-    if (name.startsWith("cohere") && !cohereKey) return false;
-    return true;
-  });
+  const defaultOrder: WaterfallStep[] = [
+    { provider_key: "gemini",   name: "gemini-2.0-flash",          hasKey: !!geminiKey,   fn: () => callGemini(geminiKey, prompt) },
+    { provider_key: "groq_8b",  name: "groq/llama-3.1-8b-instant", hasKey: !!groqKey,     fn: () => callGroqModel(groqKey, "llama-3.1-8b-instant", prompt) },
+    { provider_key: "groq_70b", name: "groq/llama-3.3-70b",        hasKey: !!groqKey,     fn: () => callGroqModel(groqKey, "llama-3.3-70b-versatile", prompt) },
+    { provider_key: "mistral",  name: "mistral-small",             hasKey: !!mistralKey,  fn: () => callMistral(mistralKey, prompt) },
+    { provider_key: "together", name: "together/llama-3.1-8b",     hasKey: !!togetherKey, fn: () => callTogether(togetherKey, prompt) },
+    { provider_key: "cohere",   name: "cohere/command-r",          hasKey: !!cohereKey,   fn: () => callCohere(cohereKey, prompt) },
+  ];
+
+  const config = await loadAskAiConfig();
+
+  const steps = defaultOrder
+    .filter((s) => s.hasKey)
+    .filter((s) => (config.get(s.provider_key)?.enabled ?? true))
+    .sort((a, b) => {
+      const pa = config.get(a.provider_key)?.priority;
+      const pb = config.get(b.provider_key)?.priority;
+      const defaultA = defaultOrder.indexOf(a);
+      const defaultB = defaultOrder.indexOf(b);
+      return (pa ?? defaultA) - (pb ?? defaultB);
+    });
 
   for (const step of steps) {
     try {

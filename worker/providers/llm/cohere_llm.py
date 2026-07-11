@@ -1,42 +1,35 @@
-"""Gemini 2.0 Flash LLM provider — free tier, structured JSON output."""
+"""Cohere LLM provider — trial-key free tier, via plain REST (no SDK)."""
 
 import hashlib
 import textwrap
 import time
 from datetime import datetime, timezone
 
-import google.generativeai as genai
+import requests
 
 from worker.core.interfaces import Episode, Insight, LLMProvider, Transcript
-from worker.config.settings import GEMINI_API_KEY, GEMINI_MODEL
+from worker.config.settings import COHERE_API_KEY, COHERE_MODEL
 from worker.providers.llm.prompts import EXTRACTION_PROMPT
 from worker.providers.llm.text_utils import parse_json_response
 from worker.providers.llm.chunking import chunked_extract
 
-# Cap at ~60k chars (~15k tokens) to stay within free tier rate limits.
-# Sample first 75% + last 25% so episode conclusions aren't silently dropped
-# on the rare transcript that still exceeds this after chunking is available —
-# chunked_extract() below handles the normal long-transcript case instead.
-_MAX_TRANSCRIPT_CHARS = 60_000
-# Per-chunk budget when map-reduce kicks in — a bit under the single-call cap
-# to leave headroom for the (smaller) chunk-summary prompt's own overhead.
-_CHUNK_TARGET_CHARS = 50_000
-_RETRY_DELAYS = [4, 16, 64]  # seconds; only for transient 429/503 errors
+# Conservative free-trial budget — same reasoning as Mistral's.
+_MAX_TRANSCRIPT_CHARS = 16_000
+_CHUNK_TARGET_CHARS = 12_000
+_RETRY_DELAYS = [4, 16, 64]  # seconds; only for transient rate-limit errors
 
 
-class GeminiLLMProvider(LLMProvider):
+class CohereLLMProvider(LLMProvider):
 
     def __init__(self):
-        if not GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY is not set. Add it to your .env file.")
-        genai.configure(api_key=GEMINI_API_KEY)
-        self._model = genai.GenerativeModel(GEMINI_MODEL)
+        if not COHERE_API_KEY:
+            raise ValueError("COHERE_API_KEY is not set. Add it to your .env file.")
 
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
         if len(transcript.text) > _MAX_TRANSCRIPT_CHARS:
             data = chunked_extract(
                 self._generate_text, parse_json_response, episode, domain,
-                transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Gemini]",
+                transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Cohere]",
             )
         else:
             prompt = textwrap.dedent(EXTRACTION_PROMPT).format(
@@ -65,23 +58,33 @@ class GeminiLLMProvider(LLMProvider):
         )
 
     def _generate_text(self, prompt: str) -> str:
-        """Call Gemini with retry-on-transient-error, returning raw response text."""
+        """Call Cohere with retry-on-transient-error, returning raw response text."""
         last_exc: Exception | None = None
         for attempt, delay in enumerate([0] + _RETRY_DELAYS):
             if delay:
-                print(f"    [Gemini] retry {attempt}/{len(_RETRY_DELAYS)} in {delay}s…")
+                print(f"    [Cohere] retry {attempt}/{len(_RETRY_DELAYS)} in {delay}s…")
                 time.sleep(delay)
             try:
-                response = self._model.generate_content(prompt)
-                return response.text.strip()
-            except Exception as e:
-                msg = str(e).lower()
-                # Quota exhaustion — don't retry, let the caller fall back to Groq
-                if "resource_exhausted" in msg or "quota" in msg:
-                    raise
-                # Transient errors — retry
-                if "429" in msg or "503" in msg or "rate" in msg or "unavailable" in msg:
-                    last_exc = e
-                    continue
-                raise
+                response = requests.post(
+                    "https://api.cohere.com/v2/chat",
+                    headers={"Authorization": f"Bearer {COHERE_API_KEY}", "Content-Type": "application/json"},
+                    json={
+                        "model": COHERE_MODEL,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 2048,
+                        "temperature": 0.3,
+                    },
+                    timeout=120,
+                )
+                body = response.text
+                if not response.ok:
+                    if response.status_code == 429 or "quota" in body.lower() or "rate" in body.lower():
+                        last_exc = RuntimeError(f"Cohere {response.status_code}: {body[:300]}")
+                        continue
+                    raise RuntimeError(f"Cohere {response.status_code}: {body[:300]}")
+                data = response.json()
+                return data["message"]["content"][0]["text"].strip()
+            except requests.RequestException as e:
+                last_exc = e
+                continue
         raise last_exc  # type: ignore[misc]

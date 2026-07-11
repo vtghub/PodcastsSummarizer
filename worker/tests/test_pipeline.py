@@ -335,3 +335,268 @@ class TestPipelineResilience:
         assert _is_quota_error(Exception("429 Too Many Requests"))
         assert not _is_quota_error(Exception("connection refused"))
         assert not _is_quota_error(Exception("500 Internal Server Error"))
+
+
+# ── Chunked (map-reduce) extraction for long transcripts ──────────────────────
+
+class TestChunking:
+
+    def test_short_text_is_a_single_chunk(self):
+        from worker.providers.llm.chunking import split_into_chunks
+        text = "This is one short sentence. And another one."
+        assert split_into_chunks(text, target_chars=1000) == [text]
+
+    def test_splits_on_sentence_boundaries_near_target_size(self):
+        from worker.providers.llm.chunking import split_into_chunks
+        sentences = [f"Sentence number {i}." for i in range(50)]
+        text = " ".join(sentences)
+        chunks = split_into_chunks(text, target_chars=200)
+        assert len(chunks) > 1
+        # No content lost or duplicated across the split
+        assert " ".join(chunks) == text
+        # No chunk wildly exceeds the target (a little slack for the sentence
+        # that tips it over is fine; it shouldn't be a multiple of target)
+        assert all(len(c) <= 250 for c in chunks)
+
+    def test_hard_splits_a_single_run_on_sentence_with_no_punctuation(self):
+        from worker.providers.llm.chunking import split_into_chunks
+        text = "word " * 2000  # one giant "sentence" — no . ! or ?
+        chunks = split_into_chunks(text, target_chars=1000)
+        assert len(chunks) > 1
+        assert all(len(c) <= 1000 for c in chunks)
+
+    def test_chunked_extract_calls_generate_once_per_chunk_plus_synthesis(self):
+        from worker.providers.llm.chunking import chunked_extract
+
+        episode = _make_episode(title="Long Episode")
+        transcript_text = " ".join(f"Sentence {i}." for i in range(200))
+
+        calls: list[str] = []
+
+        def fake_generate(prompt: str) -> str:
+            calls.append(prompt)
+            if "Segment summaries (in chronological order):" in prompt:
+                return '{"title_en": "Long Episode", "summary": "s", "key_points": [], "key_quotes": [], "action_items": [], "tags": []}'
+            return "A dense summary of this segment."
+
+        def fake_parse_json(text: str) -> dict:
+            import json
+            return json.loads(text)
+
+        result = chunked_extract(
+            fake_generate, fake_parse_json, episode, "Technology & AI",
+            transcript_text, chunk_target_chars=200,
+        )
+
+        num_chunks = len(calls) - 1  # last call is the synthesis call
+        assert num_chunks > 1  # actually needed to chunk given the target size
+        assert result["title_en"] == "Long Episode"
+        # The synthesis prompt should reference every chunk summary, not just one
+        synthesis_prompt = calls[-1]
+        assert synthesis_prompt.count("[Segment") == num_chunks
+
+    def test_chunked_extract_single_chunk_still_synthesizes(self):
+        from worker.providers.llm.chunking import chunked_extract
+
+        episode = _make_episode(title="Short-ish Episode")
+        transcript_text = "A short transcript that fits in one chunk."
+
+        calls: list[str] = []
+
+        def fake_generate(prompt: str) -> str:
+            calls.append(prompt)
+            if "Segment summaries (in chronological order):" in prompt:
+                return '{"title_en": "Short-ish Episode", "summary": "s", "key_points": [], "key_quotes": [], "action_items": [], "tags": []}'
+            return "Summary of the only segment."
+
+        def fake_parse_json(text: str) -> dict:
+            import json
+            return json.loads(text)
+
+        result = chunked_extract(
+            fake_generate, fake_parse_json, episode, "Technology & AI",
+            transcript_text, chunk_target_chars=10_000,
+        )
+
+        assert len(calls) == 2  # one chunk-summary call + one synthesis call
+        assert result["summary"] == "s"
+
+
+# ── Multi-provider waterfall ────────────────────────────────────────────────
+
+class TestWaterfall:
+
+    def test_falls_through_to_next_provider_on_failure(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        calls: list[str] = []
+
+        def failing(prompt: str) -> str:
+            calls.append("A")
+            raise RuntimeError("quota exceeded")
+
+        def working(prompt: str) -> str:
+            calls.append("B")
+            return "response from B"
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", working)])
+        assert wf.generate("prompt") == "response from B"
+        assert calls == ["A", "B"]
+
+    def test_first_provider_used_when_it_succeeds(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        calls: list[str] = []
+
+        def working(prompt: str) -> str:
+            calls.append("A")
+            return "response from A"
+
+        def should_not_be_called(prompt: str) -> str:
+            calls.append("B")
+            return "response from B"
+
+        wf = WaterfallLLM([WaterfallStep("A", working), WaterfallStep("B", should_not_be_called)])
+        assert wf.generate("prompt") == "response from A"
+        assert calls == ["A"]
+
+    def test_raises_when_every_provider_fails(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def failing(prompt: str) -> str:
+            raise RuntimeError("exhausted")
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", failing)])
+        with pytest.raises(RuntimeError, match="All 2 providers"):
+            wf.generate("prompt")
+
+    def test_empty_response_also_triggers_fallback(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def empty(prompt: str) -> str:
+            return ""
+
+        def working(prompt: str) -> str:
+            return "real response"
+
+        wf = WaterfallLLM([WaterfallStep("A", empty), WaterfallStep("B", working)])
+        assert wf.generate("prompt") == "real response"
+
+    def test_requires_at_least_one_step(self):
+        from worker.providers.llm.waterfall import WaterfallLLM
+        with pytest.raises(ValueError):
+            WaterfallLLM([])
+
+    def test_failed_provider_is_not_retried_on_next_call(self):
+        """A quota-exhausted provider shouldn't be re-attempted (and re-fail,
+        eating its own retry/backoff time) on every subsequent chunk of the
+        same run — once it fails, it's skipped for the rest of this
+        WaterfallLLM instance's lifetime."""
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        calls: list[str] = []
+        a_call_count = 0
+
+        def failing(prompt: str) -> str:
+            nonlocal a_call_count
+            a_call_count += 1
+            calls.append("A")
+            raise RuntimeError("quota exceeded")
+
+        def working(prompt: str) -> str:
+            calls.append("B")
+            return "response from B"
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", working)])
+
+        # First call: A is tried (and fails), B succeeds.
+        assert wf.generate("chunk 1") == "response from B"
+        assert a_call_count == 1
+
+        # Second call (simulating the next chunk): A must NOT be retried.
+        assert wf.generate("chunk 2") == "response from B"
+        assert a_call_count == 1  # unchanged
+        assert calls == ["A", "B", "B"]
+
+    def test_fresh_instance_has_no_memory_of_a_previous_runs_failures(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def failing(prompt: str) -> str:
+            raise RuntimeError("quota exceeded")
+
+        wf1 = WaterfallLLM([WaterfallStep("A", failing)])
+        with pytest.raises(RuntimeError):
+            wf1.generate("prompt")
+
+        # A brand new instance (next pipeline run) shouldn't inherit wf1's dead list.
+        calls: list[str] = []
+
+        def working_now(prompt: str) -> str:
+            calls.append("A")
+            return "A is back"
+
+        wf2 = WaterfallLLM([WaterfallStep("A", working_now)])
+        assert wf2.generate("prompt") == "A is back"
+        assert calls == ["A"]
+
+    def test_error_message_when_all_providers_already_marked_dead(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def failing(prompt: str) -> str:
+            raise RuntimeError("quota exceeded")
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", failing)])
+        with pytest.raises(RuntimeError, match="All 2 providers"):
+            wf.generate("chunk 1")  # both fail and get marked dead
+
+        # Second call: neither should even be attempted this time.
+        with pytest.raises(RuntimeError, match="already marked"):
+            wf.generate("chunk 2")
+
+
+# ── Plug-in/plug-out provider registry ─────────────────────────────────────
+
+class TestProviderRegistry:
+
+    def test_slot_with_no_env_var_is_excluded_even_if_enabled(self, monkeypatch):
+        from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
+        # Delete every slot's env var dynamically — hardcoding names here would
+        # silently stop testing "no keys at all" as soon as a new slot with a
+        # new env var is added (as happened when OPENROUTER_API_KEY was added
+        # to .env but not to this list).
+        for slot in PROVIDER_SLOTS:
+            monkeypatch.delenv(slot.env_var, raising=False)
+        assert build_enabled_slots({}) == []
+
+    def test_default_order_matches_declared_list_when_env_vars_present(self, monkeypatch):
+        from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
+        for slot in PROVIDER_SLOTS:
+            monkeypatch.setenv(slot.env_var, "fake-key")
+        slots = build_enabled_slots({})
+        assert [s.key for s in slots] == [s.key for s in PROVIDER_SLOTS]
+
+    def test_config_can_disable_a_slot(self, monkeypatch):
+        from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
+        for slot in PROVIDER_SLOTS:
+            monkeypatch.setenv(slot.env_var, "fake-key")
+        config = {"gemini": {"enabled": False, "priority": 0}}
+        slots = build_enabled_slots(config)
+        assert "gemini" not in [s.key for s in slots]
+        assert len(slots) == len(PROVIDER_SLOTS) - 1
+
+    def test_config_can_reorder_slots(self, monkeypatch):
+        from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
+        for slot in PROVIDER_SLOTS:
+            monkeypatch.setenv(slot.env_var, "fake-key")
+        # Push cohere to the very front
+        config = {"cohere": {"enabled": True, "priority": -1}}
+        slots = build_enabled_slots(config)
+        assert slots[0].key == "cohere"
+
+    def test_disabled_slot_without_key_is_still_excluded(self, monkeypatch):
+        # A config row can't resurrect a provider with no API key configured
+        from worker.providers.llm.provider_registry import build_enabled_slots
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config = {"gemini": {"enabled": True, "priority": 0}}
+        slots = build_enabled_slots(config)
+        assert "gemini" not in [s.key for s in slots]

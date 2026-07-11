@@ -1,19 +1,14 @@
 """Ollama local LLM provider — fully offline, no API key needed."""
 
 import hashlib
-import json
-import re
 from datetime import datetime, timezone
 
 import requests
 
 from worker.core.interfaces import Episode, Insight, LLMProvider, Transcript
 from worker.config.settings import OLLAMA_BASE_URL, OLLAMA_MODEL
-
-_SYSTEM_PROMPT = (
-    "You are a JSON-only API. You must respond with a single valid JSON object. "
-    "No explanations, no markdown, no code fences — just the JSON object."
-)
+from worker.providers.llm.text_utils import parse_json_response
+from worker.providers.llm.chunking import chunked_extract
 
 _USER_PROMPT = """\
 Extract insights from this podcast transcript and return a JSON object with exactly these keys:
@@ -32,13 +27,16 @@ original quote if the transcript isn't in English, not a transcription of foreig
 Episode title: {title}
 Domain: {domain}
 
-Transcript (first {chars} characters):
+Transcript:
 {transcript}
 
 Respond with ONLY the JSON object, starting with {{ and ending with }}.
 """
 
+# Ollama is local/unlimited, but small local models lose coherence on very
+# long single-shot contexts — chunk past this size rather than truncating.
 _MAX_TRANSCRIPT_CHARS = 12_000
+_CHUNK_TARGET_CHARS = 10_000
 
 
 class OllamaLLMProvider(LLMProvider):
@@ -48,32 +46,16 @@ class OllamaLLMProvider(LLMProvider):
         self.model = OLLAMA_MODEL
 
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
-        truncated = transcript.text[:_MAX_TRANSCRIPT_CHARS]
-
-        user_msg = _USER_PROMPT.format(
-            title=episode.title,
-            domain=domain,
-            chars=len(truncated),
-            transcript=truncated,
-        )
-
-        # Use /api/chat with a system role for better instruction following
-        response = requests.post(
-            f"{self.base_url}/api/chat",
-            json={
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-                "stream": False,
-                "format": "json",       # Ollama JSON mode — forces valid JSON output
-            },
-            timeout=300,
-        )
-        response.raise_for_status()
-        raw = response.json().get("message", {}).get("content", "").strip()
-        data = self._parse_json(raw)
+        if len(transcript.text) > _MAX_TRANSCRIPT_CHARS:
+            data = chunked_extract(
+                self._generate_text, parse_json_response, episode, domain,
+                transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Ollama]",
+            )
+        else:
+            user_msg = _USER_PROMPT.format(
+                title=episode.title, domain=domain, transcript=transcript.text,
+            )
+            data = parse_json_response(self._generate_text(user_msg))
 
         insight_id = hashlib.md5(
             f"{episode.id}:{datetime.now(timezone.utc).isoformat()}".encode()
@@ -94,16 +76,24 @@ class OllamaLLMProvider(LLMProvider):
             title_en=data.get("title_en", ""),
         )
 
-    @staticmethod
-    def _parse_json(text: str) -> dict:
-        # Strip possible markdown fences just in case
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
-        text = re.sub(r"\s*```\s*$", "", text, flags=re.MULTILINE)
-        # Extract first JSON object if surrounded by prose
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if m:
-            text = m.group(0)
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Ollama returned invalid JSON: {e}\n\nRaw:\n{text[:500]}")
+    def _generate_text(self, prompt: str) -> str:
+        """Call Ollama, returning raw response text.
+
+        No forced JSON mode/system prompt here (unlike the old single-call
+        path) since this is shared with chunked_extract()'s plain-text
+        chunk-summary calls too — each prompt's own instructions plus
+        parse_json_response's fence/prose-stripping is enough for the JSON-expecting
+        calls, the same approach the other providers use.
+        """
+        response = requests.post(
+            f"{self.base_url}/api/chat",
+            json={
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+            },
+            timeout=300,
+        )
+        response.raise_for_status()
+        return response.json().get("message", {}).get("content", "").strip()
+

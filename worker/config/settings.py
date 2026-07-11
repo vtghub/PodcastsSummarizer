@@ -56,6 +56,27 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 # llama-3.1-8b-instant: 131k TPM free tier (vs 12k for 70b) — fits 17 sources/run easily
+GROQ_MODEL_70B = os.getenv("GROQ_MODEL_70B", "llama-3.3-70b-versatile")
+# A second Groq model — separate quota bucket from GROQ_MODEL, so it's another
+# waterfall slot from the same API key, not just a config alternative.
+
+# ---------------------------------------------------------------------------
+# Mistral (La Plateforme free tier)
+# ---------------------------------------------------------------------------
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
+
+# ---------------------------------------------------------------------------
+# Cohere (trial key free tier)
+# ---------------------------------------------------------------------------
+COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
+COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r")
+
+# ---------------------------------------------------------------------------
+# OpenRouter (free tier — hosts many ":free"-suffixed models under one key;
+# each model gets its own PROVIDER_SLOT, same idea as Groq's two models)
+# ---------------------------------------------------------------------------
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
 # ---------------------------------------------------------------------------
 # Ollama (local LLM alternative)
