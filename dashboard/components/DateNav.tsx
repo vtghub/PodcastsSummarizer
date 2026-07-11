@@ -25,8 +25,28 @@ export default function DateNav({ selectedDate, availableDates }: Props) {
 
   const sortedDates = [...availableDates].sort();
   const currentIdx = sortedDates.indexOf(selectedDate);
-  const prevDate = currentIdx > 0 ? sortedDates[currentIdx - 1] : null;
-  const nextDate = currentIdx < sortedDates.length - 1 ? sortedDates[currentIdx + 1] : null;
+
+  // selectedDate may have no data of its own — most commonly "today" before
+  // the pipeline has processed anything yet. indexOf returns -1 in that case,
+  // which used to make prevDate always null (Prev arrow wrongly disabled,
+  // even though yesterday's insights exist) and nextDate wrap around to the
+  // *oldest* available date. Fall back to date-order comparison so Prev/Next
+  // still find the nearest available day on either side.
+  let prevDate: string | null;
+  let nextDate: string | null;
+  if (currentIdx === -1) {
+    const insertionIdx = sortedDates.findIndex((d) => d > selectedDate);
+    if (insertionIdx === -1) {
+      prevDate = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : null;
+      nextDate = null;
+    } else {
+      prevDate = insertionIdx > 0 ? sortedDates[insertionIdx - 1] : null;
+      nextDate = sortedDates[insertionIdx];
+    }
+  } else {
+    prevDate = currentIdx > 0 ? sortedDates[currentIdx - 1] : null;
+    nextDate = currentIdx < sortedDates.length - 1 ? sortedDates[currentIdx + 1] : null;
+  }
   const availableSet = new Set(availableDates);
 
   // Detect mobile viewport
