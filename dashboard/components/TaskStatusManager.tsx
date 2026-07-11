@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ListChecks, RefreshCw, Loader2, PlayCircle, CheckCircle2, XCircle, Clock } from "lucide-react";
+import {
+  ListChecks, RefreshCw, Loader2, PlayCircle, CheckCircle2, XCircle, Clock,
+  Workflow, StopCircle, ExternalLink, MinusCircle,
+} from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 interface BackfillJob {
@@ -27,10 +30,39 @@ interface BackfillFailure {
   failed_at: string;
 }
 
+interface RunInfo {
+  id: number;
+  status: string;       // queued | in_progress | completed | waiting
+  conclusion: string | null;
+  createdAt: string;
+  htmlUrl: string;
+  event: string;
+}
+
+interface WorkflowInfo {
+  id: number;
+  name: string;
+  fileName: string;
+  state: string;
+  htmlUrl: string;
+  latestRun: RunInfo | null;
+}
+
 function statusBadge(status: string) {
   if (status === "completed") return { icon: CheckCircle2, color: "#34D399", label: "Completed" };
   if (status === "failed") return { icon: XCircle, color: "#F87171", label: "Failed" };
   return { icon: Clock, color: "var(--acc)", label: "Running" };
+}
+
+function runBadge(run: RunInfo | null) {
+  if (!run) return { icon: MinusCircle, color: "var(--txt-4)", label: "Never run" };
+  if (run.status === "in_progress" || run.status === "queued" || run.status === "waiting") {
+    return { icon: Loader2, color: "var(--acc)", label: run.status === "queued" ? "Queued" : "Running", spin: true };
+  }
+  if (run.conclusion === "success") return { icon: CheckCircle2, color: "#34D399", label: "Success" };
+  if (run.conclusion === "failure") return { icon: XCircle, color: "#F87171", label: "Failed" };
+  if (run.conclusion === "cancelled") return { icon: MinusCircle, color: "var(--txt-4)", label: "Cancelled" };
+  return { icon: MinusCircle, color: "var(--txt-4)", label: run.conclusion ?? run.status };
 }
 
 export default function TaskStatusManager() {
@@ -39,6 +71,11 @@ export default function TaskStatusManager() {
   const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [triggering, setTriggering] = useState(false);
+
+  const [workflows, setWorkflows] = useState<WorkflowInfo[] | null>(null);
+  const [workflowsError, setWorkflowsError] = useState("");
+  const [workflowsRefreshing, setWorkflowsRefreshing] = useState(false);
+  const [busyWorkflow, setBusyWorkflow] = useState<string | null>(null);
 
   const [toast, setToast] = useState<{ msg: string; type: "error" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,7 +101,22 @@ export default function TaskStatusManager() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadWorkflows = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) setWorkflowsRefreshing(true);
+    try {
+      const res = await fetch("/api/admin/workflows");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to load workflows");
+      setWorkflows(data.workflows ?? []);
+      setWorkflowsError("");
+    } catch (e) {
+      setWorkflowsError(e instanceof Error ? e.message : "Failed to load workflows");
+    } finally {
+      if (!opts.silent) setWorkflowsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); loadWorkflows(); }, [load, loadWorkflows]);
 
   // Push-based refresh while a batch is running — requires migration 020
   // (backfill_jobs added to the supabase_realtime publication).
@@ -87,6 +139,13 @@ export default function TaskStatusManager() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // GitHub Actions has no push channel we can subscribe to from the browser
+  // — poll lightly instead so in-progress runs update without a manual click.
+  useEffect(() => {
+    const interval = setInterval(() => loadWorkflows({ silent: true }), 20000);
+    return () => clearInterval(interval);
+  }, [loadWorkflows]);
+
   async function runBatchNow() {
     setTriggering(true);
     try {
@@ -101,6 +160,44 @@ export default function TaskStatusManager() {
     }
   }
 
+  async function runWorkflowNow(fileName: string) {
+    setBusyWorkflow(fileName);
+    try {
+      const res = await fetch("/api/admin/workflows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "dispatch", fileName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to trigger workflow");
+      showToast("Run queued — refreshing shortly…", "success");
+      setTimeout(() => loadWorkflows({ silent: true }), 3000);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Failed to trigger workflow", "error");
+    } finally {
+      setBusyWorkflow(null);
+    }
+  }
+
+  async function cancelRun(fileName: string, runId: number) {
+    setBusyWorkflow(fileName);
+    try {
+      const res = await fetch("/api/admin/workflows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel", runId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to cancel run");
+      showToast("Cancel requested.", "success");
+      setTimeout(() => loadWorkflows({ silent: true }), 3000);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Failed to cancel run", "error");
+    } finally {
+      setBusyWorkflow(null);
+    }
+  }
+
   const pct = job && job.total_items > 0 ? Math.min(100, Math.round((job.processed_items / job.total_items) * 100)) : 0;
   const badge = job ? statusBadge(job.status) : null;
 
@@ -111,6 +208,103 @@ export default function TaskStatusManager() {
           <ListChecks className="w-6 h-6" style={{ color: "var(--acc)" }} />
           <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>Task Status</h1>
         </div>
+      </div>
+      <p className="text-sm mb-6" style={{ color: "var(--txt-3)" }}>
+        Background jobs and scheduled GitHub Actions runners for this project.
+      </p>
+
+      {/* ── GitHub Actions Runners ─────────────────────────────────────── */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Workflow className="w-4 h-4" style={{ color: "var(--txt-3)" }} />
+            <h2 className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>GitHub Actions Runners</h2>
+          </div>
+          <button
+            onClick={() => loadWorkflows()}
+            disabled={workflowsRefreshing}
+            title="Refresh runners"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60"
+            style={{ background: "var(--bg-elevated)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${workflowsRefreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
+
+        {workflowsError && <p className="text-sm mb-4" style={{ color: "#EF4444" }}>{workflowsError}</p>}
+
+        {!workflows && !workflowsError && (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-4)" }} />
+          </div>
+        )}
+
+        {workflows && (
+          <div className="rounded-2xl border overflow-hidden divide-y" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
+            {workflows.map((wf) => {
+              const rb = runBadge(wf.latestRun);
+              const isBusy = busyWorkflow === wf.fileName;
+              const isActive = wf.latestRun && ["queued", "in_progress", "waiting"].includes(wf.latestRun.status);
+              return (
+                <div key={wf.id} className="flex items-center gap-3 px-4 py-3">
+                  <rb.icon className={`w-4 h-4 flex-shrink-0 ${rb.spin ? "animate-spin" : ""}`} style={{ color: rb.color }} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>{wf.name}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-xs" style={{ color: rb.color }}>{rb.label}</span>
+                      {wf.latestRun && (
+                        <>
+                          <span className="text-xs" style={{ color: "var(--txt-4)" }}>·</span>
+                          <span className="text-xs" style={{ color: "var(--txt-4)" }}>
+                            {new Date(wf.latestRun.createdAt).toLocaleString()}
+                          </span>
+                          <a
+                            href={wf.latestRun.htmlUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-0.5 text-xs"
+                            style={{ color: "var(--txt-4)" }}
+                            title="View on GitHub"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {isActive ? (
+                    <button
+                      onClick={() => wf.latestRun && cancelRun(wf.fileName, wf.latestRun.id)}
+                      disabled={isBusy}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60 flex-shrink-0"
+                      style={{ background: "var(--bg-elevated)", color: "#F87171", borderColor: "var(--bdr)" }}
+                    >
+                      {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <StopCircle className="w-3.5 h-3.5" />}
+                      Cancel
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => runWorkflowNow(wf.fileName)}
+                      disabled={isBusy}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60 flex-shrink-0"
+                      style={{ background: "var(--acc)", color: "#fff" }}
+                    >
+                      {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+                      Run now
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Insight backfill job ───────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>Insight Backfill</h2>
         <button
           onClick={() => load()}
           disabled={refreshing}
@@ -122,10 +316,9 @@ export default function TaskStatusManager() {
           Refresh
         </button>
       </div>
-      <p className="text-sm mb-6" style={{ color: "var(--txt-3)" }}>
-        Background job that re-runs every existing insight through the current LLM waterfall, reusing its
-        saved transcript. Runs one batch daily (or on demand below) and resumes automatically — a full
-        backfill is expected to span several days.
+      <p className="text-sm mb-3" style={{ color: "var(--txt-3)" }}>
+        Re-runs every existing insight through the current LLM waterfall, reusing its saved transcript.
+        Runs one batch daily (or via the runner above) and resumes automatically.
       </p>
 
       {loadError && <p className="text-sm mb-4" style={{ color: "#EF4444" }}>{loadError}</p>}

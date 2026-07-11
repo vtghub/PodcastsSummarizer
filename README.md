@@ -147,6 +147,7 @@ PodcastsSummarizer/
 │   │       ├── admin/users/[id]/subscriptions/ # GET catalog + user's subscribedIds · POST/DELETE { sourceId } — admin subscribes/unsubscribes any user to/from any podcast
 │   │       ├── admin/llm-providers/ # GET — providers grouped by scope ({pipeline, ask_ai, recommendations}) · PATCH { scope, provider_key, enabled?, priority? } — admin only
 │   │       ├── admin/backfill/      # GET — latest insight-reextraction backfill job + recent failures · POST — workflow_dispatch one batch now, admin only
+│   │       ├── admin/workflows/     # GET — every GitHub Actions workflow + its most recent run · POST { action: "dispatch"|"cancel" } — trigger or cancel a run, admin only
 │   │       ├── recommendations/     # GET — on-demand best-of-week insight ranking (scope='recommendations') + trending unsubscribed podcasts, authed
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
@@ -363,7 +364,7 @@ npm run dev      # http://localhost:3000
 | **New Insights Indicator** | When new episodes have been processed since the user's last visit, a **"N new"** orange pill appears inline next to the Dashboard link on desktop (with a tooltip); on mobile, the Dashboard bottom-tab icon shows a count badge and a **"new"** sublabel beneath the tab text. Count is derived from `last_visited_at` on `user_profiles` vs. `insights.created_at` for the user's subscribed sources. |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar (My Podcasts hidden — accessible via bottom tab bar), fixed bottom tab bar (Dashboard · Podcasts · **Ask** · Profile); domain filter strips are horizontally scrollable on mobile across Dashboard and Podcast Catalog |
 | **Recommendations ("For You")** | Signed-in users can view/refresh their best-of-week insight picks and trending-podcast suggestions on demand at `/recommendations`, in addition to the Sunday email — same LLM ranking (`scope='recommendations'`), computed fresh on request. "For You" link in desktop navbar. |
-| **Task Status (admin)** | Admin-only `/admin/task-status` page showing live progress of the insight-reextraction backfill job — progress bar, succeeded/failed/remaining counts, recent failure list, and a "Run batch now" button to trigger an extra batch outside the daily schedule. |
+| **Task Status (admin)** | Admin-only `/admin/task-status` page with two sections: **GitHub Actions Runners** — every workflow in the repo with its most recent run status, a "Run now" button (workflow_dispatch), and a "Cancel" button when a run is queued/in progress, polled every 20s; and **Insight Backfill** — live progress of the insight-reextraction backfill job (progress bar, succeeded/failed/remaining counts, recent failure list, "Run batch now"), Realtime-updated. |
 
 ---
 
