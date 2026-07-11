@@ -65,9 +65,12 @@ function runBadge(run: RunInfo | null) {
   return { icon: MinusCircle, color: "var(--txt-4)", label: run.conclusion ?? run.status };
 }
 
+const DEFAULT_BATCH_SIZE = 30; // matches backfill_insights.yml's workflow_dispatch default and migration 020's column default
+
 export default function TaskStatusManager() {
   const [job, setJob] = useState<BackfillJob | null>(null);
   const [failures, setFailures] = useState<BackfillFailure[]>([]);
+  const [currentTotalInsights, setCurrentTotalInsights] = useState<number | null>(null);
   const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [triggering, setTriggering] = useState(false);
@@ -93,6 +96,7 @@ export default function TaskStatusManager() {
       if (!res.ok) throw new Error(data.error ?? "Failed to load status");
       setJob(data.job ?? null);
       setFailures(data.failures ?? []);
+      setCurrentTotalInsights(data.currentTotalInsights ?? null);
       setLoadError("");
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load status");
@@ -201,6 +205,18 @@ export default function TaskStatusManager() {
   const pct = job && job.total_items > 0 ? Math.min(100, Math.round((job.processed_items / job.total_items) * 100)) : 0;
   const badge = job ? statusBadge(job.status) : null;
 
+  // Orchestration estimate — answers "how many batches / days will this take"
+  // both before a job has ever run (using the current total) and while one
+  // is in progress (using its remaining count). Assumes the daily cron as
+  // the baseline cadence; clicking "Run now" or "Run batch now" adds extra
+  // batches beyond that, shortening the estimate.
+  const batchSize = job?.batch_size ?? DEFAULT_BATCH_SIZE;
+  const activeJob = job && job.status !== "completed";
+  const remainingItems = activeJob
+    ? Math.max(0, job.total_items - job.processed_items)
+    : currentTotalInsights;
+  const remainingBatches = remainingItems !== null ? Math.ceil(remainingItems / batchSize) : null;
+
   return (
     <div className="max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-1">
@@ -212,6 +228,27 @@ export default function TaskStatusManager() {
       <p className="text-sm mb-6" style={{ color: "var(--txt-3)" }}>
         Background jobs and scheduled GitHub Actions runners for this project.
       </p>
+
+      {remainingBatches !== null && remainingItems !== null && (
+        <div className="rounded-2xl border p-4 mb-6" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
+          <p className="text-sm font-semibold mb-1" style={{ color: "var(--txt-1)" }}>
+            Insight backfill orchestration
+          </p>
+          <p className="text-sm" style={{ color: "var(--txt-3)" }}>
+            {activeJob ? (
+              <>{remainingItems} insight{remainingItems !== 1 ? "s" : ""} left to reprocess</>
+            ) : (
+              <>{remainingItems} insight{remainingItems !== 1 ? "s" : ""} exist right now</>
+            )}
+            {" — at "}{batchSize}{" per batch, that's "}
+            <strong style={{ color: "var(--txt-1)" }}>{remainingBatches} batch{remainingBatches !== 1 ? "es" : ""}</strong>.
+            {" "}The daily cron runs one batch/day, so a hands-off backfill would take about{" "}
+            <strong style={{ color: "var(--txt-1)" }}>{remainingBatches} day{remainingBatches !== 1 ? "s" : ""}</strong>
+            {" "}(3:30 AM UTC each day) — click <strong>Run now</strong> / <strong>Run batch now</strong> to add extra batches
+            and finish sooner. New episodes processed while this is running aren't counted here until a later job picks them up.
+          </p>
+        </div>
+      )}
 
       {/* ── GitHub Actions Runners ─────────────────────────────────────── */}
       <div className="mb-8">

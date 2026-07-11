@@ -22,6 +22,14 @@ export async function GET() {
 
   const sb = getSupabaseClient();
 
+  // Current total insight count — lets the UI estimate the orchestration
+  // (how many batches / days) for a *new* job before one has ever run, and
+  // stays accurate afterward since new episodes keep landing while a
+  // multi-day backfill is in progress.
+  const { count: currentTotalInsights } = await sb
+    .from("insights")
+    .select("id", { count: "exact", head: true });
+
   const { data: job, error: jobError } = await sb
     .from("backfill_jobs")
     .select("*")
@@ -33,7 +41,7 @@ export async function GET() {
   if (jobError) {
     // Table may not exist yet if migration 020 hasn't been run.
     console.error("[admin/backfill] failed to read backfill_jobs:", jobError.message);
-    return NextResponse.json({ job: null, failures: [] });
+    return NextResponse.json({ job: null, failures: [], currentTotalInsights: currentTotalInsights ?? null });
   }
 
   let failures: unknown[] = [];
@@ -47,7 +55,7 @@ export async function GET() {
     failures = failureRows ?? [];
   }
 
-  return NextResponse.json({ job, failures });
+  return NextResponse.json({ job, failures, currentTotalInsights: currentTotalInsights ?? null });
 }
 
 /** Manually trigger one backfill batch immediately, instead of waiting for the daily cron. */
