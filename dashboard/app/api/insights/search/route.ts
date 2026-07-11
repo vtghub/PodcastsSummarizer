@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const sb = getSupabaseClient();
   let query = sb
     .from("insights")
-    .select("id, date, domain, summary, sources!inner(name), episodes(title)")
+    .select("id, date, domain, summary, sources!inner(name), episodes(title, title_en)")
     .textSearch("search_vector", q, { type: "websearch", config: "english" });
 
   if (domain)   query = query.eq("domain", domain);
@@ -32,7 +32,8 @@ export async function GET(request: Request) {
     domain: r.domain,
     summary: (r.summary as string)?.slice(0, 160),
     source_name: (r.sources as { name: string } | null)?.name,
-    episode_title: (r.episodes as { title: string } | null)?.title,
+    episode_title: (r.episodes as { title: string; title_en?: string } | null)?.title_en
+      || (r.episodes as { title: string } | null)?.title,
   }));
 
   return NextResponse.json({ results });

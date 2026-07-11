@@ -47,6 +47,7 @@ class SQLiteStorage(StorageProvider):
                     id               TEXT PRIMARY KEY,
                     source_id        TEXT NOT NULL,
                     title            TEXT NOT NULL,
+                    title_en         TEXT,
                     url              TEXT NOT NULL,
                     published_at     TEXT NOT NULL,
                     duration_seconds INTEGER NOT NULL DEFAULT 0,
@@ -83,6 +84,13 @@ class SQLiteStorage(StorageProvider):
                 CREATE INDEX IF NOT EXISTS idx_insights_domain ON insights(domain);
                 CREATE INDEX IF NOT EXISTS idx_episodes_source ON episodes(source_id);
             """)
+            # Databases created before title_en existed won't have picked it up
+            # from CREATE TABLE IF NOT EXISTS above — add it defensively.
+            try:
+                conn.execute("ALTER TABLE episodes ADD COLUMN title_en TEXT")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
     # ------------------------------------------------------------------
     # Sources
@@ -152,6 +160,10 @@ class SQLiteStorage(StorageProvider):
     def mark_episode_done(self, episode_id: str) -> None:
         with self._conn() as conn:
             conn.execute("UPDATE episodes SET status = 'done' WHERE id = ?", (episode_id,))
+
+    def update_episode_title_en(self, episode_id: str, title_en: str) -> None:
+        with self._conn() as conn:
+            conn.execute("UPDATE episodes SET title_en = ? WHERE id = ?", (title_en, episode_id))
 
     # ------------------------------------------------------------------
     # Transcripts

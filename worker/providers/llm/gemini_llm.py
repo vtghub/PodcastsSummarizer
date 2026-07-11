@@ -74,6 +74,7 @@ class GeminiLLMProvider(LLMProvider):
             key_quotes=data.get("key_quotes", []),
             action_items=data.get("action_items", []),
             tags=data.get("tags", []),
+            title_en=data.get("title_en", ""),
         )
 
     @staticmethod
