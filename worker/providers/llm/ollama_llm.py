@@ -1,14 +1,13 @@
 """Ollama local LLM provider — fully offline, no API key needed."""
 
 import hashlib
-import json
-import re
 from datetime import datetime, timezone
 
 import requests
 
 from worker.core.interfaces import Episode, Insight, LLMProvider, Transcript
 from worker.config.settings import OLLAMA_BASE_URL, OLLAMA_MODEL
+from worker.providers.llm.text_utils import parse_json_response
 from worker.providers.llm.chunking import chunked_extract
 
 _USER_PROMPT = """\
@@ -49,14 +48,14 @@ class OllamaLLMProvider(LLMProvider):
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
         if len(transcript.text) > _MAX_TRANSCRIPT_CHARS:
             data = chunked_extract(
-                self._generate_text, self._parse_json, episode, domain,
+                self._generate_text, parse_json_response, episode, domain,
                 transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Ollama]",
             )
         else:
             user_msg = _USER_PROMPT.format(
                 title=episode.title, domain=domain, transcript=transcript.text,
             )
-            data = self._parse_json(self._generate_text(user_msg))
+            data = parse_json_response(self._generate_text(user_msg))
 
         insight_id = hashlib.md5(
             f"{episode.id}:{datetime.now(timezone.utc).isoformat()}".encode()
@@ -83,7 +82,7 @@ class OllamaLLMProvider(LLMProvider):
         No forced JSON mode/system prompt here (unlike the old single-call
         path) since this is shared with chunked_extract()'s plain-text
         chunk-summary calls too — each prompt's own instructions plus
-        _parse_json's fence/prose-stripping is enough for the JSON-expecting
+        parse_json_response's fence/prose-stripping is enough for the JSON-expecting
         calls, the same approach the other providers use.
         """
         response = requests.post(
@@ -98,16 +97,3 @@ class OllamaLLMProvider(LLMProvider):
         response.raise_for_status()
         return response.json().get("message", {}).get("content", "").strip()
 
-    @staticmethod
-    def _parse_json(text: str) -> dict:
-        # Strip possible markdown fences just in case
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
-        text = re.sub(r"\s*```\s*$", "", text, flags=re.MULTILINE)
-        # Extract first JSON object if surrounded by prose
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if m:
-            text = m.group(0)
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Ollama returned invalid JSON: {e}\n\nRaw:\n{text[:500]}")

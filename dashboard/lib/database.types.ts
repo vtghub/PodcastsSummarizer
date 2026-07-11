@@ -310,6 +310,33 @@ export interface Database {
         };
         Relationships: [];
       };
+      llm_provider_config: {
+        Row: {
+          scope: string;
+          provider_key: string;
+          enabled: boolean;
+          priority: number;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          scope?: string;
+          provider_key: string;
+          enabled?: boolean;
+          priority?: number;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          scope?: string;
+          provider_key?: string;
+          enabled?: boolean;
+          priority?: number;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
