@@ -151,6 +151,20 @@ class SupabaseStorageProvider(StorageProvider):
                 )
                 return cur.fetchone() is not None
 
+    def find_duplicate_episode_id(self, source_id: str, title: str, published_at) -> str | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id FROM episodes
+                    WHERE source_id = %s AND title = %s AND published_at = %s AND status = 'done'
+                    LIMIT 1
+                    """,
+                    (source_id, title, published_at),
+                )
+                row = cur.fetchone()
+                return row["id"] if row else None
+
     def mark_episode_done(self, episode_id: str) -> None:
         with self._conn() as conn:
             with conn.cursor() as cur:

@@ -137,6 +137,18 @@ class SQLiteStorage(StorageProvider):
             ).fetchone()
         return row is not None
 
+    def find_duplicate_episode_id(self, source_id: str, title: str, published_at) -> str | None:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT id FROM episodes
+                WHERE source_id = ? AND title = ? AND published_at = ? AND status = 'done'
+                LIMIT 1
+                """,
+                (source_id, title, published_at.isoformat()),
+            ).fetchone()
+        return row[0] if row else None
+
     def mark_episode_done(self, episode_id: str) -> None:
         with self._conn() as conn:
             conn.execute("UPDATE episodes SET status = 'done' WHERE id = ?", (episode_id,))

@@ -156,6 +156,20 @@ class StorageProvider(ABC):
         """Returns True only for fully-processed (status=done) episodes."""
         ...
 
+    def find_duplicate_episode_id(
+        self, source_id: str, title: str, published_at: "datetime"
+    ) -> str | None:
+        """
+        Returns the id of an existing, fully-processed episode with the same
+        source/title/published_at, if any — even if this episode's own id
+        (derived from its audio URL) doesn't match. Some feeds rotate audio
+        URLs (ad-insertion / tracking redirects) on every fetch, which would
+        otherwise defeat episode_exists() and cause the same episode to be
+        reprocessed under a new id, producing a duplicate insight.
+        Default: no-op — both storage providers override this.
+        """
+        return None
+
     @abstractmethod
     def mark_episode_done(self, episode_id: str) -> None: ...
 
