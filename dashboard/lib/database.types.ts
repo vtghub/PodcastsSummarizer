@@ -312,6 +312,7 @@ export interface Database {
       };
       llm_provider_config: {
         Row: {
+          scope: string;
           provider_key: string;
           enabled: boolean;
           priority: number;
@@ -319,6 +320,7 @@ export interface Database {
           updated_by: string | null;
         };
         Insert: {
+          scope?: string;
           provider_key: string;
           enabled?: boolean;
           priority?: number;
@@ -326,6 +328,7 @@ export interface Database {
           updated_by?: string | null;
         };
         Update: {
+          scope?: string;
           provider_key?: string;
           enabled?: boolean;
           priority?: number;

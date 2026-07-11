@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, CheckCircle2, XCircle } from "lucide-react";
+import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, CheckCircle2, XCircle, Workflow, MessageCircleQuestion } from "lucide-react";
 
 interface Provider {
   key: string;
@@ -12,8 +12,31 @@ interface Provider {
   priority: number;
 }
 
+type Scope = "pipeline" | "ask_ai";
+type ProvidersByScope = Record<Scope, Provider[]>;
+
+const SECTIONS: { scope: Scope; title: string; icon: typeof Workflow; description: string }[] = [
+  {
+    scope: "pipeline",
+    title: "Pipeline Extraction",
+    icon: Workflow,
+    description:
+      "The worker's insight-extraction waterfall — enabled providers are tried in order, top to bottom, " +
+      "falling through to the next on failure or quota exhaustion. Changes take effect on the worker's " +
+      "next pipeline run, not instantly.",
+  },
+  {
+    scope: "ask_ai",
+    title: "Ask AI",
+    icon: MessageCircleQuestion,
+    description:
+      "The dashboard's Ask AI chat waterfall — enabled providers are tried in order for each question " +
+      "asked on the /ask page. Changes take effect on the next question, immediately.",
+  },
+];
+
 export default function LlmProviderManager() {
-  const [providers, setProviders] = useState<Provider[] | null>(null);
+  const [providersByScope, setProvidersByScope] = useState<ProvidersByScope | null>(null);
   const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -32,7 +55,7 @@ export default function LlmProviderManager() {
       const res = await fetch("/api/admin/llm-providers");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load providers");
-      setProviders(data.providers);
+      setProvidersByScope({ pipeline: data.pipeline ?? [], ask_ai: data.ask_ai ?? [] });
       setLoadError("");
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load providers");
@@ -43,11 +66,11 @@ export default function LlmProviderManager() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function patch(provider_key: string, body: { enabled?: boolean; priority?: number }) {
+  async function patch(scope: Scope, provider_key: string, body: { enabled?: boolean; priority?: number }) {
     const res = await fetch("/api/admin/llm-providers", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider_key, ...body }),
+      body: JSON.stringify({ scope, provider_key, ...body }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -55,45 +78,55 @@ export default function LlmProviderManager() {
     }
   }
 
-  async function toggleEnabled(p: Provider) {
-    if (!providers) return;
-    setBusyKey(p.key);
+  async function toggleEnabled(scope: Scope, p: Provider) {
+    if (!providersByScope) return;
+    const prev = providersByScope;
+    setBusyKey(`${scope}:${p.key}`);
     const nextEnabled = !p.enabled;
-    setProviders(providers.map((x) => (x.key === p.key ? { ...x, enabled: nextEnabled } : x)));
+    setProvidersByScope({
+      ...prev,
+      [scope]: prev[scope].map((x) => (x.key === p.key ? { ...x, enabled: nextEnabled } : x)),
+    });
     try {
-      await patch(p.key, { enabled: nextEnabled });
+      await patch(scope, p.key, { enabled: nextEnabled });
     } catch (e) {
-      setProviders(providers); // revert
+      setProvidersByScope(prev); // revert
       showToast(e instanceof Error ? e.message : "Failed to update", "error");
     } finally {
       setBusyKey(null);
     }
   }
 
-  async function move(index: number, direction: -1 | 1) {
-    if (!providers) return;
+  async function move(scope: Scope, index: number, direction: -1 | 1) {
+    if (!providersByScope) return;
+    const list = providersByScope[scope];
     const target = index + direction;
-    if (target < 0 || target >= providers.length) return;
+    if (target < 0 || target >= list.length) return;
 
-    const a = providers[index];
-    const b = providers[target];
-    const reordered = [...providers];
+    const a = list[index];
+    const b = list[target];
+    const reordered = [...list];
     [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
-    setProviders(reordered);
-    setBusyKey(a.key);
+    const prev = providersByScope;
+    setProvidersByScope({ ...prev, [scope]: reordered });
+    setBusyKey(`${scope}:${a.key}`);
     try {
       // Swap their priority values so the new order persists.
       await Promise.all([
-        patch(a.key, { priority: b.priority }),
-        patch(b.key, { priority: a.priority }),
+        patch(scope, a.key, { priority: b.priority }),
+        patch(scope, b.key, { priority: a.priority }),
       ]);
-      setProviders((prev) =>
-        (prev ?? []).map((x) =>
-          x.key === a.key ? { ...x, priority: b.priority } : x.key === b.key ? { ...x, priority: a.priority } : x
-        )
-      );
+      setProvidersByScope((curr) => {
+        if (!curr) return curr;
+        return {
+          ...curr,
+          [scope]: curr[scope].map((x) =>
+            x.key === a.key ? { ...x, priority: b.priority } : x.key === b.key ? { ...x, priority: a.priority } : x
+          ),
+        };
+      });
     } catch (e) {
-      setProviders(providers); // revert
+      setProvidersByScope(prev); // revert
       showToast(e instanceof Error ? e.message : "Failed to reorder", "error");
     } finally {
       setBusyKey(null);
@@ -119,95 +152,106 @@ export default function LlmProviderManager() {
         </button>
       </div>
       <p className="text-sm mb-6" style={{ color: "var(--txt-3)" }}>
-        Controls the pipeline&apos;s extraction waterfall — enabled providers are tried in order,
-        top to bottom, falling through to the next on failure or quota exhaustion. Changes take
-        effect on the worker&apos;s next pipeline run, not instantly.
+        This app calls an LLM in two independent places. Each has its own waterfall below — enabled
+        providers are tried top to bottom, falling through to the next on failure or quota exhaustion.
       </p>
 
       {loadError && (
         <p className="text-sm mb-4" style={{ color: "#EF4444" }}>{loadError}</p>
       )}
 
-      {!providers && !loadError && (
+      {!providersByScope && !loadError && (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-4)" }} />
         </div>
       )}
 
-      {providers && (
-        <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
-          <div className="divide-y" style={{ borderColor: "var(--bdr)" }}>
-            {providers.map((p, i) => {
-              const busy = busyKey === p.key;
-              return (
-                <div key={p.key} className="flex items-center gap-4 px-4 py-3" style={{ opacity: p.enabled ? 1 : 0.55 }}>
-                  {/* Reorder arrows */}
-                  <div className="flex flex-col gap-0.5 flex-shrink-0">
-                    <button
-                      onClick={() => move(i, -1)}
-                      disabled={i === 0 || busy}
-                      title="Move up (tried earlier)"
-                      className="p-0.5 rounded disabled:opacity-25 disabled:cursor-not-allowed"
-                      style={{ color: "var(--txt-4)" }}
-                    >
-                      <ChevronUp className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => move(i, 1)}
-                      disabled={i === providers.length - 1 || busy}
-                      title="Move down (tried later)"
-                      className="p-0.5 rounded disabled:opacity-25 disabled:cursor-not-allowed"
-                      style={{ color: "var(--txt-4)" }}
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                    </button>
-                  </div>
+      {providersByScope &&
+        SECTIONS.map(({ scope, title, icon: Icon, description }) => {
+          const providers = providersByScope[scope];
+          return (
+            <div key={scope} className="mb-8">
+              <div className="flex items-center gap-2 mb-1">
+                <Icon className="w-4 h-4" style={{ color: "var(--txt-3)" }} />
+                <h2 className="text-base font-semibold" style={{ color: "var(--txt-1)" }}>{title}</h2>
+              </div>
+              <p className="text-xs mb-3" style={{ color: "var(--txt-4)" }}>{description}</p>
 
-                  {/* Position badge */}
-                  <span
-                    className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold"
-                    style={{ background: "var(--bg-elevated)", color: "var(--txt-3)" }}
-                  >
-                    {i + 1}
-                  </span>
+              <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
+                <div className="divide-y" style={{ borderColor: "var(--bdr)" }}>
+                  {providers.map((p, i) => {
+                    const busy = busyKey === `${scope}:${p.key}`;
+                    return (
+                      <div key={p.key} className="flex items-center gap-4 px-4 py-3" style={{ opacity: p.enabled ? 1 : 0.55 }}>
+                        {/* Reorder arrows */}
+                        <div className="flex flex-col gap-0.5 flex-shrink-0">
+                          <button
+                            onClick={() => move(scope, i, -1)}
+                            disabled={i === 0 || busy}
+                            title="Move up (tried earlier)"
+                            className="p-0.5 rounded disabled:opacity-25 disabled:cursor-not-allowed"
+                            style={{ color: "var(--txt-4)" }}
+                          >
+                            <ChevronUp className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => move(scope, i, 1)}
+                            disabled={i === providers.length - 1 || busy}
+                            title="Move down (tried later)"
+                            className="p-0.5 rounded disabled:opacity-25 disabled:cursor-not-allowed"
+                            style={{ color: "var(--txt-4)" }}
+                          >
+                            <ChevronDown className="w-4 h-4" />
+                          </button>
+                        </div>
 
-                  {/* Name + key badge */}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>{p.display_name}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {p.env_var_present_here ? (
-                        <span className="flex items-center gap-1 text-xs" style={{ color: "#34D399" }}>
-                          <CheckCircle2 className="w-3 h-3" /> {p.env_var} detected here
+                        {/* Position badge */}
+                        <span
+                          className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold"
+                          style={{ background: "var(--bg-elevated)", color: "var(--txt-3)" }}
+                        >
+                          {i + 1}
                         </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-xs" style={{ color: "var(--txt-4)" }} title="Not set in this environment — check the worker's env too, this only reflects the dashboard's own">
-                          <XCircle className="w-3 h-3" /> {p.env_var} not set here
-                        </span>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* Enabled toggle */}
-                  <button
-                    type="button"
-                    onClick={() => toggleEnabled(p)}
-                    disabled={busy}
-                    className="relative flex-shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-60"
-                    style={{ background: p.enabled ? "var(--acc)" : "var(--bdr-hov)" }}
-                    aria-pressed={p.enabled}
-                    title={p.enabled ? "Disable this provider" : "Enable this provider"}
-                  >
-                    <span
-                      className="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform"
-                      style={{ left: p.enabled ? "calc(100% - 1.25rem)" : "0.25rem" }}
-                    />
-                  </button>
+                        {/* Name + key badge */}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>{p.display_name}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            {p.env_var_present_here ? (
+                              <span className="flex items-center gap-1 text-xs" style={{ color: "#34D399" }}>
+                                <CheckCircle2 className="w-3 h-3" /> {p.env_var} detected here
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-xs" style={{ color: "var(--txt-4)" }} title="Not set in this environment — check the worker's env too, this only reflects the dashboard's own">
+                                <XCircle className="w-3 h-3" /> {p.env_var} not set here
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Enabled toggle */}
+                        <button
+                          type="button"
+                          onClick={() => toggleEnabled(scope, p)}
+                          disabled={busy}
+                          className="relative flex-shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-60"
+                          style={{ background: p.enabled ? "var(--acc)" : "var(--bdr-hov)" }}
+                          aria-pressed={p.enabled}
+                          title={p.enabled ? "Disable this provider" : "Enable this provider"}
+                        >
+                          <span
+                            className="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                            style={{ left: p.enabled ? "calc(100% - 1.25rem)" : "0.25rem" }}
+                          />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+              </div>
+            </div>
+          );
+        })}
 
       {toast && (
         <div

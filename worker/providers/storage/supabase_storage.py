@@ -177,15 +177,21 @@ class SupabaseStorageProvider(StorageProvider):
         try:
             with self._conn() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT provider_key, enabled, priority FROM llm_provider_config")
+                    # scope='pipeline' — the worker only cares about its own
+                    # extraction waterfall's config, not the dashboard's
+                    # separate Ask AI waterfall (scope='ask_ai', migration 019).
+                    cur.execute(
+                        "SELECT provider_key, enabled, priority FROM llm_provider_config WHERE scope = %s",
+                        ("pipeline",),
+                    )
                     rows = cur.fetchall()
             return {
                 row["provider_key"]: {"enabled": row["enabled"], "priority": row["priority"]}
                 for row in rows
             }
         except Exception as e:
-            # Table may not exist yet (migration 018 not applied) — fall back
-            # to PROVIDER_SLOTS' code defaults rather than breaking the pipeline.
+            # Table may not exist yet (migration 018/019 not applied) — fall
+            # back to PROVIDER_SLOTS' code defaults rather than breaking the pipeline.
             print(f"[LLMProviderConfig] couldn't read llm_provider_config ({e}) — using code defaults")
             return {}
 

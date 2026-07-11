@@ -215,10 +215,13 @@ class StorageProvider(ABC):
     def get_llm_provider_config(self) -> dict[str, dict]:
         """
         Returns {provider_key: {"enabled": bool, "priority": int}} overrides
-        for the LLM waterfall (see provider_registry.py), as set from the
-        /admin/llm-providers dashboard page. A provider_key with no entry
-        here falls back to its declared default in PROVIDER_SLOTS.
-        Default: empty dict (local dev — waterfall uses code defaults).
+        for the worker's own extraction waterfall (scope='pipeline' — see
+        provider_registry.py), as set from the /admin/llm-providers
+        dashboard page. The dashboard's separate Ask AI waterfall
+        (scope='ask_ai') is configured from the same table but is read
+        directly by the dashboard, not through this method. A provider_key
+        with no entry here falls back to its declared default in
+        PROVIDER_SLOTS. Default: empty dict (local dev — code defaults).
         """
         return {}
 
