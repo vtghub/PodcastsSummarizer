@@ -210,7 +210,7 @@ class TestEmailFanOut:
         email.send_digest.return_value = True
 
         with patch("worker.jobs.pipeline.get_email_provider", return_value=email):
-            _send_per_user_digests(storage, "2026-07-07")
+            _send_per_user_digests(storage, "2026-07-07", force=True)
 
         assert email.send_digest.call_count == 2
         called_emails = {c.args[0] for c in email.send_digest.call_args_list}
@@ -255,7 +255,7 @@ class TestEmailFanOut:
         email = MagicMock()
         email.send_digest.return_value = True
         with patch("worker.jobs.pipeline.get_email_provider", return_value=email):
-            _send_per_user_digests(storage, "2026-07-07")
+            _send_per_user_digests(storage, "2026-07-07", force=True)
         by_domain = email.send_digest.call_args.args[2]
         assert "Technology & AI" in by_domain
         assert "Business" in by_domain
@@ -273,7 +273,7 @@ class TestEmailFanOut:
         email = MagicMock()
         email.send_digest.return_value = True
         with patch("worker.jobs.pipeline.get_email_provider", return_value=email):
-            _send_per_user_digests(storage, "2026-07-07")
+            _send_per_user_digests(storage, "2026-07-07", force=True)
         by_domain = email.send_digest.call_args.args[2]
         assert "Technology & AI" in by_domain
         assert "Business" not in by_domain
@@ -291,7 +291,7 @@ class TestEmailFanOut:
         email = MagicMock()
         email.send_digest.side_effect = [Exception("SMTP timeout"), True]
         with patch("worker.jobs.pipeline.get_email_provider", return_value=email):
-            _send_per_user_digests(storage, "2026-07-07")
+            _send_per_user_digests(storage, "2026-07-07", force=True)
         # Both users attempted despite first failure
         assert email.send_digest.call_count == 2
 
