@@ -173,16 +173,13 @@ class SupabaseStorageProvider(StorageProvider):
                     (title_en, episode_id),
                 )
 
-    def get_llm_provider_config(self) -> dict[str, dict]:
+    def get_llm_provider_config(self, scope: str = "pipeline") -> dict[str, dict]:
         try:
             with self._conn() as conn:
                 with conn.cursor() as cur:
-                    # scope='pipeline' — the worker only cares about its own
-                    # extraction waterfall's config, not the dashboard's
-                    # separate Ask AI waterfall (scope='ask_ai', migration 019).
                     cur.execute(
                         "SELECT provider_key, enabled, priority FROM llm_provider_config WHERE scope = %s",
-                        ("pipeline",),
+                        (scope,),
                     )
                     rows = cur.fetchall()
             return {

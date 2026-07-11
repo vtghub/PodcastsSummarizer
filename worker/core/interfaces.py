@@ -114,6 +114,23 @@ class TranscriptionProvider(ABC):
         ...
 
 
+def default_rank_insights(insights: list[Insight], domains: list[str], top_n: int = 5) -> list[Insight]:
+    """
+    Select the top_n most relevant insights for the given domains by sorting on
+    richness (key_points + key_quotes count) — no LLM call. Used as the base
+    behavior for LLMProvider.rank_insights and as a fallback when an LLM-backed
+    ranking (e.g. WaterfallLLMProvider) is unavailable or fails.
+    """
+    if not insights:
+        return []
+    scored = sorted(
+        insights,
+        key=lambda i: len(i.key_points) + len(i.key_quotes),
+        reverse=True,
+    )
+    return scored[:top_n]
+
+
 class LLMProvider(ABC):
     """Extracts structured insights from a transcript."""
 
@@ -127,14 +144,7 @@ class LLMProvider(ABC):
         Default: sort by richness (key_points + key_quotes count) — no LLM call.
         Concrete providers may override with an actual LLM ranking call.
         """
-        if not insights:
-            return []
-        scored = sorted(
-            insights,
-            key=lambda i: len(i.key_points) + len(i.key_quotes),
-            reverse=True,
-        )
-        return scored[:top_n]
+        return default_rank_insights(insights, domains, top_n)
 
 
 class StorageProvider(ABC):
@@ -212,16 +222,16 @@ class StorageProvider(ABC):
         """Set published_at on an episode (only if currently null). Returns rows updated. Default: no-op."""
         return 0
 
-    def get_llm_provider_config(self) -> dict[str, dict]:
+    def get_llm_provider_config(self, scope: str = "pipeline") -> dict[str, dict]:
         """
         Returns {provider_key: {"enabled": bool, "priority": int}} overrides
-        for the worker's own extraction waterfall (scope='pipeline' — see
-        provider_registry.py), as set from the /admin/llm-providers
-        dashboard page. The dashboard's separate Ask AI waterfall
-        (scope='ask_ai') is configured from the same table but is read
-        directly by the dashboard, not through this method. A provider_key
-        with no entry here falls back to its declared default in
-        PROVIDER_SLOTS. Default: empty dict (local dev — code defaults).
+        for a given LLM-consuming feature's waterfall — see provider_registry.py
+        for the full slot list and how config is resolved. scope is one of
+        'pipeline' (worker extraction), 'ask_ai' (dashboard chat, read
+        directly by the dashboard rather than through this method), or
+        'recommendations' (weekly best-of-week ranking). A provider_key with
+        no entry here falls back to its declared default in PROVIDER_SLOTS.
+        Default: empty dict (local dev — code defaults).
         """
         return {}
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X, MessageCircle, Shield, Cpu } from "lucide-react";
+import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X, MessageCircle, Shield, Cpu, Sparkles } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
@@ -193,6 +193,19 @@ export default function NavBar({
               >
                 <MessageCircle className="w-3.5 h-3.5" />
                 Ask
+              </Link>
+            </span>
+          )}
+          {userEmail && (
+            <span className="hidden sm:inline">
+              <Link
+                href="/recommendations"
+                className={`transition-colors text-sm flex items-center gap-1 ${pathname === "/recommendations" ? "font-medium" : "hover:opacity-80"}`}
+                style={{ color: pathname === "/recommendations" ? "var(--acc)" : "var(--txt-3)" }}
+                title="AI-picked best insights from your subscriptions this week"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                For You
               </Link>
             </span>
           )}

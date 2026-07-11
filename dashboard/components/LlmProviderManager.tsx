@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, CheckCircle2, XCircle, Workflow, MessageCircleQuestion } from "lucide-react";
+import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, CheckCircle2, XCircle, Workflow, MessageCircleQuestion, Sparkles } from "lucide-react";
 
 interface Provider {
   key: string;
@@ -12,7 +12,7 @@ interface Provider {
   priority: number;
 }
 
-type Scope = "pipeline" | "ask_ai";
+type Scope = "pipeline" | "ask_ai" | "recommendations";
 type ProvidersByScope = Record<Scope, Provider[]>;
 
 const SECTIONS: { scope: Scope; title: string; icon: typeof Workflow; description: string }[] = [
@@ -32,6 +32,16 @@ const SECTIONS: { scope: Scope; title: string; icon: typeof Workflow; descriptio
     description:
       "The dashboard's Ask AI chat waterfall — enabled providers are tried in order for each question " +
       "asked on the /ask page. Changes take effect on the next question, immediately.",
+  },
+  {
+    scope: "recommendations",
+    title: "Recommendations",
+    icon: Sparkles,
+    description:
+      "Weekly best-of-week insight ranking — used by both the Sunday recommendations email (worker, " +
+      "picks up changes on its next run) and the on-demand “Refresh” button on /recommendations " +
+      "(dashboard, immediate). The dashboard's on-demand refresh can only call Gemini, Groq, Mistral, " +
+      "Together, and Cohere — OpenRouter providers enabled here apply to the weekly email only.",
   },
 ];
 
@@ -55,7 +65,7 @@ export default function LlmProviderManager() {
       const res = await fetch("/api/admin/llm-providers");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load providers");
-      setProvidersByScope({ pipeline: data.pipeline ?? [], ask_ai: data.ask_ai ?? [] });
+      setProvidersByScope({ pipeline: data.pipeline ?? [], ask_ai: data.ask_ai ?? [], recommendations: data.recommendations ?? [] });
       setLoadError("");
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load providers");
@@ -152,7 +162,7 @@ export default function LlmProviderManager() {
         </button>
       </div>
       <p className="text-sm mb-6" style={{ color: "var(--txt-3)" }}>
-        This app calls an LLM in two independent places. Each has its own waterfall below — enabled
+        This app calls an LLM in three independent places. Each has its own waterfall below — enabled
         providers are tried top to bottom, falling through to the next on failure or quota exhaustion.
       </p>
 

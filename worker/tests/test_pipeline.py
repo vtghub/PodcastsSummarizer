@@ -554,6 +554,69 @@ class TestWaterfall:
             wf.generate("chunk 2")
 
 
+# ── LLM-backed weekly ranking ────────────────────────────────────────────────
+
+class TestWaterfallRanking:
+    """WaterfallLLMProvider.rank_insights() — LLM-backed selection with a
+    heuristic fallback if the LLM call fails or returns something unusable."""
+
+    def _provider_with_fake_waterfall(self, generate_fn):
+        from worker.providers.llm.waterfall_llm import WaterfallLLMProvider
+        provider = WaterfallLLMProvider.__new__(WaterfallLLMProvider)
+        provider._waterfall = MagicMock()
+        provider._waterfall.generate.side_effect = generate_fn
+        return provider
+
+    def test_uses_llm_ranked_order(self):
+        insights = [_make_insight(id="a"), _make_insight(id="b"), _make_insight(id="c")]
+        provider = self._provider_with_fake_waterfall(
+            lambda prompt: '{"ranked_ids": ["c", "a"]}'
+        )
+        result = provider.rank_insights(insights, ["Technology & AI"], top_n=5)
+        assert [i.id for i in result] == ["c", "a"]
+
+    def test_caps_at_top_n(self):
+        insights = [_make_insight(id=str(n)) for n in range(5)]
+        provider = self._provider_with_fake_waterfall(
+            lambda prompt: '{"ranked_ids": ["0", "1", "2", "3", "4"]}'
+        )
+        result = provider.rank_insights(insights, ["Technology & AI"], top_n=2)
+        assert len(result) == 2
+
+    def test_falls_back_to_heuristic_on_llm_failure(self):
+        insights = [_make_insight(id="a", key_points=["p1"]),
+                    _make_insight(id="b", key_points=["p1", "p2", "p3"])]
+
+        def raises(prompt):
+            raise RuntimeError("all providers exhausted")
+
+        provider = self._provider_with_fake_waterfall(raises)
+        result = provider.rank_insights(insights, ["Technology & AI"], top_n=5)
+        assert [i.id for i in result] == ["b", "a"]  # richer insight first
+
+    def test_falls_back_to_heuristic_on_unparseable_response(self):
+        insights = [_make_insight(id="a", key_points=["p1"]),
+                    _make_insight(id="b", key_points=["p1", "p2", "p3"])]
+        provider = self._provider_with_fake_waterfall(lambda prompt: "not json at all")
+        result = provider.rank_insights(insights, ["Technology & AI"], top_n=5)
+        assert [i.id for i in result] == ["b", "a"]
+
+    def test_falls_back_to_heuristic_when_ranked_ids_dont_match_candidates(self):
+        insights = [_make_insight(id="a", key_points=["p1"]),
+                    _make_insight(id="b", key_points=["p1", "p2", "p3"])]
+        provider = self._provider_with_fake_waterfall(
+            lambda prompt: '{"ranked_ids": ["nonexistent"]}'
+        )
+        result = provider.rank_insights(insights, ["Technology & AI"], top_n=5)
+        assert [i.id for i in result] == ["b", "a"]
+
+    def test_empty_insights_returns_empty_without_calling_llm(self):
+        calls = []
+        provider = self._provider_with_fake_waterfall(lambda prompt: calls.append(1) or "{}")
+        assert provider.rank_insights([], ["Technology & AI"], top_n=5) == []
+        assert calls == []
+
+
 # ── Plug-in/plug-out provider registry ─────────────────────────────────────
 
 class TestProviderRegistry:
