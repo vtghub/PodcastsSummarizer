@@ -14,7 +14,7 @@ graph TB
         TXT["Text Transcript\n(captions / subtitles)"]
         AUDIO["Download Audio"]
         WHISPER["Whisper STT\n(tiny model, local)\ndomain-aware initial_prompt"]
-        LLM["LLM Insight Extraction\nGemini → Groq fallback"]
+        LLM["LLM Insight Extraction\nWaterfall: Gemini → Groq 8B/70B →\nMistral → Cohere → 4× OpenRouter\nchunked map-reduce for long transcripts\nsticky dead-provider fallback"]
         FANOUT["Per-User Digest Fan-out\nuser_profiles × user_subscriptions"]
         EMAIL["Gmail SMTP\nPersonalized HTML email"]
         RECJOB["Weekly Recommendations Job\nLLM rank_insights + get_trending_sources"]
@@ -34,6 +34,7 @@ graph TB
         PROFILES[("user_profiles\nis_admin, digest_enabled\ndigest_hour, digest_domains[]\ndigest_frequency, digest_day_of_week\nlast_visited_at")]
         SUBS[("user_subscriptions\nuser_id → source_id")]
         AUTHUSERS[("auth.users\nSupabase Auth")]
+        LLMCONFIG[("llm_provider_config\nscope, provider_key,\nenabled, priority")]
     end
 
     subgraph AUTH["🔐 Supabase Auth"]
@@ -56,6 +57,7 @@ graph TB
         ASKPAGE["ask/page.tsx\nLLM Q&A chat UI\nsuggested questions · citations"]
         ONBOARD["onboarding/page.tsx\nDomain picker + subscribe wizard"]
         ADMINUSERS["admin/users/page.tsx\nAdmin-only — list/search users,\ngrant/revoke admin, reset onboarding,\ncascade-delete user"]
+        ADMINLLM["admin/llm-providers/page.tsx\nAdmin-only — toggle/reorder waterfall\nper feature (Pipeline, Ask AI)"]
         REG["register/page.tsx"]
         LOGIN["login/page.tsx"]
         CACHE["unstable_cache\n1h TTL — public views only"]
@@ -75,8 +77,9 @@ graph TB
         ARENG["/api/insights/[id]/engagement\nGET ?view=1 · /unread DELETE\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
         AREXP["/api/insights/export\nGET ?format=excel|word&date=\nauthed — download insights\n(PDF generated client-side via jsPDF)"]
         ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
-        ARASK["/api/ask\nPOST — LLM Q&A\nnamed-podcast lookup + FTS context\n6-model waterfall: Gemini→Groq→Mistral→Together→Cohere"]
+        ARASK["/api/ask\nPOST — LLM Q&A\nnamed-podcast lookup + FTS context\n6-model waterfall: Gemini→Groq 8B→Groq 70B→Mistral→Together→Cohere\norder/enabled from llm_provider_config"]
         ARADMINUSERS["/api/admin/users\nGET list (admin only)\n/[id] PATCH is_admin|reset_onboarding\n/[id] DELETE — auth.admin.deleteUser cascade\n/[id]/subscriptions GET catalog+subs · POST/DELETE sourceId"]
+        ARADMINLLM["/api/admin/llm-providers\nGET providers by scope (admin only)\nPATCH scope, provider_key, enabled?, priority?"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
         ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]
     end
@@ -118,6 +121,7 @@ graph TB
     LAYOUT --> SPAGE
     LAYOUT --> ONBOARD
     LAYOUT --> ADMINUSERS
+    LAYOUT --> ADMINLLM
     LAYOUT --> REG
     LAYOUT --> LOGIN
 
@@ -167,6 +171,11 @@ graph TB
     ARADMINUSERS --> SOURCES
     PROFILES -.->|Realtime broadcast, migration 016| RT
     RT -.->|WebSocket push| ADMINUSERS
+
+    ADMINLLM --> ARADMINLLM
+    ARADMINLLM --> LLMCONFIG
+    LLM -.->|reads at run start, scope=pipeline| LLMCONFIG
+    ARASK -.->|reads per question, scope=ask_ai| LLMCONFIG
 
     LLM --> EPQUEUE
     INSIGHTS -.->|Realtime broadcast| RT
@@ -221,6 +230,7 @@ erDiagram
         text id PK
         text source_id FK
         text title
+        text title_en
         timestamptz published_at
         text status
     }
@@ -285,6 +295,14 @@ erDiagram
         text type
         timestamptz created_at
     }
+    llm_provider_config {
+        text scope PK
+        text provider_key PK
+        bool enabled
+        int  priority
+        timestamptz updated_at
+        uuid updated_by
+    }
 
     auth_users ||--|| user_profiles : "has"
     auth_users ||--o{ user_subscriptions : "subscribes"
@@ -309,6 +327,17 @@ Providers are resolved from environment variables at runtime — no code changes
 | Env var | Options |
 |---|---|
 | `STORAGE_PROVIDER` | `sqlite` (dev) · `supabase` (prod) — controls content storage only; Supabase is always required for auth and engagement |
-| `LLM_PROVIDER` | `gemini` · `groq` · `ollama` |
+| `LLM_PROVIDER` | `gemini` · `groq` · `mistral` · `cohere` · `ollama` · `waterfall` (chains every configured provider — see below) |
 | `TRANSCRIPTION_PROVIDER` | `local_whisper` |
 | `EMAIL_PROVIDER` | `console` (dev) · `gmail_smtp` (prod) |
+
+### LLM Waterfall (`LLM_PROVIDER=waterfall`)
+
+`worker/providers/llm/provider_registry.py` declares every provider *adapter* that exists in code (`PROVIDER_SLOTS`) — currently Gemini, Groq 8B, Groq 70B, Mistral, Cohere, and 4 OpenRouter free models. `build_enabled_slots(config)` resolves that list against:
+
+1. Whether the slot's env var (e.g. `OPENROUTER_API_KEY`) is actually set
+2. Admin-configured `enabled`/`priority` overrides in `llm_provider_config` (scope `pipeline`), editable at `/admin/llm-providers` without a deploy
+
+`WaterfallLLM` (`waterfall.py`) then tries each enabled slot in priority order per chunk. On failure or quota exhaustion it falls through to the next — and marks that provider "sticky dead" for the rest of the run, so later chunks skip straight past it instead of re-trying (and re-failing) it every time. Long transcripts are handled by `chunking.py`'s shared chunked map-reduce: split → per-chunk summarize → synthesize one structured insight.
+
+The dashboard's Ask AI chat (`/api/ask`) has its own independent 6-slot waterfall (adds Together AI, omits the 4 OpenRouter models), configured the same way but under scope `ask_ai` — see [request-workflow.md](request-workflow.md) for its sequence diagram.

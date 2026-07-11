@@ -13,7 +13,7 @@ Automatically extracts daily insights from podcasts and surfaces them via a pers
 | **Scheduler** | GitHub Actions (cron) | Ingestion pipeline every 4 hours; hourly digest fan-out; weekly recommendations Sundays 10 AM UTC |
 | **Source** | Python — RSS / yt-dlp | Fetches episode metadata and audio (8 parallel RSS workers; 4 concurrent LLM/transcript workers; Gemini → Groq retry chain) |
 | **Transcription** | OpenAI Whisper (local, `tiny` model) | Converts audio to text when no caption available |
-| **LLM** | Gemini (primary) → Groq (quota fallback) | Extracts summary, key points, quotes, action items |
+| **LLM** | Free-tier waterfall (Gemini, Groq 8B/70B, Mistral, Cohere, 4× OpenRouter models) | Extracts summary, key points, quotes, action items; chunked map-reduce for long transcripts; falls through to the next provider on quota/failure, sticky per-run so a dead provider isn't retried per chunk; toggle/reorder without a deploy via `/admin/llm-providers` |
 | **Storage** | Supabase PostgreSQL (prod) / SQLite (dev) | Episodes, transcripts, insights, user profiles, subscriptions |
 | **Email** | Gmail SMTP | Per-user personalized daily digest |
 | **Dashboard** | Next.js 15 on Vercel | Insights viewer; podcast subscription management; profile |
@@ -53,10 +53,18 @@ PodcastsSummarizer/
 │   │   │   └── local_whisper.py     # OpenAI Whisper (runs on Actions runner); domain-aware initial_prompt per source domain; post-processing corrections for known proper-noun mishearings (e.g. "Cloud AI" → "Claude AI", "Claude co-work" → "Claude Cowork")
 │   │   ├── llm/
 │   │   │   ├── gemini_llm.py        # Google Gemini (default)
-│   │   │   └── groq_llm.py          # Groq free-tier auto-fallback on quota error
+│   │   │   ├── groq_llm.py          # Groq — parametrized model (8B fast / 70B quality)
+│   │   │   ├── mistral_llm.py       # Mistral Small (REST)
+│   │   │   ├── cohere_llm.py        # Cohere Command R (REST)
+│   │   │   ├── openrouter_llm.py    # OpenRouter — parametrized model (4 free-tier slots)
+│   │   │   ├── chunking.py          # Shared chunked map-reduce extraction for long transcripts (split → per-chunk summarize → synthesize)
+│   │   │   ├── text_utils.py        # parse_json_response() — lenient fence/prose-stripping JSON parser shared by all providers
+│   │   │   ├── waterfall.py         # WaterfallLLM — chains ordered (name, generate_fn) steps; sticky dead-provider tracking (skips a failed provider for the rest of the run instead of retrying it every chunk)
+│   │   │   ├── provider_registry.py # PROVIDER_SLOTS (code-defined adapters that exist) + build_enabled_slots(config) — resolves against admin-configured enabled/priority
+│   │   │   └── waterfall_llm.py     # WaterfallLLMProvider — builds the pipeline's waterfall from provider_registry + Supabase-stored admin config (scope='pipeline')
 │   │   ├── storage/
 │   │   │   ├── sqlite_storage.py    # Local SQLite (dev, single-user)
-│   │   │   └── supabase_storage.py  # Cloud Postgres — includes per-user digest helpers
+│   │   │   └── supabase_storage.py  # Cloud Postgres — per-user digest helpers; find_duplicate_episode_id() catches episodes re-fetched under a new id when a feed rotates its audio URL; update_episode_title_en() persists English title translations; get_llm_provider_config() reads admin-configured waterfall overrides (scope='pipeline')
 │   │   └── email/
 │   │       └── gmail_smtp.py        # Gmail App Password SMTP + HTML renderer
 │   └── jobs/
@@ -65,7 +73,7 @@ PodcastsSummarizer/
 │       ├── backfill_platform_links.py  # One-time job: discover platform URLs for all existing sources
 │       └── backfill_published_at.py    # One-time job: backfill episode published dates from RSS feeds
 │   └── tests/
-│       └── test_pipeline.py         # Pytest suite (24 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience
+│       └── test_pipeline.py         # Pytest suite (42 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience, chunked extraction, waterfall (incl. sticky dead-provider fallback), provider registry
 │
 ├── supabase/
 │   └── migrations/
@@ -82,7 +90,13 @@ PodcastsSummarizer/
 │       ├── 011_last_visited.sql     # last_visited_at TIMESTAMPTZ on user_profiles (new-insight badge)
 │       ├── 012_digest_frequency.sql # digest_frequency ('daily'|'weekly') + digest_day_of_week (0=Mon…6=Sun) on user_profiles
 │       ├── 013_backfill_insight_dates.sql # One-time backfill: sets insight.date = episode.published_at for all existing rows
-│       └── 014_insight_views_delete.sql # Adds DELETE RLS policy on insight_views so users can remove their own view rows (Mark as Unread)
+│       ├── 013_digest_timezone.sql  # digest_timezone TEXT on user_profiles (IANA tz string, default America/New_York)
+│       ├── 014_insight_views_delete.sql # Adds DELETE RLS policy on insight_views so users can remove their own view rows (Mark as Unread)
+│       ├── 015_search_vector_sources_episodes.sql # Extends search_vector trigger to include episode title + source name (search by podcast/episode/guest name)
+│       ├── 016_admin_realtime.sql   # is_admin_user() SECURITY DEFINER + admin read-all RLS on user_profiles; adds user_profiles to supabase_realtime publication
+│       ├── 017_episode_title_en.sql # title_en TEXT on episodes — English translation of non-English episode titles
+│       ├── 018_llm_provider_config.sql # llm_provider_config table (provider_key, enabled, priority) — admin-editable LLM waterfall config
+│       └── 019_llm_provider_config_scopes.sql # Adds scope column ('pipeline' | 'ask_ai'); primary key becomes (scope, provider_key) so extraction and Ask AI have independent waterfalls
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
@@ -95,6 +109,7 @@ PodcastsSummarizer/
 │   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, digest frequency (daily/weekly), episode digest picker
 │   │   ├── onboarding/page.tsx      # New-user onboarding wizard (auth-required; redirects to /dashboard if already subscribed)
 │   │   ├── admin/users/page.tsx     # Admin-only user management — list/search users, grant/revoke admin, reset onboarding, cascade-delete user (redirects non-admins to /dashboard)
+│   │   ├── admin/llm-providers/page.tsx # Admin-only LLM waterfall control — toggle/reorder providers per feature (Pipeline Extraction, Ask AI), no deploy needed
 │   │   ├── about/page.tsx           # Public About page — feature overview, CTA buttons (no auth required)
 │   │   ├── ask/page.tsx             # LLM Q&A chat — suggested questions, chat bubbles, citation cards (signed-in)
 │   │   ├── login/page.tsx           # Email + password sign-in
@@ -122,16 +137,17 @@ PodcastsSummarizer/
 │   │       ├── insights/[id]/comments/ # GET list · POST add comment
 │   │       ├── insights/export/     # GET ?format=csv|word|json|pdf&date=YYYY-MM-DD — download insights for a date (authed)
 │   │       ├── insights/search/     # GET ?q= — full-text websearch across summary, key_points, quotes, tags; optional ?domain= ?from= ?to= filters
-│   │       ├── ask/                 # POST — LLM Q&A: FTS context retrieval + 6-model waterfall (Gemini→Groq→Mistral→Together→Cohere)
+│   │       ├── ask/                 # POST — LLM Q&A: FTS context retrieval + 6-model waterfall (Gemini→Groq 8B→Groq 70B→Mistral→Together→Cohere), order/enabled reads llm_provider_config (scope='ask_ai') with hardcoded default fallback
 │   │       ├── admin/users/         # GET — list all users (auth.users + user_profiles + per-domain subscription channels), admin only
 │   │       ├── admin/users/[id]/    # PATCH { is_admin } or { reset_onboarding } · DELETE — auth.admin.deleteUser cascades to all user_id-FK tables; admin only, self-protected
 │   │       ├── admin/users/[id]/subscriptions/ # GET catalog + user's subscribedIds · POST/DELETE { sourceId } — admin subscribes/unsubscribes any user to/from any podcast
+│   │       ├── admin/llm-providers/ # GET — providers grouped by scope ({pipeline, ask_ai}) · PATCH { scope, provider_key, enabled?, priority? } — admin only
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
-│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved + My Podcasts + Ask links (signed-in, desktop only), About link (always visible), "N new" pill when unread insights exist, user dropdown (Profile, admin-only "Manage Users" link, Sign out), TTS toggle, theme picker; listens for custom "profile:displayname" event to update display name instantly on profile save
+│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved + My Podcasts + Ask links (signed-in, desktop only), About link (always visible), "N new" pill when unread insights exist, user dropdown (Profile, admin-only "Manage Users" + "LLM Providers" links, Sign out), TTS toggle, theme picker; listens for custom "profile:displayname" event to update display name instantly on profile save
 │   │   ├── AnalyticsDashboard.tsx   # Client component — KPI cards, SVG bar chart (insights/day), domain breakdown bars, top-10 most-viewed list
 │   │   ├── ExportDropdown.tsx       # Client component — "↓ Export ▾" button with PDF / Excel / Word options; left-aligned dropdown for mobile
-│   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud, bookmark toggle (☆/★), engagement bar
+│   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud, bookmark toggle (☆/★), engagement bar; shows episode.title_en (English translation) in place of a non-English title when available
 │   │   ├── SavedInsightsList.tsx    # Client wrapper for /saved — renders bookmarked InsightCards with empty state
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client) + Supabase Realtime subscription (auto-refresh on new insights)
 │   │   ├── PodcastManager.tsx       # Catalog — domain tab layout; optimistic subscribe toggles; admin reclassify with toast on failure
@@ -139,6 +155,7 @@ PodcastsSummarizer/
 │   │   ├── OnboardingWizard.tsx     # 3-step onboarding: domain picker → catalog + iTunes recommendations → subscribe & finish
 │   │   ├── WelcomeOnboarding.tsx    # Fallback first-run card shown on dashboard if user skips onboarding — 3-step guide + CTA to /onboarding
 │   │   ├── AdminUsersManager.tsx    # Client component for /admin/users — search, grant/revoke admin, reset onboarding, cascade-delete (self-delete and self-demote blocked); each row collapsible (default collapsed) showing domain badges + per-domain channel names; expanding lazy-loads a "Manage subscriptions" panel to subscribe/unsubscribe the user to/from any catalog podcast; live updates via Supabase Realtime on user_profiles INSERT/DELETE (no polling) + manual Refresh button
+│   │   ├── LlmProviderManager.tsx   # Client component for /admin/llm-providers — two sections (Pipeline Extraction, Ask AI), each independently toggle/reorder-able; optimistic UI with revert-on-failure toast
 │   │   ├── LocalDateGuard.tsx       # Client component — corrects dashboard date when browser timezone differs from server UTC (runs once on mount; no-op if dates match)
 │   │   ├── SendDigestButton.tsx     # On-demand digest send + Preview button (opens /api/digest/preview in new tab)
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
@@ -225,7 +242,7 @@ All providers are swapped via `.env` — no code changes needed:
 | Setting | Local / Default | Cloud alternative |
 |---|---|---|
 | `TRANSCRIPTION_PROVIDER` | `local_whisper` | — |
-| `LLM_PROVIDER` | `gemini` | `groq` (auto-fallback on quota) |
+| `LLM_PROVIDER` | `gemini` | `groq`, `mistral`, `cohere`, or `waterfall` (chains all configured providers with admin-editable enabled/order, sticky dead-provider fallback) |
 | `STORAGE_PROVIDER` | `sqlite` | `supabase` |
 | `EMAIL_PROVIDER` | `console` | `gmail_smtp` |
 
@@ -238,7 +255,10 @@ All providers are swapped via `.env` — no code changes needed:
 | Variable | Required | Description |
 |---|---|---|
 | `GEMINI_API_KEY` | Yes | Google AI Studio key (primary LLM) |
-| `GROQ_API_KEY` | No | Groq key — auto-used when Gemini hits quota |
+| `GROQ_API_KEY` | No | Groq key — powers both the 8B and 70B waterfall slots |
+| `MISTRAL_API_KEY` | No | Mistral AI key — waterfall slot (`mistral-small-latest`) |
+| `COHERE_API_KEY` | No | Cohere key — waterfall slot (`command-r`) |
+| `OPENROUTER_API_KEY` | No | OpenRouter key — 4 free-tier model waterfall slots |
 | `SUPABASE_DB_URL` | Cloud mode | Transaction Pooler URL (`aws-0-*.pooler.supabase.com:6543`) — **not** the direct IPv6 URL |
 | `GMAIL_SENDER` | Email digest | Gmail address used as sender |
 | `GMAIL_APP_PASSWORD` | Email digest | Gmail App Password (not your account password) |
@@ -273,7 +293,10 @@ All providers are swapped via `.env` — no code changes needed:
 |---|---|
 | `SUPABASE_DB_URL` | Transaction Pooler connection string |
 | `GEMINI_API_KEY` | Gemini API key |
-| `GROQ_API_KEY` | Groq API key (optional fallback) |
+| `GROQ_API_KEY` | Groq API key (8B + 70B waterfall slots) |
+| `MISTRAL_API_KEY` | Mistral API key (waterfall slot, optional) |
+| `COHERE_API_KEY` | Cohere API key (waterfall slot, optional) |
+| `OPENROUTER_API_KEY` | OpenRouter API key (4 free-tier waterfall slots, optional) |
 | `GMAIL_SENDER` | Gmail sender address |
 | `GMAIL_APP_PASSWORD` | Gmail App Password |
 | `NEXT_APP_URL` | Vercel deployment URL — used to call `/api/revalidate` after pipeline runs |
@@ -324,7 +347,8 @@ npm run dev      # http://localhost:3000
 | **Export** | Signed-in users click "↓ Export ▾" next to the date navigator to open a dropdown with three formats (ordered PDF, Excel, Word) — **PDF** (real binary PDF generated client-side via jsPDF — no new tab, no print dialog; insights grouped by domain with colored badges, white cards, blockquote-style quotes, section headers, page numbers, and automatic page-break logic), **Excel** (`.xlsx` workbook generated server-side via SheetJS — named sheet, preset column widths, columns: Date, Domain, Source, Episode, Summary, Key Points, Key Quotes, Action Items, Tags), **Word** (rich `.docx` Open XML generated server-side via the `docx` npm package — colored domain badge shading, bold section labels, bullet key points, italic block-quoted key quotes with colored left border, action item arrows, hashtag tags; compatible with Word 2007+); all server formats served by `GET /api/insights/export?format=excel|word&date=YYYY-MM-DD` (auth required); dropdown is left-aligned and compact for mobile |
 | **Bookmarks** | Signed-in users can bookmark any insight with the ☆/★ button on the engagement bar (amber when saved); toggle-style — click once to save, click again to remove; optimistic UI with server reconciliation; saved insights appear on `/saved` page sorted by bookmark date; **Saved** link in the navbar (signed-in users only) |
 | **Analytics** | `/analytics` page (signed-in only) — four KPI cards (total insights, views, subscribed sources, days with insights); SVG bar chart of insights per day (last 30 days); domain breakdown with proportional horizontal bars; top-10 most-viewed insights ranked list with deep links back to the insight card |
-| **Ask AI (Q&A)** | Signed-in users can ask any question in plain language on the `/ask` page. Retrieval first checks whether the question names a specific subscribed podcast (e.g. "latest episode from Signals & Threads") and fetches that source's own recent insights directly — since Postgres FTS only searches insight content and never matches a bare podcast name; falls back to FTS over subscribed episode insights, then to most-recent-across-subscriptions if both come up empty. Builds a context block (entries marked newest-first per podcast) and calls an LLM to answer with inline citations (e.g. [1], [2]); each citation card links directly to the exact insight on the dashboard. **6-model free-tier waterfall** — Gemini 2.0 Flash → Groq Llama 3.1 8B → Groq Llama 3.3 70B → Mistral Small → Together AI Llama 3.1 8B → Cohere Command R; providers are tried in order and skipped on 429/quota without surfacing errors to the user. "Ask" link in desktop navbar; **Ask** tab in mobile bottom bar. |
+| **Ask AI (Q&A)** | Signed-in users can ask any question in plain language on the `/ask` page. Retrieval first checks whether the question names a specific subscribed podcast (e.g. "latest episode from Signals & Threads") and fetches that source's own recent insights directly — since Postgres FTS only searches insight content and never matches a bare podcast name; falls back to FTS over subscribed episode insights, then to most-recent-across-subscriptions if both come up empty. Builds a context block (entries marked newest-first per podcast) and calls an LLM to answer with inline citations (e.g. [1], [2]); each citation card links directly to the exact insight on the dashboard. **6-model free-tier waterfall** — Gemini 2.0 Flash → Groq Llama 3.1 8B → Groq Llama 3.3 70B → Mistral Small → Together AI Llama 3.1 8B → Cohere Command R; providers are tried in order and skipped on 429/quota without surfacing errors to the user; enabled/order is admin-editable on `/admin/llm-providers` (falls back to this default order if unconfigured). "Ask" link in desktop navbar; **Ask** tab in mobile bottom bar. |
+| **LLM Providers (admin)** | Admin-only `/admin/llm-providers` page — two independently toggle/reorder-able sections: **Pipeline Extraction** (worker's insight-extraction waterfall — Gemini, Groq 8B/70B, Mistral, Cohere, 4× OpenRouter free models) and **Ask AI** (the `/ask` chat waterfall). Toggling/reordering writes to `llm_provider_config` (scoped by feature); the pipeline picks up changes on its next run, Ask AI picks them up on the next question. Each row shows whether its API key is detected in the current environment. |
 | **About Page** | Public `/about` page — no auth required; hero, 9 feature cards with Lucide icons (including Ask AI and Export), and Get Started / Sign in CTA; "About" link visible in the navbar for all visitors |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **New Insights Indicator** | When new episodes have been processed since the user's last visit, a **"N new"** orange pill appears inline next to the Dashboard link on desktop (with a tooltip); on mobile, the Dashboard bottom-tab icon shows a count badge and a **"new"** sublabel beneath the tab text. Count is derived from `last_visited_at` on `user_profiles` vs. `insights.created_at` for the user's subscribed sources. |
