@@ -425,6 +425,8 @@ def _process_episode(
             return "errors", f"  {tag} [ERROR] LLM: {e}"
 
     storage.save_insight(insight)
+    if insight.title_en and insight.title_en != episode.title:
+        storage.update_episode_title_en(episode.id, insight.title_en)
     storage.mark_episode_done(episode.id)
     print(f"  {tag} insights: {len(insight.key_points)} points, {len(insight.key_quotes)} quotes")
     return "insights", None

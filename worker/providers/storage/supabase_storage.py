@@ -165,6 +165,14 @@ class SupabaseStorageProvider(StorageProvider):
                 row = cur.fetchone()
                 return row["id"] if row else None
 
+    def update_episode_title_en(self, episode_id: str, title_en: str) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE episodes SET title_en = %s WHERE id = %s",
+                    (title_en, episode_id),
+                )
+
     def mark_episode_done(self, episode_id: str) -> None:
         with self._conn() as conn:
             with conn.cursor() as cur:

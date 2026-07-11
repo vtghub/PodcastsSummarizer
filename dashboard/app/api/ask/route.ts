@@ -174,7 +174,7 @@ interface InsightRow {
   key_quotes: string[];
   action_items: string[];
   sources: { name: string } | null;
-  episodes: { title: string } | null;
+  episodes: { title: string; title_en?: string } | null;
 }
 
 export async function POST(request: Request) {
@@ -207,7 +207,7 @@ export async function POST(request: Request) {
   const subscribedSourceIds = (subs ?? []).map((s: { source_id: string }) => s.source_id);
 
   const insightSelect =
-    "id, date, domain, summary, key_points, key_quotes, action_items, sources!inner(name), episodes(title)";
+    "id, date, domain, summary, key_points, key_quotes, action_items, sources!inner(name), episodes(title, title_en)";
 
   // 0. Does the question name a specific subscribed podcast? FTS below searches insight
   // content (summaries/quotes), not podcast names — so "what's the latest from <show>"
@@ -324,7 +324,7 @@ export async function POST(request: Request) {
   const contextText = insights
     .map((ins, i) => {
       const source = ins.sources?.name ?? "Unknown source";
-      const episode = ins.episodes?.title ?? "";
+      const episode = ins.episodes?.title_en || ins.episodes?.title || "";
       const keyPoints = (ins.key_points ?? []).slice(0, 3).join("\n  - ");
       const quotes = (ins.key_quotes ?? []).slice(0, 2).join("\n  > ");
       return [
@@ -359,7 +359,7 @@ Answer:`;
       date: ins.date,
       domain: ins.domain,
       source_name: ins.sources?.name ?? "",
-      episode_title: ins.episodes?.title ?? "",
+      episode_title: ins.episodes?.title_en || ins.episodes?.title || "",
     }));
 
     return NextResponse.json({ answer: text, citations, model });

@@ -17,11 +17,17 @@ _SYSTEM_PROMPT = (
 
 _USER_PROMPT = """\
 Extract insights from this podcast transcript and return a JSON object with exactly these keys:
+- title_en: string (the episode title translated into English; if it's already English, repeat it as-is)
 - summary: string (2-3 sentences about the episode)
 - key_points: array of 5-7 strings (main insights)
 - key_quotes: array of 3 strings (memorable direct quotes from the transcript)
 - action_items: array of 3 strings (actionable takeaways)
 - tags: array of 3-5 strings (topic tags)
+
+Write title_en, summary, key_points, key_quotes, action_items, and tags in ENGLISH,
+regardless of what language the transcript or episode title are in. Translate rather
+than transliterate — key_quotes should be a faithful English translation of the
+original quote if the transcript isn't in English, not a transcription of foreign text.
 
 Episode title: {title}
 Domain: {domain}
@@ -85,6 +91,7 @@ class OllamaLLMProvider(LLMProvider):
             key_quotes=data.get("key_quotes", []),
             action_items=data.get("action_items", []),
             tags=data.get("tags", []),
+            title_en=data.get("title_en", ""),
         )
 
     @staticmethod
