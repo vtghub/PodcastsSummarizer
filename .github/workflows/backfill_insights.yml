@@ -1,0 +1,48 @@
+name: Backfill Insights (LLM Waterfall Re-extraction)
+# Re-runs every existing insight through the current LLM waterfall, reusing
+# its already-saved transcript (no audio re-download, no Whisper re-run).
+# Resumable — each run processes one bounded batch and exits; progress is
+# tracked in Supabase (backfill_jobs) so it naturally spans many runs/days
+# without reprocessing or skipping anything. See worker/jobs/backfill_insights.py
+# and the admin Task Status page (/admin/task-status) for live progress.
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # once daily, 3:30 AM UTC — off-peak from daily_pipeline's 4-hour cadence
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: "Number of insights to reprocess this run"
+        required: false
+        default: "30"
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backfill batch
+        env:
+          STORAGE_PROVIDER: supabase
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          PYTHONUTF8: "1"
+        run: |
+          python -m worker.jobs.backfill_insights --batch-size "${{ github.event.inputs.batch_size || '30' }}"

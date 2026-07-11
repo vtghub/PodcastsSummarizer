@@ -50,6 +50,18 @@ def get_llm_provider() -> LLMProvider:
             raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER!r}")
 
 
+def get_ranking_llm_provider() -> LLMProvider:
+    """
+    Always a waterfall scoped to 'recommendations', independent of LLM_PROVIDER
+    — weekly best-of-week ranking is admin-configurable on its own, separately
+    from pipeline extraction. Raises ValueError if no provider is both enabled
+    and has its API key set for this scope; callers should catch this and fall
+    back to default_rank_insights().
+    """
+    from worker.providers.llm.waterfall_llm import WaterfallLLMProvider
+    return WaterfallLLMProvider(scope="recommendations")
+
+
 def get_storage_provider() -> StorageProvider:
     match STORAGE_PROVIDER:
         case "sqlite":

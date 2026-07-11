@@ -16,8 +16,8 @@ import hashlib
 import textwrap
 from datetime import datetime, timezone
 
-from worker.core.interfaces import Episode, Insight, LLMProvider, Transcript
-from worker.providers.llm.prompts import EXTRACTION_PROMPT
+from worker.core.interfaces import Episode, Insight, LLMProvider, Transcript, default_rank_insights
+from worker.providers.llm.prompts import EXTRACTION_PROMPT, RANKING_PROMPT
 from worker.providers.llm.text_utils import parse_json_response
 from worker.providers.llm.chunking import chunked_extract
 from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
@@ -31,23 +31,30 @@ _MAX_TRANSCRIPT_CHARS = 16_000
 _CHUNK_TARGET_CHARS = 12_000
 
 
-def _build_steps() -> list[WaterfallStep]:
+def _build_steps(scope: str) -> list[WaterfallStep]:
     from worker.core.registry import get_storage_provider
-    config = get_storage_provider().get_llm_provider_config()
+    config = get_storage_provider().get_llm_provider_config(scope)
     slots = build_enabled_slots(config)
     return [WaterfallStep(slot.display_name, slot.build()._generate_text) for slot in slots]
 
 
 class WaterfallLLMProvider(LLMProvider):
+    """
+    scope selects which /admin/llm-providers section's enabled/priority
+    config this instance draws from — 'pipeline' (default, insight
+    extraction), 'ask_ai', or 'recommendations' (weekly best-of-week
+    ranking). Each scope can have a different set of enabled providers and a
+    different order.
+    """
 
-    def __init__(self):
-        steps = _build_steps()
+    def __init__(self, scope: str = "pipeline"):
+        steps = _build_steps(scope)
         if not steps:
             raise ValueError(
-                "No LLM providers are both enabled and have an API key set. Check "
-                "the /admin/llm-providers page and your environment variables."
+                f"No LLM providers are both enabled and have an API key set for scope={scope!r}. "
+                "Check the /admin/llm-providers page and your environment variables."
             )
-        print(f"[Waterfall] configured with {len(steps)} provider(s): {', '.join(s.name for s in steps)}")
+        print(f"[Waterfall:{scope}] configured with {len(steps)} provider(s): {', '.join(s.name for s in steps)}")
         self._waterfall = WaterfallLLM(steps)
 
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
@@ -81,3 +88,24 @@ class WaterfallLLMProvider(LLMProvider):
             tags=data.get("tags", []),
             title_en=data.get("title_en", ""),
         )
+
+    def rank_insights(self, insights: list[Insight], domains: list[str], top_n: int = 5) -> list[Insight]:
+        if not insights:
+            return []
+        by_id = {i.id: i for i in insights}
+        candidates = "\n\n".join(
+            f"[{i.id}] {i.domain} — {i.summary}\nKey points: {'; '.join(i.key_points[:3])}"
+            for i in insights
+        )
+        prompt = textwrap.dedent(RANKING_PROMPT).format(
+            top_n=top_n, domains=", ".join(domains), candidates=candidates,
+        )
+        try:
+            data = parse_json_response(self._waterfall.generate(prompt))
+            ranked_ids = data.get("ranked_ids", [])
+            selected = [by_id[rid] for rid in ranked_ids if rid in by_id][:top_n]
+            if selected:
+                return selected
+        except Exception as e:
+            print(f"[Waterfall] LLM ranking failed ({e}) — falling back to heuristic")
+        return default_rank_insights(insights, domains, top_n)

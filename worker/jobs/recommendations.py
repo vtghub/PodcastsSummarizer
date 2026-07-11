@@ -8,7 +8,8 @@ Sends each digest-enabled user:
 
 from datetime import date
 
-from worker.core.registry import get_email_provider, get_llm_provider, get_storage_provider
+from worker.core.interfaces import default_rank_insights
+from worker.core.registry import get_email_provider, get_ranking_llm_provider, get_storage_provider
 
 DOMAINS = [
     "Technology & AI",
@@ -28,7 +29,12 @@ def run_weekly_recommendations(date_str: str | None = None) -> None:
 
     storage = get_storage_provider()
     email_provider = get_email_provider()
-    llm = get_llm_provider()
+
+    try:
+        ranker = get_ranking_llm_provider()
+    except ValueError as e:
+        print(f"[Weekly] no ranking LLM configured ({e}) — using heuristic ranking")
+        ranker = None
 
     users = storage.get_users_with_digest_enabled()
     print(f"[Weekly] Running for {date_str} — {len(users)} user(s)")
@@ -40,7 +46,11 @@ def run_weekly_recommendations(date_str: str | None = None) -> None:
             # Section 1: Best insights from the week
             week_insights = storage.get_insights_for_week(source_ids, days=7)
             domains = user.digest_domains or DOMAINS
-            top_insights = llm.rank_insights(week_insights, domains, top_n=5)
+            top_insights = (
+                ranker.rank_insights(week_insights, domains, top_n=5)
+                if ranker is not None
+                else default_rank_insights(week_insights, domains, top_n=5)
+            )
 
             # Section 2: Trending podcasts the user isn't subscribed to
             recommended = storage.get_trending_sources(

@@ -69,11 +69,12 @@ PodcastsSummarizer/
 │   │       └── gmail_smtp.py        # Gmail App Password SMTP + HTML renderer
 │   └── jobs/
 │       ├── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → async email fan-out; episode retry; RSS backoff; run_single_episode() for on-demand
-│       ├── recommendations.py       # Weekly recommendations job: LLM-ranked best insights + trending podcast discovery per user
+│       ├── recommendations.py       # Weekly recommendations job: LLM-ranked (scope='recommendations' waterfall, heuristic fallback) best insights + trending podcast discovery per user
 │       ├── backfill_platform_links.py  # One-time job: discover platform URLs for all existing sources
-│       └── backfill_published_at.py    # One-time job: backfill episode published dates from RSS feeds
+│       ├── backfill_published_at.py    # One-time job: backfill episode published dates from RSS feeds
+│       └── backfill_insights.py        # Resumable job: re-runs every existing insight through the current LLM waterfall (scope='pipeline'), reusing its saved transcript; one bounded batch per invocation, progress tracked in backfill_jobs (migration 020)
 │   └── tests/
-│       └── test_pipeline.py         # Pytest suite (42 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience, chunked extraction, waterfall (incl. sticky dead-provider fallback), provider registry
+│       └── test_pipeline.py         # Pytest suite (55 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience, chunked extraction, waterfall (incl. sticky dead-provider fallback), LLM-backed ranking, insight backfill job, provider registry
 │
 ├── supabase/
 │   └── migrations/
@@ -96,7 +97,8 @@ PodcastsSummarizer/
 │       ├── 016_admin_realtime.sql   # is_admin_user() SECURITY DEFINER + admin read-all RLS on user_profiles; adds user_profiles to supabase_realtime publication
 │       ├── 017_episode_title_en.sql # title_en TEXT on episodes — English translation of non-English episode titles
 │       ├── 018_llm_provider_config.sql # llm_provider_config table (provider_key, enabled, priority) — admin-editable LLM waterfall config
-│       └── 019_llm_provider_config_scopes.sql # Adds scope column ('pipeline' | 'ask_ai'); primary key becomes (scope, provider_key) so extraction and Ask AI have independent waterfalls
+│       ├── 019_llm_provider_config_scopes.sql # Adds scope column ('pipeline' | 'ask_ai'); primary key becomes (scope, provider_key) so extraction and Ask AI have independent waterfalls
+│       └── 020_backfill_jobs.sql    # backfill_jobs + backfill_failures tables — tracks the resumable insight-reextraction backfill job (admin-only RLS, Realtime on backfill_jobs)
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
@@ -109,7 +111,9 @@ PodcastsSummarizer/
 │   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, digest frequency (daily/weekly), episode digest picker
 │   │   ├── onboarding/page.tsx      # New-user onboarding wizard (auth-required; redirects to /dashboard if already subscribed)
 │   │   ├── admin/users/page.tsx     # Admin-only user management — list/search users, grant/revoke admin, reset onboarding, cascade-delete user (redirects non-admins to /dashboard)
-│   │   ├── admin/llm-providers/page.tsx # Admin-only LLM waterfall control — toggle/reorder providers per feature (Pipeline Extraction, Ask AI), no deploy needed
+│   │   ├── admin/llm-providers/page.tsx # Admin-only LLM waterfall control — toggle/reorder providers per feature (Pipeline Extraction, Ask AI, Recommendations), no deploy needed
+│   │   ├── admin/task-status/page.tsx # Admin-only backfill job progress — live status of the insight-reextraction backfill (progress bar, succeeded/failed/remaining, recent failures, "Run batch now")
+│   │   ├── recommendations/page.tsx # On-demand best-of-week insights + trending podcasts, refreshed live via /api/recommendations (signed-in)
 │   │   ├── about/page.tsx           # Public About page — feature overview, CTA buttons (no auth required)
 │   │   ├── ask/page.tsx             # LLM Q&A chat — suggested questions, chat bubbles, citation cards (signed-in)
 │   │   ├── login/page.tsx           # Email + password sign-in
@@ -141,10 +145,13 @@ PodcastsSummarizer/
 │   │       ├── admin/users/         # GET — list all users (auth.users + user_profiles + per-domain subscription channels), admin only
 │   │       ├── admin/users/[id]/    # PATCH { is_admin } or { reset_onboarding } · DELETE — auth.admin.deleteUser cascades to all user_id-FK tables; admin only, self-protected
 │   │       ├── admin/users/[id]/subscriptions/ # GET catalog + user's subscribedIds · POST/DELETE { sourceId } — admin subscribes/unsubscribes any user to/from any podcast
-│   │       ├── admin/llm-providers/ # GET — providers grouped by scope ({pipeline, ask_ai}) · PATCH { scope, provider_key, enabled?, priority? } — admin only
+│   │       ├── admin/llm-providers/ # GET — providers grouped by scope ({pipeline, ask_ai, recommendations}) · PATCH { scope, provider_key, enabled?, priority? } — admin only
+│   │       ├── admin/backfill/      # GET — latest insight-reextraction backfill job + recent failures · POST — workflow_dispatch one batch now, admin only
+│   │       ├── admin/workflows/     # GET — every GitHub Actions workflow + its most recent run · POST { action: "dispatch"|"cancel" } — trigger or cancel a run, admin only
+│   │       ├── recommendations/     # GET — on-demand best-of-week insight ranking (scope='recommendations') + trending unsubscribed podcasts, authed
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
-│   │   ├── NavBar.tsx               # Sticky nav — Search button (Cmd/Ctrl+K overlay), Analytics + Saved + My Podcasts + Ask links (signed-in, desktop only), About link (always visible), "N new" pill when unread insights exist, user dropdown (Profile, admin-only "Manage Users" + "LLM Providers" links, Sign out), TTS toggle, theme picker; listens for custom "profile:displayname" event to update display name instantly on profile save
+│   │   ├── NavBar.tsx               # Sticky nav — My Podcasts, Ask, For You (signed-in, desktop only), a "More ▾" dropdown (Analytics, Saved, About) keeping the primary row uncluttered, "N new" pill when unread insights exist, Search button (Cmd/Ctrl+K overlay), user dropdown (Profile, admin-only "Manage Users" + "LLM Providers" + "Task Status" links, Sign out), TTS toggle (icon-only below xl), theme picker; listens for custom "profile:displayname" event to update display name instantly on profile save
 │   │   ├── AnalyticsDashboard.tsx   # Client component — KPI cards, SVG bar chart (insights/day), domain breakdown bars, top-10 most-viewed list
 │   │   ├── ExportDropdown.tsx       # Client component — "↓ Export ▾" button with PDF / Excel / Word options; left-aligned dropdown for mobile
 │   │   ├── InsightCard.tsx          # Per-episode insight with read-aloud, bookmark toggle (☆/★), engagement bar; shows episode.title_en (English translation) in place of a non-English title when available
@@ -155,7 +162,8 @@ PodcastsSummarizer/
 │   │   ├── OnboardingWizard.tsx     # 3-step onboarding: domain picker → catalog + iTunes recommendations → subscribe & finish
 │   │   ├── WelcomeOnboarding.tsx    # Fallback first-run card shown on dashboard if user skips onboarding — 3-step guide + CTA to /onboarding
 │   │   ├── AdminUsersManager.tsx    # Client component for /admin/users — search, grant/revoke admin, reset onboarding, cascade-delete (self-delete and self-demote blocked); each row collapsible (default collapsed) showing domain badges + per-domain channel names; expanding lazy-loads a "Manage subscriptions" panel to subscribe/unsubscribe the user to/from any catalog podcast; live updates via Supabase Realtime on user_profiles INSERT/DELETE (no polling) + manual Refresh button
-│   │   ├── LlmProviderManager.tsx   # Client component for /admin/llm-providers — two sections (Pipeline Extraction, Ask AI), each independently toggle/reorder-able; optimistic UI with revert-on-failure toast
+│   │   ├── LlmProviderManager.tsx   # Client component for /admin/llm-providers — three sections (Pipeline Extraction, Ask AI, Recommendations), each independently toggle/reorder-able; optimistic UI with revert-on-failure toast; per-provider indicator distinguishes "runs in the dashboard" (env var checked live) from "runs in the worker" (checked at GitHub Actions/Supabase instead)
+│   │   ├── TaskStatusManager.tsx    # Client component for /admin/task-status — insight backfill job progress bar, succeeded/failed/remaining counts, recent failures list, "Run batch now" button; Realtime-updated (no polling)
 │   │   ├── LocalDateGuard.tsx       # Client component — corrects dashboard date when browser timezone differs from server UTC (runs once on mount; no-op if dates match)
 │   │   ├── SendDigestButton.tsx     # On-demand digest send + Preview button (opens /api/digest/preview in new tab)
 │   │   ├── EpisodeDigestPicker.tsx  # Pick podcast + episode → send or queue targeted digest
@@ -171,7 +179,8 @@ PodcastsSummarizer/
 │   │   ├── domain-colors.ts         # Canonical DOMAINS order + per-domain Tailwind colour tokens (shared by Dashboard and My Podcasts)
 │   │   ├── email.ts                 # nodemailer Gmail SMTP sender — HTML + plain text digest renderer
 │   │   ├── supabase.ts              # Service-role Supabase client (server-only)
-│   │   └── supabase-browser.ts      # Anon-key Supabase client singleton (browser — Realtime)
+│   │   ├── supabase-browser.ts      # Anon-key Supabase client singleton (browser — Realtime)
+│   │   └── llm-waterfall.ts         # Shared JS-callable waterfall (Gemini, Groq 8B/70B, Mistral, Together, Cohere) + runWaterfall(scope, prompt) reading llm_provider_config — used by both /api/ask and /api/recommendations
 │   └── middleware.ts                # Supabase SSR session refresh; guards /api routes (401 if no user); token-bucket rate limiting (20 req/min) on comment/reaction mutations
 │
 ├── docs/
@@ -183,7 +192,8 @@ PodcastsSummarizer/
 │   ├── hourly_digest.yml            # Cron every hour — per-user digest fan-out (checks digest_hour in user's timezone)
 │   ├── weekly_recommendations.yml   # Cron Sundays 10 AM UTC — LLM-ranked best-of-week + trending podcast discovery email
 │   ├── backfill_platform_links.yml  # Manual workflow_dispatch — backfills platform URLs; optional source_id input
-│   └── backfill_published_at.yml    # Manual workflow_dispatch — backfills episode published dates; optional source_id input
+│   ├── backfill_published_at.yml    # Manual workflow_dispatch — backfills episode published dates; optional source_id input
+│   └── backfill_insights.yml        # Cron daily 3:30 AM UTC + workflow_dispatch — re-runs one batch of existing insights through the LLM waterfall; optional batch_size input; resumable across runs/days
 │
 ├── .env.example                     # Template — copy to .env and fill values
 └── requirements.txt
@@ -353,6 +363,8 @@ npm run dev      # http://localhost:3000
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **New Insights Indicator** | When new episodes have been processed since the user's last visit, a **"N new"** orange pill appears inline next to the Dashboard link on desktop (with a tooltip); on mobile, the Dashboard bottom-tab icon shows a count badge and a **"new"** sublabel beneath the tab text. Count is derived from `last_visited_at` on `user_profiles` vs. `insights.created_at` for the user's subscribed sources. |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar (My Podcasts hidden — accessible via bottom tab bar), fixed bottom tab bar (Dashboard · Podcasts · **Ask** · Profile); domain filter strips are horizontally scrollable on mobile across Dashboard and Podcast Catalog |
+| **Recommendations ("For You")** | Signed-in users can view/refresh their best-of-week insight picks and trending-podcast suggestions on demand at `/recommendations`, in addition to the Sunday email — same LLM ranking (`scope='recommendations'`), computed fresh on request. "For You" link in desktop navbar. |
+| **Task Status (admin)** | Admin-only `/admin/task-status` page with two sections: **GitHub Actions Runners** — every workflow in the repo with its most recent run status, a "Run now" button (workflow_dispatch), and a "Cancel" button when a run is queued/in progress, polled every 20s; and **Insight Backfill** — live progress of the insight-reextraction backfill job (progress bar, succeeded/failed/remaining counts, recent failure list, "Run batch now"), Realtime-updated. |
 
 ---
 
@@ -370,6 +382,7 @@ npm run dev      # http://localhost:3000
   - `date` input: override date (YYYY-MM-DD); defaults to today.
 - **Backfill platform links**: `backfill_platform_links.yml` — manual `workflow_dispatch`; optional `source_id` input to run for a single source (leave blank to backfill all).
 - **Backfill published dates**: `backfill_published_at.yml` — manual `workflow_dispatch`; optional `source_id` input to run per-source and stay within the 30-minute job timeout (leave blank to process all sources).
+- **Backfill insights**: `backfill_insights.yml` — cron **daily at 3:30 AM UTC** + manual `workflow_dispatch`; `batch_size` input (default 30) controls how many insights are re-extracted per run. Resumable via a `(created_at, id)` cursor stored on the job row (`backfill_jobs`) — a full backfill is expected to span many runs/days. Progress visible on `/admin/task-status`; a "Run batch now" button there triggers an extra run outside the daily schedule.
 - **Dashboard**: Vercel auto-deploys on every push to `main`.
 - **Branching**: `main` ← `develop` ← `feature/*`. PRs merged via GitHub; develop promoted to main after each feature.
 
