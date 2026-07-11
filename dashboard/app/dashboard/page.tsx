@@ -118,12 +118,19 @@ export default async function DashboardPage({ searchParams }: Props) {
               hint="python scripts/manage_podcasts.py run"
             />
           ) : insights.length === 0 ? (
-            <EmptyState
-              icon="📭"
-              title="No insights for this date"
-              message={`No podcast insights were processed on ${formattedDate}.`}
-              hint="Run the pipeline or select a date that has data."
-            />
+            selectedDate === today ? (
+              <EmptyState
+                icon="⏳"
+                title="Today's insights aren't ready yet"
+                message="Podcasts are processed automatically throughout the day — check back in a bit, or browse a previous day using the date picker above."
+              />
+            ) : (
+              <EmptyState
+                icon="📭"
+                title="No insights for this date"
+                message={`No podcast insights were processed on ${formattedDate}. Try a different date.`}
+              />
+            )
           ) : (
             <DomainInsightView key={`${selectedDate}-${domain ?? ""}`} byDomain={byDomain} isAuthed={!!userId} initialDomain={domain} initialInsightId={insight} />
           )}
