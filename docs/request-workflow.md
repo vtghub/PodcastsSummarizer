@@ -8,12 +8,16 @@ sequenceDiagram
     participant PY as Python Pipeline
     participant RSS as RSS/YouTube
     participant W as Whisper STT
-    participant LLM as Gemini/Groq
+    participant LLM as LLM Waterfall
     participant DB as Supabase DB
     participant NEXT as Next.js /api/revalidate
     participant MAIL as Gmail SMTP
 
     GH->>PY: trigger (cron or workflow_dispatch)
+    Note over PY,DB: LLM_PROVIDER=waterfall — resolve once at run start
+    PY->>DB: get_llm_provider_config() WHERE scope='pipeline'
+    DB-->>PY: enabled/priority overrides (or empty — code defaults from PROVIDER_SLOTS)
+    PY->>PY: build_enabled_slots(config) — filters to slots with env var present + enabled,<br/>sorted by priority; WaterfallLLM tracks per-provider "sticky dead" state for this run
     PY->>DB: get_sources(enabled=True, backoff_until<=NOW)
     DB-->>PY: sources (429/503-backoffed sources excluded)
     PY->>DB: get_episodes_for_retry(max_retries=3)
@@ -45,9 +49,13 @@ sequenceDiagram
             Note right of W: domain-aware initial_prompt (8 domains)<br/>+ post-processing corrections for known mishearings
             W-->>PY: corrected transcript text
         end
+        alt transcript exceeds chunk threshold
+            PY->>PY: chunking.py — split into chunks, summarize each,<br/>synthesize one structured insight from chunk summaries
+        end
         PY->>LLM: extract_insights(episode, transcript)
-        alt Gemini quota error
-            PY->>LLM: retry with Groq
+        alt current provider quota exceeded or fails
+            PY->>PY: mark provider "sticky dead" for this run
+            PY->>LLM: retry with next enabled provider in priority order<br/>(Gemini → Groq 8B/70B → Mistral → Cohere → OpenRouter x4)
         end
         alt success
             LLM-->>PY: Insight (summary, key_points, quotes, actions, tags)
@@ -986,7 +994,12 @@ sequenceDiagram
             API->>API: build context block (summary + key_points + key_quotes per insight)
             API->>API: compose prompt — notes entries are newest-first per podcast,<br/>with [1][2]... citation instructions
 
-            Note over API,LLM1: 6-model waterfall — try each until one succeeds
+            Note over API,DB: Load enabled/priority overrides for this feature
+            API->>DB: SELECT provider_key, enabled, priority FROM llm_provider_config WHERE scope='ask_ai'
+            DB-->>API: config rows (or empty — falls back to hardcoded default order)
+            API->>API: filter to steps with an API key present, sort by config priority
+
+            Note over API,LLM1: 6-model waterfall (admin-editable order) — try each until one succeeds
             API->>LLM1: POST generateContent (Gemini 2.0 Flash)
             alt Gemini quota exceeded (429 / RESOURCE_EXHAUSTED)
                 API->>LLM2: POST /openai/v1/chat (Groq llama-3.1-8b-instant)
@@ -1099,4 +1112,56 @@ sequenceDiagram
         DB->>RT: DELETE on user_profiles broadcast (other admins' tabs silently refetch)
         MGR->>MGR: remove row locally, show success toast
     end
+```
+
+---
+
+## 27. Admin — LLM Providers
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (admin)
+    participant PAGE as admin/llm-providers/page.tsx
+    participant MGR as LlmProviderManager.tsx
+    participant API as /api/admin/llm-providers
+    participant DB as Supabase (llm_provider_config)
+    participant WORKER as Worker (next pipeline run)
+    participant ASK as /api/ask (next question)
+
+    B->>PAGE: navigate to /admin/llm-providers
+    PAGE->>PAGE: isAdmin() — false? redirect /dashboard
+    PAGE->>MGR: render
+
+    MGR->>API: GET /api/admin/llm-providers
+    API->>API: isAdmin() check (403 if false)
+    API->>DB: SELECT scope, provider_key, enabled, priority FROM llm_provider_config
+    DB-->>API: config rows (or empty if migration not yet applied — degrades to defaults)
+    API->>API: for each of PROVIDER_SLOTS[pipeline] and PROVIDER_SLOTS[ask_ai]:<br/>merge config row (or default enabled=true, priority=index),<br/>check process.env[env_var] presence (dashboard's own env), sort by priority
+    API-->>MGR: { pipeline: Provider[], ask_ai: Provider[] }
+    MGR->>B: render two sections — "Pipeline Extraction" and "Ask AI"<br/>each row: position badge, name, env-var-detected indicator, enable toggle, reorder arrows
+
+    alt Toggle enabled
+        B->>MGR: click toggle on a provider row
+        MGR->>MGR: optimistic UI flip
+        MGR->>API: PATCH { scope, provider_key, enabled }
+        API->>API: isAdmin() check · validate scope + provider_key against PROVIDER_SLOTS[scope]
+        API->>DB: UPSERT (scope, provider_key) enabled, priority (read existing or default), updated_by=callerId
+        DB-->>API: ok
+        API-->>MGR: { scope, provider_key, enabled, priority }
+        Note over MGR: on failure, reverts optimistic change + shows toast
+    else Reorder (move up/down)
+        B->>MGR: click chevron arrow
+        MGR->>MGR: optimistic swap of two rows' positions
+        MGR->>API: PATCH x2 — swap priority values for the two affected provider_keys (parallel)
+        API->>DB: UPSERT both rows
+        DB-->>API: ok x2
+        API-->>MGR: confirmed priorities
+        Note over MGR: on failure, reverts optimistic reorder + shows toast
+    end
+
+    Note over WORKER,DB: Pipeline reads scope='pipeline' config once at the start of each run<br/>(get_llm_provider_config() in supabase_storage.py) — changes here<br/>take effect on the worker's NEXT run, not instantly
+    WORKER->>DB: SELECT ... WHERE scope='pipeline' (on next pipeline start)
+
+    Note over ASK,DB: Ask AI reads scope='ask_ai' config on every question — changes take effect immediately
+    ASK->>DB: SELECT ... WHERE scope='ask_ai' (per /api/ask call)
 ```
