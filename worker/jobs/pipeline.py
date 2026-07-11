@@ -352,6 +352,16 @@ def _process_episode(
         print(f"  {tag} already processed — skip")
         return "skipped", None
 
+    # Some feeds rotate audio URLs (ad-insertion / tracking redirects) on every
+    # fetch, so episode.id (derived from the URL) can differ between runs for
+    # what is unmistakably the same episode — same source, title, and
+    # published_at. Catch that here so it isn't silently reprocessed into a
+    # duplicate insight.
+    dup_id = storage.find_duplicate_episode_id(source.id, episode.title, episode.published_at)
+    if dup_id:
+        print(f"  {tag} duplicate of already-processed episode {dup_id[:8]} (URL changed) — skip")
+        return "skipped", None
+
     storage.save_episode(episode)
 
     transcript_text: str | None = None
