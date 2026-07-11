@@ -52,6 +52,27 @@ def _cohere():
     return CohereLLMProvider()
 
 
+def _make_openrouter(model: str) -> Callable[[], object]:
+    def _build():
+        from worker.providers.llm.openrouter_llm import OpenRouterLLMProvider
+        return OpenRouterLLMProvider(model=model)
+    return _build
+
+
+# OpenRouter's free (":free"-suffixed) catalog rotates over time — these were
+# confirmed live via the OpenRouter models API when added. If one of these
+# stops existing or stops being free, its calls will just fail and the
+# waterfall skips past it; update/replace the model string here to swap it
+# for whatever's currently free. Deliberately excludes non-general-purpose
+# free models seen at the same time (a content-safety classifier, a
+# code-specialized model) — those aren't suited to summarization/extraction.
+_OPENROUTER_MODELS = [
+    ("openrouter_nemotron_ultra", "NVIDIA Nemotron 3 Ultra (OpenRouter)", "nvidia/nemotron-3-ultra-550b-a55b:free"),
+    ("openrouter_nemotron_nano", "NVIDIA Nemotron 3 Nano (OpenRouter)", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"),
+    ("openrouter_laguna_m", "Poolside Laguna M.1 (OpenRouter)", "poolside/laguna-m.1:free"),
+    ("openrouter_hy3", "Tencent Hy3 (OpenRouter)", "tencent/hy3:free"),
+]
+
 # Declared order is the default priority when no config row overrides it —
 # fastest/most-generous free tier first.
 PROVIDER_SLOTS: list[ProviderSlot] = [
@@ -60,6 +81,10 @@ PROVIDER_SLOTS: list[ProviderSlot] = [
     ProviderSlot("groq_70b", "Groq — Llama 3.3 70B", "GROQ_API_KEY", _groq_70b),
     ProviderSlot("mistral", "Mistral Small", "MISTRAL_API_KEY", _mistral),
     ProviderSlot("cohere", "Cohere Command R", "COHERE_API_KEY", _cohere),
+    *[
+        ProviderSlot(key, display_name, "OPENROUTER_API_KEY", _make_openrouter(model))
+        for key, display_name, model in _OPENROUTER_MODELS
+    ],
 ]
 
 

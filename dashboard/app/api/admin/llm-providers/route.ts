@@ -14,6 +14,10 @@ const PROVIDER_SLOTS = [
   { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY" },
   { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY" },
   { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY" },
+  { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
+  { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
+  { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
+  { key: "openrouter_hy3", display_name: "Tencent Hy3 (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
 ] as const;
 
 interface ConfigRow {

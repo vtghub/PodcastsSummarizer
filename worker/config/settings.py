@@ -73,6 +73,12 @@ COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r")
 
 # ---------------------------------------------------------------------------
+# OpenRouter (free tier — hosts many ":free"-suffixed models under one key;
+# each model gets its own PROVIDER_SLOT, same idea as Groq's two models)
+# ---------------------------------------------------------------------------
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+
+# ---------------------------------------------------------------------------
 # Ollama (local LLM alternative)
 # ---------------------------------------------------------------------------
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")

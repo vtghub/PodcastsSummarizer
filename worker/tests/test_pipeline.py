@@ -559,11 +559,13 @@ class TestWaterfall:
 class TestProviderRegistry:
 
     def test_slot_with_no_env_var_is_excluded_even_if_enabled(self, monkeypatch):
-        from worker.providers.llm.provider_registry import build_enabled_slots
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GROQ_API_KEY", raising=False)
-        monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
-        monkeypatch.delenv("COHERE_API_KEY", raising=False)
+        from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
+        # Delete every slot's env var dynamically — hardcoding names here would
+        # silently stop testing "no keys at all" as soon as a new slot with a
+        # new env var is added (as happened when OPENROUTER_API_KEY was added
+        # to .env but not to this list).
+        for slot in PROVIDER_SLOTS:
+            monkeypatch.delenv(slot.env_var, raising=False)
         assert build_enabled_slots({}) == []
 
     def test_default_order_matches_declared_list_when_env_vars_present(self, monkeypatch):
