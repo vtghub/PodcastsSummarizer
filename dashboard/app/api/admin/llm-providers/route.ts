@@ -27,29 +27,40 @@ const SCOPES: Scope[] = ["pipeline", "ask_ai", "recommendations"];
  * Either way, this list is only for displaying/toggling — adding a new
  * provider TYPE is still a code change in the relevant waterfall.
  */
+// runs_here: whether THIS dashboard process (Vercel/local Next.js) is ever
+// the one calling this provider directly — if false, checking
+// process.env[env_var] here would just check an environment this slot never
+// actually runs in, so the UI shouldn't claim to know its status.
 const PIPELINE_SLOTS = [
-  { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY" },
-  { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY" },
-  { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY" },
-  { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY" },
-  { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY" },
-  { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
-  { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
-  { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
-  { key: "openrouter_hy3", display_name: "Tencent Hy3 (OpenRouter)", env_var: "OPENROUTER_API_KEY" },
+  { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY", runs_here: false },
+  { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: false },
+  { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: false },
+  { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: false },
+  { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: false },
+  { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  { key: "openrouter_hy3", display_name: "Tencent Hy3 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
 ];
 
-const PROVIDER_SLOTS: Record<Scope, { key: string; display_name: string; env_var: string }[]> = {
+// The on-demand /api/recommendations refresh runs in the dashboard and can
+// call the same 5 JS-callable providers as ask_ai — but not OpenRouter.
+const RECOMMENDATIONS_SLOTS = PIPELINE_SLOTS.map((slot) => ({
+  ...slot,
+  runs_here: !slot.key.startsWith("openrouter_"),
+}));
+
+const PROVIDER_SLOTS: Record<Scope, { key: string; display_name: string; env_var: string; runs_here: boolean }[]> = {
   pipeline: PIPELINE_SLOTS,
   ask_ai: [
-    { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY" },
-    { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY" },
-    { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY" },
-    { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY" },
-    { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY" },
-    { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY" },
+    { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY", runs_here: true },
+    { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: true },
+    { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: true },
+    { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: true },
+    { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY", runs_here: true },
+    { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: true },
   ],
-  recommendations: PIPELINE_SLOTS,
+  recommendations: RECOMMENDATIONS_SLOTS,
 };
 
 interface ConfigRow {
@@ -83,10 +94,11 @@ export async function GET() {
         key: slot.key,
         display_name: slot.display_name,
         env_var: slot.env_var,
-        // Best-effort — reflects the DASHBOARD's own environment (Vercel).
-        // Authoritative for ask_ai (which runs on Vercel); only a hint for
-        // pipeline (which actually runs on the worker/GitHub Actions).
-        env_var_present_here: Boolean(process.env[slot.env_var]),
+        runs_here: slot.runs_here,
+        // Only meaningful when runs_here — this dashboard process never
+        // calls the worker-only providers, so checking its own env for them
+        // would be checking the wrong environment entirely.
+        env_var_present_here: slot.runs_here ? Boolean(process.env[slot.env_var]) : null,
         enabled: row?.enabled ?? true,
         priority: row?.priority ?? index,
       };

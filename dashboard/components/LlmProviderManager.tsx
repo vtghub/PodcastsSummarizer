@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, CheckCircle2, XCircle, Workflow, MessageCircleQuestion, Sparkles } from "lucide-react";
+import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, CheckCircle2, XCircle, Workflow, MessageCircleQuestion, Sparkles, HelpCircle } from "lucide-react";
 
 interface Provider {
   key: string;
   display_name: string;
   env_var: string;
-  env_var_present_here: boolean;
+  runs_here: boolean;
+  env_var_present_here: boolean | null;
   enabled: boolean;
   priority: number;
 }
@@ -227,12 +228,20 @@ export default function LlmProviderManager() {
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>{p.display_name}</p>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            {p.env_var_present_here ? (
+                            {!p.runs_here ? (
+                              <span
+                                className="flex items-center gap-1 text-xs"
+                                style={{ color: "var(--txt-4)" }}
+                                title={`This provider runs in the worker (GitHub Actions), not the dashboard — check ${p.env_var} in the worker's env / repo secrets, not here`}
+                              >
+                                <HelpCircle className="w-3 h-3" /> {p.env_var} — set in worker env
+                              </span>
+                            ) : p.env_var_present_here ? (
                               <span className="flex items-center gap-1 text-xs" style={{ color: "#34D399" }}>
                                 <CheckCircle2 className="w-3 h-3" /> {p.env_var} detected here
                               </span>
                             ) : (
-                              <span className="flex items-center gap-1 text-xs" style={{ color: "var(--txt-4)" }} title="Not set in this environment — check the worker's env too, this only reflects the dashboard's own">
+                              <span className="flex items-center gap-1 text-xs" style={{ color: "var(--txt-4)" }}>
                                 <XCircle className="w-3 h-3" /> {p.env_var} not set here
                               </span>
                             )}

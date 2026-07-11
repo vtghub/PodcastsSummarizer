@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X, MessageCircle, Shield, Cpu, Sparkles } from "lucide-react";
+import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X, MessageCircle, Shield, Cpu, Sparkles, ChevronDown, BarChart3, Bookmark, Info } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
@@ -48,6 +48,7 @@ export default function NavBar({
   const router = useRouter();
   const [pickerOpen, setPickerOpen]         = useState(false);
   const [userMenuOpen, setUserMenuOpen]     = useState(false);
+  const [moreOpen, setMoreOpen]             = useState(false);
   const [hoveredTheme, setHoveredTheme]     = useState<typeof THEMES[0] | null>(null);
   const [searchOpen, setSearchOpen]         = useState(false);
   const [searchQuery, setSearchQuery]       = useState("");
@@ -60,6 +61,7 @@ export default function NavBar({
   const [sourceOptions, setSourceOptions]   = useState<SourceOption[]>([]);
   const pickerRef    = useRef<HTMLDivElement>(null);
   const userMenuRef  = useRef<HTMLDivElement>(null);
+  const moreRef      = useRef<HTMLDivElement>(null);
   const searchRef    = useRef<HTMLDivElement>(null);
   const searchInput  = useRef<HTMLInputElement>(null);
   const pathname = usePathname();
@@ -119,6 +121,7 @@ export default function NavBar({
     function onClickOutside(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false);
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") closeSearch();
@@ -181,8 +184,6 @@ export default function NavBar({
             )}
           </span>
           <span className="hidden sm:inline">{navLink("/podcasts", "My Podcasts")}</span>
-          {userEmail && <span className="hidden sm:inline">{navLink("/analytics", "Analytics")}</span>}
-          {userEmail && <span className="hidden sm:inline">{navLink("/saved", "Saved")}</span>}
           {userEmail && (
             <span className="hidden sm:inline">
               <Link
@@ -209,7 +210,62 @@ export default function NavBar({
               </Link>
             </span>
           )}
-          {navLink("/about", "About")}
+
+          {/* More dropdown — secondary links kept off the primary row */}
+          <div className="hidden sm:block relative" ref={moreRef}>
+            <button
+              onClick={() => setMoreOpen((v) => !v)}
+              className={`transition-colors text-sm flex items-center gap-0.5 ${moreOpen ? "font-medium" : "hover:opacity-80"}`}
+              style={{ color: moreOpen || ["/analytics", "/saved", "/about"].includes(pathname) ? "var(--acc)" : "var(--txt-3)" }}
+            >
+              More
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
+            </button>
+            {moreOpen && (
+              <div
+                className="absolute right-0 top-full mt-2 w-44 rounded-xl shadow-2xl border p-1.5 z-50"
+                style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
+              >
+                {userEmail && (
+                  <Link
+                    href="/analytics"
+                    onClick={() => setMoreOpen(false)}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                    style={{ color: pathname === "/analytics" ? "var(--acc)" : "var(--txt-2)" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                    Analytics
+                  </Link>
+                )}
+                {userEmail && (
+                  <Link
+                    href="/saved"
+                    onClick={() => setMoreOpen(false)}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                    style={{ color: pathname === "/saved" ? "var(--acc)" : "var(--txt-2)" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >
+                    <Bookmark className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                    Saved
+                  </Link>
+                )}
+                <Link
+                  href="/about"
+                  onClick={() => setMoreOpen(false)}
+                  className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                  style={{ color: pathname === "/about" ? "var(--acc)" : "var(--txt-2)" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                >
+                  <Info className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                  About
+                </Link>
+              </div>
+            )}
+          </div>
 
           {/* Search */}
           <button
@@ -219,8 +275,8 @@ export default function NavBar({
             style={{ background: "var(--bg-elevated)", color: "var(--txt-4)", border: "1px solid var(--bdr)" }}
           >
             <Search className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Search</span>
-            <span className="hidden sm:inline text-xs opacity-50 font-mono ml-0.5">⌘K</span>
+            <span className="hidden xl:inline">Search</span>
+            <span className="hidden xl:inline text-xs opacity-50 font-mono ml-0.5">⌘K</span>
           </button>
 
           {/* User menu */}
@@ -321,7 +377,7 @@ export default function NavBar({
             }}
           >
             {enabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">{enabled ? "Read Aloud On" : "Read Aloud Off"}</span>
+            <span className="hidden xl:inline">{enabled ? "Read Aloud On" : "Read Aloud Off"}</span>
           </button>
 
           {/* Theme picker */}
