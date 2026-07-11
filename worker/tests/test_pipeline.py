@@ -335,3 +335,88 @@ class TestPipelineResilience:
         assert _is_quota_error(Exception("429 Too Many Requests"))
         assert not _is_quota_error(Exception("connection refused"))
         assert not _is_quota_error(Exception("500 Internal Server Error"))
+
+
+# ── Chunked (map-reduce) extraction for long transcripts ──────────────────────
+
+class TestChunking:
+
+    def test_short_text_is_a_single_chunk(self):
+        from worker.providers.llm.chunking import split_into_chunks
+        text = "This is one short sentence. And another one."
+        assert split_into_chunks(text, target_chars=1000) == [text]
+
+    def test_splits_on_sentence_boundaries_near_target_size(self):
+        from worker.providers.llm.chunking import split_into_chunks
+        sentences = [f"Sentence number {i}." for i in range(50)]
+        text = " ".join(sentences)
+        chunks = split_into_chunks(text, target_chars=200)
+        assert len(chunks) > 1
+        # No content lost or duplicated across the split
+        assert " ".join(chunks) == text
+        # No chunk wildly exceeds the target (a little slack for the sentence
+        # that tips it over is fine; it shouldn't be a multiple of target)
+        assert all(len(c) <= 250 for c in chunks)
+
+    def test_hard_splits_a_single_run_on_sentence_with_no_punctuation(self):
+        from worker.providers.llm.chunking import split_into_chunks
+        text = "word " * 2000  # one giant "sentence" — no . ! or ?
+        chunks = split_into_chunks(text, target_chars=1000)
+        assert len(chunks) > 1
+        assert all(len(c) <= 1000 for c in chunks)
+
+    def test_chunked_extract_calls_generate_once_per_chunk_plus_synthesis(self):
+        from worker.providers.llm.chunking import chunked_extract
+
+        episode = _make_episode(title="Long Episode")
+        transcript_text = " ".join(f"Sentence {i}." for i in range(200))
+
+        calls: list[str] = []
+
+        def fake_generate(prompt: str) -> str:
+            calls.append(prompt)
+            if "Segment summaries (in chronological order):" in prompt:
+                return '{"title_en": "Long Episode", "summary": "s", "key_points": [], "key_quotes": [], "action_items": [], "tags": []}'
+            return "A dense summary of this segment."
+
+        def fake_parse_json(text: str) -> dict:
+            import json
+            return json.loads(text)
+
+        result = chunked_extract(
+            fake_generate, fake_parse_json, episode, "Technology & AI",
+            transcript_text, chunk_target_chars=200,
+        )
+
+        num_chunks = len(calls) - 1  # last call is the synthesis call
+        assert num_chunks > 1  # actually needed to chunk given the target size
+        assert result["title_en"] == "Long Episode"
+        # The synthesis prompt should reference every chunk summary, not just one
+        synthesis_prompt = calls[-1]
+        assert synthesis_prompt.count("[Segment") == num_chunks
+
+    def test_chunked_extract_single_chunk_still_synthesizes(self):
+        from worker.providers.llm.chunking import chunked_extract
+
+        episode = _make_episode(title="Short-ish Episode")
+        transcript_text = "A short transcript that fits in one chunk."
+
+        calls: list[str] = []
+
+        def fake_generate(prompt: str) -> str:
+            calls.append(prompt)
+            if "Segment summaries (in chronological order):" in prompt:
+                return '{"title_en": "Short-ish Episode", "summary": "s", "key_points": [], "key_quotes": [], "action_items": [], "tags": []}'
+            return "Summary of the only segment."
+
+        def fake_parse_json(text: str) -> dict:
+            import json
+            return json.loads(text)
+
+        result = chunked_extract(
+            fake_generate, fake_parse_json, episode, "Technology & AI",
+            transcript_text, chunk_target_chars=10_000,
+        )
+
+        assert len(calls) == 2  # one chunk-summary call + one synthesis call
+        assert result["summary"] == "s"
