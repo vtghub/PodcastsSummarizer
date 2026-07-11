@@ -6,6 +6,7 @@ graph TB
         CRON["🕛 daily_pipeline.yml\nCron: every 4 hours (ingestion)\n+ workflow_dispatch\n(since_days, force_email,\nepisode_audio_url, source_id, target_email)"]
         HCRON["🕐 hourly_digest.yml\nCron: every hour\nper-user digest fan-out\n+ workflow_dispatch\n(date, force, target_email)"]
         WCRON["📅 weekly_recommendations.yml\nCron: Sundays 10 AM UTC\nweekly recommendations email"]
+        BCRON["♻️ backfill_insights.yml\nCron: daily 3:30 AM UTC\n+ workflow_dispatch (batch_size)\nresumable, spans many runs/days"]
     end
 
     subgraph PIPELINE["🐍 Python Worker Pipeline"]
@@ -17,7 +18,8 @@ graph TB
         LLM["LLM Insight Extraction\nWaterfall: Gemini → Groq 8B/70B →\nMistral → Cohere → 4× OpenRouter\nchunked map-reduce for long transcripts\nsticky dead-provider fallback"]
         FANOUT["Per-User Digest Fan-out\nuser_profiles × user_subscriptions"]
         EMAIL["Gmail SMTP\nPersonalized HTML email"]
-        RECJOB["Weekly Recommendations Job\nLLM rank_insights + get_trending_sources"]
+        RECJOB["Weekly Recommendations Job\nLLM-ranked (scope=recommendations,\nheuristic fallback) + get_trending_sources"]
+        BACKFILLJOB["Insight Backfill Job\nRe-extracts via waterfall (scope=pipeline)\nfrom saved transcript; resumable cursor;\none bounded batch per invocation"]
     end
 
     subgraph STORE["🗄️ Supabase PostgreSQL"]
@@ -35,6 +37,8 @@ graph TB
         SUBS[("user_subscriptions\nuser_id → source_id")]
         AUTHUSERS[("auth.users\nSupabase Auth")]
         LLMCONFIG[("llm_provider_config\nscope, provider_key,\nenabled, priority")]
+        BACKFILLJOBS[("backfill_jobs\nstatus, total/processed/\nsucceeded/failed_items,\ncursor_created_at, cursor_insight_id")]
+        BACKFILLFAILS[("backfill_failures\njob_id, insight_id,\nepisode_id, error_msg")]
     end
 
     subgraph AUTH["🔐 Supabase Auth"]
@@ -57,7 +61,9 @@ graph TB
         ASKPAGE["ask/page.tsx\nLLM Q&A chat UI\nsuggested questions · citations"]
         ONBOARD["onboarding/page.tsx\nDomain picker + subscribe wizard"]
         ADMINUSERS["admin/users/page.tsx\nAdmin-only — list/search users,\ngrant/revoke admin, reset onboarding,\ncascade-delete user"]
-        ADMINLLM["admin/llm-providers/page.tsx\nAdmin-only — toggle/reorder waterfall\nper feature (Pipeline, Ask AI)"]
+        ADMINLLM["admin/llm-providers/page.tsx\nAdmin-only — toggle/reorder waterfall\nper feature (Pipeline, Ask AI, Recommendations)"]
+        ADMINTASK["admin/task-status/page.tsx\nAdmin-only — GitHub Actions runners\n(run now/cancel, polled) +\ninsight backfill progress (Realtime)"]
+        RECPAGE["recommendations/page.tsx\nOn-demand best-of-week insights\n+ trending podcasts, Refresh button"]
         REG["register/page.tsx"]
         LOGIN["login/page.tsx"]
         CACHE["unstable_cache\n1h TTL — public views only"]
@@ -80,6 +86,9 @@ graph TB
         ARASK["/api/ask\nPOST — LLM Q&A\nnamed-podcast lookup + FTS context\n6-model waterfall: Gemini→Groq 8B→Groq 70B→Mistral→Together→Cohere\norder/enabled from llm_provider_config"]
         ARADMINUSERS["/api/admin/users\nGET list (admin only)\n/[id] PATCH is_admin|reset_onboarding\n/[id] DELETE — auth.admin.deleteUser cascade\n/[id]/subscriptions GET catalog+subs · POST/DELETE sourceId"]
         ARADMINLLM["/api/admin/llm-providers\nGET providers by scope (admin only)\nPATCH scope, provider_key, enabled?, priority?"]
+        ARADMINBACKFILL["/api/admin/backfill\nGET latest backfill job + failures\nPOST — workflow_dispatch one batch now"]
+        ARADMINWORKFLOWS["/api/admin/workflows\nGET every GH Actions workflow + latest run\nPOST { action: dispatch|cancel }"]
+        ARRECOMMEND["/api/recommendations\nGET — on-demand LLM ranking (scope=recommendations)\n+ trending unsubscribed podcasts, authed"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
         ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]
     end
@@ -89,6 +98,13 @@ graph TB
     RECJOB --> INSIGHTS
     RECJOB --> SUBS
     RECJOB --> EMAIL
+    RECJOB -.->|reads at run start, scope=recommendations| LLMCONFIG
+    BCRON --> BACKFILLJOB
+    BACKFILLJOB --> INSIGHTS
+    BACKFILLJOB --> TRANSCRIPTS
+    BACKFILLJOB -.->|reads at run start, scope=pipeline| LLMCONFIG
+    BACKFILLJOB --> BACKFILLJOBS
+    BACKFILLJOB --> BACKFILLFAILS
     CRON --> SRC
     SRC --> FETCH
     FETCH --> TXT
@@ -122,6 +138,8 @@ graph TB
     LAYOUT --> ONBOARD
     LAYOUT --> ADMINUSERS
     LAYOUT --> ADMINLLM
+    LAYOUT --> ADMINTASK
+    LAYOUT --> RECPAGE
     LAYOUT --> REG
     LAYOUT --> LOGIN
 
@@ -176,6 +194,21 @@ graph TB
     ARADMINLLM --> LLMCONFIG
     LLM -.->|reads at run start, scope=pipeline| LLMCONFIG
     ARASK -.->|reads per question, scope=ask_ai| LLMCONFIG
+
+    RECPAGE --> ARRECOMMEND
+    ARRECOMMEND --> INSIGHTS
+    ARRECOMMEND --> SOURCES
+    ARRECOMMEND --> SUBS
+    ARRECOMMEND -.->|reads per request, scope=recommendations, 5 JS-callable providers only| LLMCONFIG
+
+    ADMINTASK --> ARADMINBACKFILL
+    ARADMINBACKFILL --> BACKFILLJOBS
+    ARADMINBACKFILL --> BACKFILLFAILS
+    ARADMINBACKFILL -.->|workflow_dispatch| CI
+    ADMINTASK --> ARADMINWORKFLOWS
+    ARADMINWORKFLOWS -.->|list/dispatch/cancel via GitHub API| CI
+    BACKFILLJOBS -.->|Realtime broadcast, migration 020| RT
+    RT -.->|WebSocket push| ADMINTASK
 
     LLM --> EPQUEUE
     INSIGHTS -.->|Realtime broadcast| RT
@@ -303,6 +336,30 @@ erDiagram
         timestamptz updated_at
         uuid updated_by
     }
+    backfill_jobs {
+        uuid id PK
+        text job_type
+        text status
+        int  total_items
+        int  processed_items
+        int  succeeded_items
+        int  failed_items
+        int  batch_size
+        timestamptz cursor_created_at
+        text cursor_insight_id
+        timestamptz started_at
+        timestamptz updated_at
+        timestamptz completed_at
+        text last_error
+    }
+    backfill_failures {
+        bigint id PK
+        uuid job_id FK
+        text insight_id
+        text episode_id
+        text error_msg
+        timestamptz failed_at
+    }
 
     auth_users ||--|| user_profiles : "has"
     auth_users ||--o{ user_subscriptions : "subscribes"
@@ -316,6 +373,7 @@ erDiagram
     insights ||--o{ insight_bookmarks : "bookmarked by"
     insights ||--o{ insight_comments : "commented on"
     insight_comments ||--o{ comment_reactions : "reacted to"
+    backfill_jobs ||--o{ backfill_failures : "logs"
 ```
 
 ---
@@ -341,3 +399,5 @@ Providers are resolved from environment variables at runtime — no code changes
 `WaterfallLLM` (`waterfall.py`) then tries each enabled slot in priority order per chunk. On failure or quota exhaustion it falls through to the next — and marks that provider "sticky dead" for the rest of the run, so later chunks skip straight past it instead of re-trying (and re-failing) it every time. Long transcripts are handled by `chunking.py`'s shared chunked map-reduce: split → per-chunk summarize → synthesize one structured insight.
 
 The dashboard's Ask AI chat (`/api/ask`) has its own independent 6-slot waterfall (adds Together AI, omits the 4 OpenRouter models), configured the same way but under scope `ask_ai` — see [request-workflow.md](request-workflow.md) for its sequence diagram.
+
+A third scope, `recommendations`, ranks the best insights from the past week (replacing a pure "sort by richness" heuristic with an actual LLM call). It has two call sites reading the *same* config rows but with different provider reach: the worker's weekly job (`WaterfallLLMProvider(scope="recommendations")`, all 9 pipeline-style adapters incl. OpenRouter) and the dashboard's on-demand `/api/recommendations` refresh (`lib/llm-waterfall.ts`'s `runWaterfall("recommendations", prompt)`, limited to the 5 JS-callable providers — OpenRouter slots enabled here only take effect for the pre-computed weekly email). Both fall back to the heuristic ranking if no provider is configured/available.

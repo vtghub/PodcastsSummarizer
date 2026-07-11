@@ -898,11 +898,17 @@ sequenceDiagram
 sequenceDiagram
     participant GH as GitHub Actions (weekly_recommendations.yml)
     participant JOB as worker/jobs/recommendations.py
-    participant LLM as LLM Provider (Groq/Gemini)
     participant DB as Supabase DB
+    participant LLM as WaterfallLLMProvider(scope="recommendations")
     participant MAIL as Gmail SMTP
 
     GH->>JOB: trigger (cron Sundays 10 AM UTC or workflow_dispatch)
+    JOB->>DB: get_llm_provider_config(scope="recommendations")
+    alt at least one provider enabled + API key present
+        JOB->>JOB: build WaterfallLLMProvider — ranker ready
+    else none available
+        JOB->>JOB: ranker = None (heuristic fallback for every user this run)
+    end
     JOB->>DB: get_users_with_digest_enabled()
     DB-->>JOB: [user1, user2, ...] (digest_enabled=TRUE)
 
@@ -913,11 +919,16 @@ sequenceDiagram
         Note over JOB,DB: Section 1 — Best insights from the past 7 days
         JOB->>DB: get_insights_for_week(source_ids, days=7)
         DB-->>JOB: insights (JOIN episodes + sources, last 7 days)
-        JOB->>LLM: rank_insights(insights, digest_domains, top_n=5)
-        alt LLM ranking succeeds
-            LLM-->>JOB: top 5 insight IDs (JSON array)
-        else LLM error
-            JOB->>JOB: fallback — sort by len(key_points)+len(key_quotes)
+        alt ranker available
+            JOB->>LLM: rank_insights(insights, digest_domains, top_n=5)
+            LLM->>LLM: build prompt (candidates tagged by id) → waterfall .generate()
+            alt LLM call + JSON parse succeed, ranked_ids match candidates
+                LLM-->>JOB: top 5 insights, in ranked order
+            else LLM fails, unparseable, or ids don't match
+                JOB->>JOB: fallback — default_rank_insights() sorts by len(key_points)+len(key_quotes)
+            end
+        else no ranker this run
+            JOB->>JOB: default_rank_insights() — sort by len(key_points)+len(key_quotes)
         end
 
         Note over JOB,DB: Section 2 — Podcast discovery
@@ -1164,4 +1175,139 @@ sequenceDiagram
 
     Note over ASK,DB: Ask AI reads scope='ask_ai' config on every question — changes take effect immediately
     ASK->>DB: SELECT ... WHERE scope='ask_ai' (per /api/ask call)
+```
+
+---
+
+## 28. On-Demand Recommendations ("For You")
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (signed in)
+    participant PAGE as recommendations/page.tsx
+    participant API as /api/recommendations
+    participant DB as Supabase
+    participant WF as lib/llm-waterfall.ts
+
+    B->>PAGE: navigate to /recommendations (or click "For You")
+    PAGE->>API: GET /api/recommendations
+
+    API->>DB: getUserId() from JWT cookie
+    alt not signed in
+        API-->>PAGE: 401
+        PAGE->>PAGE: "Sign in to see your personalized recommendations."
+    else signed in
+        API->>DB: SELECT digest_domains FROM user_profiles
+        API->>DB: SELECT source_id FROM user_subscriptions WHERE enabled=true
+        alt no subscriptions
+            API-->>PAGE: { topInsights: [], recommendedSources: [], message: "Subscribe to..." }
+        else has subscriptions
+            API->>DB: SELECT insights WHERE source_id IN (...) AND date >= 7 days ago
+            DB-->>API: week's insights (summary, key_points, key_quotes per insight)
+
+            API->>API: build candidates block, tag each with [id]
+            API->>WF: runWaterfall("recommendations", prompt)
+            WF->>DB: SELECT provider_key, enabled, priority FROM llm_provider_config WHERE scope='recommendations'
+            DB-->>WF: config (or empty — falls back to default order)
+            WF->>WF: filter to the 5 JS-callable providers with a key present, sorted by priority
+            Note over WF: try each until one succeeds — same pattern as /api/ask
+            WF-->>API: { text, model } or throws if all exhausted
+
+            alt waterfall succeeds and JSON parses with usable ranked_ids
+                API->>API: map ranked_ids back to insight rows, cap at 5
+            else waterfall fails, unparseable, or empty
+                API->>API: defaultRank() — sort by key_points.length + key_quotes.length
+            end
+
+            Note over API,DB: Trending podcasts — candidates in the user's domains, not subscribed
+            API->>DB: SELECT sources WHERE domain IN (...) AND NOT deleted AND enabled
+            API->>DB: SELECT source_id FROM insights WHERE source_id IN (candidates) AND date >= 7 days ago
+            API->>API: count per source_id in JS, sort desc, take top 5
+
+            API-->>PAGE: { topInsights: [{index,id,date,domain,source_name,episode_title,summary}], recommendedSources: [...], model }
+            PAGE->>PAGE: render insight cards (deep-link to dashboard) + trending podcast list (deep-link to /podcasts)
+        end
+    end
+
+    B->>PAGE: click Refresh
+    PAGE->>API: GET /api/recommendations (recomputed live, not cached)
+```
+
+---
+
+## 29. Admin — Task Status (Runners + Insight Backfill)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (admin)
+    participant PAGE as admin/task-status/page.tsx
+    participant MGR as TaskStatusManager.tsx
+    participant WFAPI as /api/admin/workflows
+    participant BFAPI as /api/admin/backfill
+    participant GH as GitHub Actions API
+    participant DB as Supabase
+    participant JOB as worker/jobs/backfill_insights.py
+    participant RT as Supabase Realtime
+
+    B->>PAGE: navigate to /admin/task-status
+    PAGE->>PAGE: isAdmin() — false? redirect /dashboard
+    PAGE->>MGR: render
+
+    par Runners section
+        MGR->>WFAPI: GET /api/admin/workflows
+        WFAPI->>WFAPI: isAdmin() check
+        WFAPI->>GH: GET /repos/.../actions/workflows
+        GH-->>WFAPI: every workflow (daily_pipeline, hourly_digest,<br/>weekly_recommendations, backfill_*, ...)
+        WFAPI->>GH: per workflow, GET .../runs?per_page=1
+        GH-->>WFAPI: latest run (status, conclusion, created_at, html_url)
+        WFAPI-->>MGR: { workflows: [{ id, name, fileName, latestRun }] }
+        MGR->>B: render status badge + last-run time + Run now / Cancel per workflow
+        Note over MGR,WFAPI: no GitHub push channel available in-browser —<br/>re-poll every 20s while the page is open
+    and Insight backfill section
+        MGR->>BFAPI: GET /api/admin/backfill
+        BFAPI->>DB: SELECT * FROM backfill_jobs WHERE job_type='insight_reextraction' ORDER BY started_at DESC LIMIT 1
+        BFAPI->>DB: SELECT * FROM backfill_failures WHERE job_id=? ORDER BY failed_at DESC LIMIT 20
+        BFAPI-->>MGR: { job, failures }
+        MGR->>B: render progress bar, succeeded/failed/remaining, recent failures
+    end
+
+    alt Trigger a workflow run
+        B->>MGR: click "Run now" on a workflow row
+        MGR->>WFAPI: POST { action: "dispatch", fileName }
+        WFAPI->>GH: POST .../workflows/{fileName}/dispatches { ref: "main" }
+        GH-->>WFAPI: 204 (queued)
+        WFAPI-->>MGR: { queued: true }
+        MGR->>MGR: toast "Run queued", re-fetch after 3s
+    else Cancel a running workflow
+        B->>MGR: click "Cancel" on an in-progress/queued row
+        MGR->>WFAPI: POST { action: "cancel", runId }
+        WFAPI->>GH: POST .../actions/runs/{runId}/cancel
+        GH-->>WFAPI: 202
+        WFAPI-->>MGR: { cancelled: true }
+    else Run an insight-backfill batch now
+        B->>MGR: click "Run batch now"
+        MGR->>BFAPI: POST /api/admin/backfill
+        BFAPI->>GH: POST .../workflows/backfill_insights.yml/dispatches
+        GH-->>BFAPI: 204 (queued)
+    end
+
+    Note over GH,JOB: GitHub Actions starts the runner within ~1 minute
+    GH->>JOB: run backfill_insights.py --batch-size N
+    JOB->>DB: get_active_backfill_job() or create_backfill_job() (first run)
+    JOB->>DB: get_next_backfill_batch(job_id, N) — resumes from (created_at, id) cursor
+    loop per insight in batch
+        JOB->>DB: get_episode() + get_transcript()
+        alt found
+            JOB->>JOB: WaterfallLLMProvider(scope="pipeline").extract_insights()
+            JOB->>DB: save_insight() — overwrite in place, same id
+            JOB->>DB: advance_backfill_cursor(success=True)
+        else missing
+            JOB->>DB: advance_backfill_cursor(success=False, error_msg) → INSERT backfill_failures
+        end
+    end
+    JOB->>DB: UPDATE backfill_jobs (counts, cursor, updated_at) — or complete_backfill_job() if batch was empty
+    DB->>RT: UPDATE/INSERT on backfill_jobs broadcast (migration 020)
+    RT-->>MGR: postgres_changes event
+    MGR->>BFAPI: GET /api/admin/backfill (silent refetch)
+    MGR->>B: progress bar updates live, no manual refresh needed
 ```
