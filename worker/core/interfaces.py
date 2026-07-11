@@ -72,6 +72,7 @@ class Insight:
     key_quotes: list[str]
     action_items: list[str]
     tags: list[str]
+    title_en: str = ""           # English translation of episode.title (empty if extraction predates this field)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -169,6 +170,9 @@ class StorageProvider(ABC):
         Default: no-op — both storage providers override this.
         """
         return None
+
+    def update_episode_title_en(self, episode_id: str, title_en: str) -> None:
+        """Persist the English translation of an episode's title. Default: no-op."""
 
     @abstractmethod
     def mark_episode_done(self, episode_id: str) -> None: ...

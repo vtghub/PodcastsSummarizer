@@ -36,6 +36,11 @@ export interface Source {
   platform_links?: PlatformLinks;
 }
 
+/** Prefer the LLM-translated English title; fall back to the original for untranslated/English-original episodes. */
+function displayTitle(ep: { title?: string; title_en?: string | null } | null | undefined): string | undefined {
+  return (ep?.title_en || ep?.title) ?? undefined;
+}
+
 export interface EpisodeItem {
   id: string;          // MD5 of audioUrl — matches pipeline's episode_id
   title: string;
@@ -174,7 +179,7 @@ async function sbGetInsightsByDateForUser(date: string, userId: string): Promise
   if (sourceIds.length === 0) return [];
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name, platform_links), episodes(title, published_at)")
+    .select("*, sources(name, platform_links), episodes(title, title_en, published_at)")
     .eq("date", date)
     .in("source_id", sourceIds)
     .order("domain").order("created_at", { ascending: false });
@@ -182,7 +187,7 @@ async function sbGetInsightsByDateForUser(date: string, userId: string): Promise
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
     source_name:           (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.name,
-    episode_title:         (r.episodes as { title: string; published_at?: string } | null)?.title,
+    episode_title:         displayTitle(r.episodes as { title: string; title_en?: string; published_at?: string } | null),
     episode_published_at:  (r.episodes as { title: string; published_at?: string } | null)?.published_at,
     platform_links:        (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
   })) as Insight[];
@@ -249,7 +254,7 @@ async function sbGetEpisodesWithInsights(_userId: string, sourceId: string): Pro
   // Single JOIN: insights → episodes (replaces the previous two-query approach)
   const { data, error } = await sb
     .from("insights")
-    .select("episode_id, episodes!inner(id, title, published_at)")
+    .select("episode_id, episodes!inner(id, title, title_en, published_at)")
     .eq("source_id", sourceId);
   if (error) throw error;
 
@@ -257,10 +262,10 @@ async function sbGetEpisodesWithInsights(_userId: string, sourceId: string): Pro
   const seen = new Set<string>();
   const episodes: { id: string; title: string; published_at: string }[] = [];
   for (const row of (data ?? [])) {
-    const ep = (row as { episode_id: string; episodes: { id: string; title: string; published_at: string } }).episodes;
+    const ep = (row as { episode_id: string; episodes: { id: string; title: string; title_en?: string; published_at: string } }).episodes;
     if (ep && !seen.has(ep.id)) {
       seen.add(ep.id);
-      episodes.push({ id: ep.id, title: ep.title ?? "Untitled", published_at: ep.published_at ?? "" });
+      episodes.push({ id: ep.id, title: displayTitle(ep) ?? "Untitled", published_at: ep.published_at ?? "" });
     }
   }
   return episodes.sort((a, b) => b.published_at.localeCompare(a.published_at));
@@ -271,7 +276,7 @@ async function sbGetInsightById(id: string): Promise<Insight | null> {
   const sb = getSupabaseClient();
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name, platform_links), episodes(title, published_at)")
+    .select("*, sources(name, platform_links), episodes(title, title_en, published_at)")
     .eq("id", id)
     .maybeSingle();
   if (error || !data) return null;
@@ -279,7 +284,7 @@ async function sbGetInsightById(id: string): Promise<Insight | null> {
   return {
     ...r,
     source_name:          (r.sources  as { name: string; platform_links?: PlatformLinks } | null)?.name,
-    episode_title:        (r.episodes as { title: string; published_at?: string } | null)?.title,
+    episode_title:        displayTitle(r.episodes as { title: string; title_en?: string; published_at?: string } | null),
     episode_published_at: (r.episodes as { title: string; published_at?: string } | null)?.published_at,
     platform_links:       (r.sources  as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
   } as Insight;
@@ -290,14 +295,14 @@ async function sbGetInsightsByEpisode(episodeId: string): Promise<Insight[]> {
   const sb = getSupabaseClient();
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name, platform_links), episodes(title, published_at)")
+    .select("*, sources(name, platform_links), episodes(title, title_en, published_at)")
     .eq("episode_id", episodeId)
     .order("domain");
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
     source_name:          (r.sources  as { name: string } | null)?.name,
-    episode_title:        (r.episodes as { title: string; published_at?: string } | null)?.title,
+    episode_title:        displayTitle(r.episodes as { title: string; title_en?: string; published_at?: string } | null),
     episode_published_at: (r.episodes as { title: string; published_at?: string } | null)?.published_at,
   })) as Insight[];
 }
@@ -307,14 +312,14 @@ async function sbGetInsightsByDate(date: string): Promise<Insight[]> {
   const sb = getSupabaseClient();
   const { data, error } = await sb
     .from("insights")
-    .select("*, sources(name, platform_links), episodes(title, published_at)")
+    .select("*, sources(name, platform_links), episodes(title, title_en, published_at)")
     .eq("date", date)
     .order("domain").order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
     source_name:           (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.name,
-    episode_title:         (r.episodes as { title: string; published_at?: string } | null)?.title,
+    episode_title:         displayTitle(r.episodes as { title: string; title_en?: string; published_at?: string } | null),
     episode_published_at:  (r.episodes as { title: string; published_at?: string } | null)?.published_at,
     platform_links:        (r.sources as { name: string; platform_links?: PlatformLinks } | null)?.platform_links ?? {},
   })) as Insight[];
@@ -414,7 +419,7 @@ export async function getInsightsByDate(date: string, userId?: string | null): P
   }
   const db = getSqliteDb();
   const rows = db.prepare(`
-    SELECT i.*, s.name AS source_name, e.title AS episode_title, e.published_at AS episode_published_at
+    SELECT i.*, s.name AS source_name, COALESCE(NULLIF(e.title_en, ''), e.title) AS episode_title, e.published_at AS episode_published_at
     FROM insights i
     LEFT JOIN sources  s ON s.id = i.source_id
     LEFT JOIN episodes e ON e.id = i.episode_id
@@ -463,7 +468,7 @@ export async function getInsightById(id: string): Promise<Insight | null> {
   if (useSupabase()) return sbGetInsightById(id);
   const db = getSqliteDb();
   const row = db.prepare(`
-    SELECT i.*, s.name AS source_name, e.title AS episode_title, e.published_at AS episode_published_at
+    SELECT i.*, s.name AS source_name, COALESCE(NULLIF(e.title_en, ''), e.title) AS episode_title, e.published_at AS episode_published_at
     FROM insights i
     LEFT JOIN sources  s ON s.id = i.source_id
     LEFT JOIN episodes e ON e.id = i.episode_id
@@ -476,7 +481,7 @@ export async function getInsightsByEpisode(episodeId: string): Promise<Insight[]
   if (useSupabase()) return sbGetInsightsByEpisode(episodeId);
   const db = getSqliteDb();
   const rows = db.prepare(`
-    SELECT i.*, s.name AS source_name, e.title AS episode_title, e.published_at AS episode_published_at
+    SELECT i.*, s.name AS source_name, COALESCE(NULLIF(e.title_en, ''), e.title) AS episode_title, e.published_at AS episode_published_at
     FROM insights i
     LEFT JOIN sources  s ON s.id = i.source_id
     LEFT JOIN episodes e ON e.id = i.episode_id
@@ -506,20 +511,20 @@ export async function getRecentInsights(limit = 20): Promise<Insight[]> {
     const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("insights")
-      .select("*, sources(name, platform_links), episodes(title, published_at)")
+      .select("*, sources(name, platform_links), episodes(title, title_en, published_at)")
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error) throw error;
     return (data ?? []).map((r: Record<string, unknown>) => ({
       ...r,
       source_name:          (r.sources  as { name: string } | null)?.name,
-      episode_title:        (r.episodes as { title: string; published_at?: string } | null)?.title,
+      episode_title:        displayTitle(r.episodes as { title: string; title_en?: string; published_at?: string } | null),
       episode_published_at: (r.episodes as { title: string; published_at?: string } | null)?.published_at,
     })) as Insight[];
   }
   const db = getSqliteDb();
   const rows = db.prepare(`
-    SELECT i.*, s.name AS source_name, e.title AS episode_title, e.published_at AS episode_published_at
+    SELECT i.*, s.name AS source_name, COALESCE(NULLIF(e.title_en, ''), e.title) AS episode_title, e.published_at AS episode_published_at
     FROM insights i
     LEFT JOIN sources  s ON s.id = i.source_id
     LEFT JOIN episodes e ON e.id = i.episode_id
