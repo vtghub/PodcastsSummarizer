@@ -37,6 +37,15 @@ def get_llm_provider() -> LLMProvider:
         case "ollama":
             from worker.providers.llm.ollama_llm import OllamaLLMProvider
             return OllamaLLMProvider()
+        case "mistral":
+            from worker.providers.llm.mistral_llm import MistralLLMProvider
+            return MistralLLMProvider()
+        case "cohere":
+            from worker.providers.llm.cohere_llm import CohereLLMProvider
+            return CohereLLMProvider()
+        case "waterfall":
+            from worker.providers.llm.waterfall_llm import WaterfallLLMProvider
+            return WaterfallLLMProvider()
         case _:
             raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER!r}")
 

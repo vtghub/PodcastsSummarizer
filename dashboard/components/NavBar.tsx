@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X, MessageCircle, Shield } from "lucide-react";
+import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X, MessageCircle, Shield, Cpu } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
@@ -258,6 +258,19 @@ export default function NavBar({
                     >
                       <Shield className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
                       Manage Users
+                    </Link>
+                  )}
+                  {isAdmin && (
+                    <Link
+                      href="/admin/llm-providers"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                      style={{ color: "var(--txt-2)" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <Cpu className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                      LLM Providers
                     </Link>
                   )}
                   <button

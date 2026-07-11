@@ -212,6 +212,16 @@ class StorageProvider(ABC):
         """Set published_at on an episode (only if currently null). Returns rows updated. Default: no-op."""
         return 0
 
+    def get_llm_provider_config(self) -> dict[str, dict]:
+        """
+        Returns {provider_key: {"enabled": bool, "priority": int}} overrides
+        for the LLM waterfall (see provider_registry.py), as set from the
+        /admin/llm-providers dashboard page. A provider_key with no entry
+        here falls back to its declared default in PROVIDER_SLOTS.
+        Default: empty dict (local dev — waterfall uses code defaults).
+        """
+        return {}
+
     def get_episodes_for_retry(self, max_retries: int = 3) -> list[tuple["Episode", "PodcastSource"]]:
         """Return (Episode, PodcastSource) pairs whose pipeline run failed and are due for retry."""
         return []

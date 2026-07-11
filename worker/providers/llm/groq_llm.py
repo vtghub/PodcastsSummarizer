@@ -1,8 +1,6 @@
 """Groq LLM provider — free tier, fast inference via Llama 3.3 70B."""
 
 import hashlib
-import json
-import re
 import textwrap
 import time
 from datetime import datetime, timezone
@@ -12,6 +10,7 @@ from groq import Groq
 from worker.core.interfaces import Episode, Insight, LLMProvider, Transcript
 from worker.config.settings import GROQ_API_KEY, GROQ_MODEL
 from worker.providers.llm.prompts import EXTRACTION_PROMPT
+from worker.providers.llm.text_utils import parse_json_response
 from worker.providers.llm.chunking import chunked_extract
 
 # Groq free tier: 6,000 TPM. Prompt overhead ~1,500 tokens, cap a single-call
@@ -26,15 +25,18 @@ _RETRY_DELAYS = [4, 16, 64]  # seconds; only for transient rate-limit errors
 
 class GroqLLMProvider(LLMProvider):
 
-    def __init__(self):
+    def __init__(self, model: str = GROQ_MODEL):
         if not GROQ_API_KEY:
             raise ValueError("GROQ_API_KEY is not set. Add it to your .env file.")
         self._client = Groq(api_key=GROQ_API_KEY)
+        # Different Groq models have independent quota buckets under the same
+        # key — passing a different model gives the waterfall a distinct slot.
+        self._model = model
 
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
         if len(transcript.text) > _MAX_TRANSCRIPT_CHARS:
             data = chunked_extract(
-                self._generate_text, self._parse_json, episode, domain,
+                self._generate_text, parse_json_response, episode, domain,
                 transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Groq]",
             )
         else:
@@ -44,7 +46,7 @@ class GroqLLMProvider(LLMProvider):
                 description=episode.description[:500],
                 transcript=transcript.text,
             )
-            data = self._parse_json(self._generate_text(prompt))
+            data = parse_json_response(self._generate_text(prompt))
 
         insight_id = hashlib.md5(f"{episode.id}:{datetime.now(timezone.utc).isoformat()}".encode()).hexdigest()
         date_str = episode.published_at.strftime("%Y-%m-%d")
@@ -69,8 +71,8 @@ class GroqLLMProvider(LLMProvider):
         No response_format=json_object here (unlike the old single-call path)
         since this is now shared with chunked_extract()'s plain-text
         chunk-summary calls — the EXTRACTION_PROMPT's own "return ONLY valid
-        JSON" instruction plus _parse_json's fence-stripping is enough, the
-        same approach Gemini already relies on.
+        JSON" instruction plus parse_json_response's fence-stripping is
+        enough, the same approach Gemini already relies on.
         """
         last_exc: Exception | None = None
         for attempt, delay in enumerate([0] + _RETRY_DELAYS):
@@ -79,7 +81,7 @@ class GroqLLMProvider(LLMProvider):
                 time.sleep(delay)
             try:
                 response = self._client.chat.completions.create(
-                    model=GROQ_MODEL,
+                    model=self._model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.2,
                 )
@@ -91,12 +93,3 @@ class GroqLLMProvider(LLMProvider):
                     continue
                 raise
         raise last_exc  # type: ignore[misc]
-
-    @staticmethod
-    def _parse_json(text: str) -> dict:
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
-        text = re.sub(r"\s*```$", "", text, flags=re.MULTILINE)
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"LLM returned invalid JSON: {e}\n\nRaw output:\n{text[:500]}")

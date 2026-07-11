@@ -420,3 +420,181 @@ class TestChunking:
 
         assert len(calls) == 2  # one chunk-summary call + one synthesis call
         assert result["summary"] == "s"
+
+
+# ── Multi-provider waterfall ────────────────────────────────────────────────
+
+class TestWaterfall:
+
+    def test_falls_through_to_next_provider_on_failure(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        calls: list[str] = []
+
+        def failing(prompt: str) -> str:
+            calls.append("A")
+            raise RuntimeError("quota exceeded")
+
+        def working(prompt: str) -> str:
+            calls.append("B")
+            return "response from B"
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", working)])
+        assert wf.generate("prompt") == "response from B"
+        assert calls == ["A", "B"]
+
+    def test_first_provider_used_when_it_succeeds(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        calls: list[str] = []
+
+        def working(prompt: str) -> str:
+            calls.append("A")
+            return "response from A"
+
+        def should_not_be_called(prompt: str) -> str:
+            calls.append("B")
+            return "response from B"
+
+        wf = WaterfallLLM([WaterfallStep("A", working), WaterfallStep("B", should_not_be_called)])
+        assert wf.generate("prompt") == "response from A"
+        assert calls == ["A"]
+
+    def test_raises_when_every_provider_fails(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def failing(prompt: str) -> str:
+            raise RuntimeError("exhausted")
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", failing)])
+        with pytest.raises(RuntimeError, match="All 2 providers"):
+            wf.generate("prompt")
+
+    def test_empty_response_also_triggers_fallback(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def empty(prompt: str) -> str:
+            return ""
+
+        def working(prompt: str) -> str:
+            return "real response"
+
+        wf = WaterfallLLM([WaterfallStep("A", empty), WaterfallStep("B", working)])
+        assert wf.generate("prompt") == "real response"
+
+    def test_requires_at_least_one_step(self):
+        from worker.providers.llm.waterfall import WaterfallLLM
+        with pytest.raises(ValueError):
+            WaterfallLLM([])
+
+    def test_failed_provider_is_not_retried_on_next_call(self):
+        """A quota-exhausted provider shouldn't be re-attempted (and re-fail,
+        eating its own retry/backoff time) on every subsequent chunk of the
+        same run — once it fails, it's skipped for the rest of this
+        WaterfallLLM instance's lifetime."""
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        calls: list[str] = []
+        a_call_count = 0
+
+        def failing(prompt: str) -> str:
+            nonlocal a_call_count
+            a_call_count += 1
+            calls.append("A")
+            raise RuntimeError("quota exceeded")
+
+        def working(prompt: str) -> str:
+            calls.append("B")
+            return "response from B"
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", working)])
+
+        # First call: A is tried (and fails), B succeeds.
+        assert wf.generate("chunk 1") == "response from B"
+        assert a_call_count == 1
+
+        # Second call (simulating the next chunk): A must NOT be retried.
+        assert wf.generate("chunk 2") == "response from B"
+        assert a_call_count == 1  # unchanged
+        assert calls == ["A", "B", "B"]
+
+    def test_fresh_instance_has_no_memory_of_a_previous_runs_failures(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def failing(prompt: str) -> str:
+            raise RuntimeError("quota exceeded")
+
+        wf1 = WaterfallLLM([WaterfallStep("A", failing)])
+        with pytest.raises(RuntimeError):
+            wf1.generate("prompt")
+
+        # A brand new instance (next pipeline run) shouldn't inherit wf1's dead list.
+        calls: list[str] = []
+
+        def working_now(prompt: str) -> str:
+            calls.append("A")
+            return "A is back"
+
+        wf2 = WaterfallLLM([WaterfallStep("A", working_now)])
+        assert wf2.generate("prompt") == "A is back"
+        assert calls == ["A"]
+
+    def test_error_message_when_all_providers_already_marked_dead(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def failing(prompt: str) -> str:
+            raise RuntimeError("quota exceeded")
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", failing)])
+        with pytest.raises(RuntimeError, match="All 2 providers"):
+            wf.generate("chunk 1")  # both fail and get marked dead
+
+        # Second call: neither should even be attempted this time.
+        with pytest.raises(RuntimeError, match="already marked"):
+            wf.generate("chunk 2")
+
+
+# ── Plug-in/plug-out provider registry ─────────────────────────────────────
+
+class TestProviderRegistry:
+
+    def test_slot_with_no_env_var_is_excluded_even_if_enabled(self, monkeypatch):
+        from worker.providers.llm.provider_registry import build_enabled_slots
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+        monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+        monkeypatch.delenv("COHERE_API_KEY", raising=False)
+        assert build_enabled_slots({}) == []
+
+    def test_default_order_matches_declared_list_when_env_vars_present(self, monkeypatch):
+        from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
+        for slot in PROVIDER_SLOTS:
+            monkeypatch.setenv(slot.env_var, "fake-key")
+        slots = build_enabled_slots({})
+        assert [s.key for s in slots] == [s.key for s in PROVIDER_SLOTS]
+
+    def test_config_can_disable_a_slot(self, monkeypatch):
+        from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
+        for slot in PROVIDER_SLOTS:
+            monkeypatch.setenv(slot.env_var, "fake-key")
+        config = {"gemini": {"enabled": False, "priority": 0}}
+        slots = build_enabled_slots(config)
+        assert "gemini" not in [s.key for s in slots]
+        assert len(slots) == len(PROVIDER_SLOTS) - 1
+
+    def test_config_can_reorder_slots(self, monkeypatch):
+        from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
+        for slot in PROVIDER_SLOTS:
+            monkeypatch.setenv(slot.env_var, "fake-key")
+        # Push cohere to the very front
+        config = {"cohere": {"enabled": True, "priority": -1}}
+        slots = build_enabled_slots(config)
+        assert slots[0].key == "cohere"
+
+    def test_disabled_slot_without_key_is_still_excluded(self, monkeypatch):
+        # A config row can't resurrect a provider with no API key configured
+        from worker.providers.llm.provider_registry import build_enabled_slots
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config = {"gemini": {"enabled": True, "priority": 0}}
+        slots = build_enabled_slots(config)
+        assert "gemini" not in [s.key for s in slots]
