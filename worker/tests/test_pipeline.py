@@ -337,6 +337,45 @@ class TestPipelineResilience:
         assert not _is_quota_error(Exception("500 Internal Server Error"))
 
 
+# ── Lenient JSON parsing of LLM responses ────────────────────────────────────
+
+class TestParseJsonResponse:
+    """parse_json_response() must recover from the malformed-JSON shapes real
+    models actually produce, not just well-formed output with markdown fences."""
+
+    def test_parses_clean_json(self):
+        from worker.providers.llm.text_utils import parse_json_response
+        result = parse_json_response('{"summary": "s", "key_points": ["a"]}')
+        assert result == {"summary": "s", "key_points": ["a"]}
+
+    def test_strips_markdown_fences(self):
+        from worker.providers.llm.text_utils import parse_json_response
+        result = parse_json_response('```json\n{"summary": "s"}\n```')
+        assert result == {"summary": "s"}
+
+    def test_recovers_from_unescaped_quote_inside_string_value(self):
+        # The exact production failure mode: "Expecting ',' delimiter" — a
+        # direct podcast quote inside a string value wasn't escaped.
+        from worker.providers.llm.text_utils import parse_json_response
+        broken = '{"summary": "He said "hello" to everyone", "key_points": []}'
+        result = parse_json_response(broken)
+        assert result["summary"] == 'He said "hello" to everyone'
+        assert result["key_points"] == []
+
+    def test_recovers_from_truncated_response(self):
+        # The other production failure mode: "Unterminated string starting
+        # at" — the model's response was cut off mid-string (token limit).
+        from worker.providers.llm.text_utils import parse_json_response
+        broken = '{"title_en": "Test", "summary": "cut off mid'
+        result = parse_json_response(broken)
+        assert result["title_en"] == "Test"
+
+    def test_raises_value_error_when_unrecoverable(self):
+        from worker.providers.llm.text_utils import parse_json_response
+        with pytest.raises(ValueError, match="LLM returned invalid JSON"):
+            parse_json_response("this is not JSON at all, just prose.")
+
+
 # ── Chunked (map-reduce) extraction for long transcripts ──────────────────────
 
 class TestChunking:
@@ -420,6 +459,104 @@ class TestChunking:
 
         assert len(calls) == 2  # one chunk-summary call + one synthesis call
         assert result["summary"] == "s"
+
+
+class TestChunkedExtractLogging:
+    """chunked_extract() logs each LLM call via storage.log_extraction_chunk()
+    for the admin Task Status page's per-chunk detail — best-effort, must
+    never break extraction itself."""
+
+    def _fake_generate_ok(self):
+        def fake_generate(prompt: str) -> str:
+            if "Segment summaries (in chronological order):" in prompt:
+                return '{"summary": "s", "key_points": [], "key_quotes": [], "action_items": [], "tags": []}'
+            return "A dense summary of this segment."
+        return fake_generate
+
+    def test_logs_success_for_each_chunk_and_synthesis(self):
+        from worker.providers.llm.chunking import chunked_extract
+        episode = _make_episode(id="ep1", source_id="src1", title="Long Episode")
+        transcript_text = " ".join(f"Sentence {i}." for i in range(200))
+        storage = MagicMock()
+
+        with patch("worker.core.registry.get_storage_provider", return_value=storage):
+            chunked_extract(
+                self._fake_generate_ok(), lambda t: __import__("json").loads(t),
+                episode, "Technology & AI", transcript_text,
+                chunk_target_chars=200, provider_name="gemini-2.0-flash",
+            )
+
+        calls = storage.log_extraction_chunk.call_args_list
+        assert len(calls) > 1
+        # Every call succeeded, used the static provider name, and referenced this episode
+        for c in calls:
+            assert c.kwargs["status"] == "success"
+            assert c.kwargs["provider_name"] == "gemini-2.0-flash"
+            assert c.kwargs["episode_id"] == "ep1"
+            assert c.kwargs["source_id"] == "src1"
+        # Last call is the synthesis phase; chunk_index equals total_chunks there
+        assert calls[-1].kwargs["phase"] == "synthesis"
+        assert calls[-1].kwargs["chunk_index"] == calls[-1].kwargs["total_chunks"]
+        # Earlier calls are the per-chunk map phase
+        assert calls[0].kwargs["phase"] == "summary"
+
+    def test_resolves_callable_provider_name_per_call(self):
+        from worker.providers.llm.chunking import chunked_extract
+        episode = _make_episode(id="ep1", source_id="src1")
+        transcript_text = " ".join(f"Sentence {i}." for i in range(200))
+        storage = MagicMock()
+
+        names = iter(["gemini-2.0-flash", "groq/llama-3.1-8b-instant", "mistral-small-latest"])
+        current = {"name": "gemini-2.0-flash"}
+
+        def fake_generate(prompt: str) -> str:
+            current["name"] = next(names, current["name"])
+            if "Segment summaries (in chronological order):" in prompt:
+                return '{"summary": "s", "key_points": [], "key_quotes": [], "action_items": [], "tags": []}'
+            return "A dense summary of this segment."
+
+        with patch("worker.core.registry.get_storage_provider", return_value=storage):
+            chunked_extract(
+                fake_generate, lambda t: __import__("json").loads(t),
+                episode, "Technology & AI", transcript_text,
+                chunk_target_chars=200, provider_name=lambda: current["name"],
+            )
+
+        logged_names = {c.kwargs["provider_name"] for c in storage.log_extraction_chunk.call_args_list}
+        assert "groq/llama-3.1-8b-instant" in logged_names  # a mid-run provider switch was captured
+
+    def test_logs_failure_and_reraises_on_chunk_error(self):
+        from worker.providers.llm.chunking import chunked_extract
+        episode = _make_episode(id="ep1", source_id="src1")
+        transcript_text = " ".join(f"Sentence {i}." for i in range(200))
+        storage = MagicMock()
+
+        def failing_generate(prompt: str) -> str:
+            raise RuntimeError("quota exceeded")
+
+        with patch("worker.core.registry.get_storage_provider", return_value=storage):
+            with pytest.raises(RuntimeError, match="quota exceeded"):
+                chunked_extract(
+                    failing_generate, lambda t: {}, episode, "Technology & AI",
+                    transcript_text, chunk_target_chars=200, provider_name="groq/llama-3.1-8b-instant",
+                )
+
+        storage.log_extraction_chunk.assert_called_once()
+        call = storage.log_extraction_chunk.call_args
+        assert call.kwargs["status"] == "failed"
+        assert "quota exceeded" in call.kwargs["error_msg"]
+
+    def test_logging_failure_does_not_break_extraction(self):
+        from worker.providers.llm.chunking import chunked_extract
+        episode = _make_episode(id="ep1", source_id="src1")
+        transcript_text = "A short transcript that fits in one chunk."
+
+        with patch("worker.core.registry.get_storage_provider", side_effect=RuntimeError("DB unreachable")):
+            result = chunked_extract(
+                self._fake_generate_ok(), lambda t: __import__("json").loads(t),
+                episode, "Technology & AI", transcript_text, chunk_target_chars=10_000,
+            )
+        assert result["summary"] == "s"  # extraction still completed despite logging being broken
 
 
 # ── Multi-provider waterfall ────────────────────────────────────────────────
@@ -731,6 +868,112 @@ class TestBackfillInsights:
 
         storage.save_insight.assert_not_called()
         storage.advance_backfill_cursor.assert_not_called()
+        assert "error" in result
+
+
+class TestRetryFailedBackfillItems:
+
+    def _make_storage(self, latest_job=None, failures=None):
+        storage = MagicMock()
+        storage.get_latest_backfill_job.return_value = latest_job
+        storage.get_backfill_failures.return_value = failures or []
+        storage.get_insight.side_effect = lambda iid: _make_insight(id=iid, episode_id="ep1", source_id="src1")
+        storage.get_episode.side_effect = lambda eid: _make_episode(id=eid)
+        storage.get_transcript.side_effect = lambda eid: Transcript(episode_id=eid, text="full transcript text")
+        return storage
+
+    def _fake_waterfall_llm(self, **kw):
+        provider = MagicMock()
+        provider.extract_insights.return_value = _make_insight(
+            id="__will_be_overwritten__", summary="fixed via json_repair"
+        )
+        return provider
+
+    def test_no_job_found_is_a_noop(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(latest_job=None)
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage):
+            result = retry_failed_items()
+        assert result == {"retried": 0}
+        storage.get_backfill_failures.assert_not_called()
+
+    def test_no_failures_is_a_noop(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(latest_job={"id": "job-1"}, failures=[])
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage):
+            result = retry_failed_items()
+        assert result == {"retried": 0}
+
+    def test_retries_each_failure_and_reports_counts(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        failures = [
+            {"insight_id": "a", "episode_id": "ep1"},
+            {"insight_id": "b", "episode_id": "ep1"},
+        ]
+        storage = self._make_storage(latest_job={"id": "job-1"}, failures=failures)
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            result = retry_failed_items()
+
+        assert result == {"retried": 2, "succeeded": 2, "failed": 0}
+        assert storage.save_insight.call_count == 2
+        assert storage.retry_backfill_failure.call_count == 2
+        for call in storage.retry_backfill_failure.call_args_list:
+            assert call.kwargs["success"] is True
+
+    def test_preserves_identity_on_retry(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(
+            latest_job={"id": "job-1"},
+            failures=[{"insight_id": "orig-id", "episode_id": "ep1"}],
+        )
+        storage.get_insight.side_effect = lambda iid: _make_insight(
+            id=iid, episode_id="ep-x", source_id="src-x", domain="Finance & Investing", date="2026-01-01"
+        )
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            retry_failed_items()
+
+        saved = storage.save_insight.call_args.args[0]
+        assert saved.id == "orig-id"
+        assert saved.episode_id == "ep-x"
+        assert saved.source_id == "src-x"
+        assert saved.domain == "Finance & Investing"
+        assert saved.date == "2026-01-01"
+        assert saved.summary == "fixed via json_repair"
+
+    def test_still_failing_item_reported_and_not_saved(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(
+            latest_job={"id": "job-1"},
+            failures=[{"insight_id": "a", "episode_id": "ep1"}],
+        )
+        storage.get_transcript.side_effect = lambda eid: None  # still broken
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            result = retry_failed_items()
+
+        storage.save_insight.assert_not_called()
+        assert result["succeeded"] == 0
+        assert result["failed"] == 1
+        call = storage.retry_backfill_failure.call_args
+        assert call.kwargs["success"] is False
+
+    def test_no_providers_configured_aborts_without_processing(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(
+            latest_job={"id": "job-1"},
+            failures=[{"insight_id": "a", "episode_id": "ep1"}],
+        )
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=ValueError("no providers enabled")):
+            result = retry_failed_items()
+
+        storage.save_insight.assert_not_called()
+        storage.retry_backfill_failure.assert_not_called()
         assert "error" in result
 
 

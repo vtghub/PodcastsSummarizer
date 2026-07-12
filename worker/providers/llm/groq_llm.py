@@ -38,6 +38,7 @@ class GroqLLMProvider(LLMProvider):
             data = chunked_extract(
                 self._generate_text, parse_json_response, episode, domain,
                 transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Groq]",
+                provider_name=self._model,
             )
         else:
             prompt = textwrap.dedent(EXTRACTION_PROMPT).format(

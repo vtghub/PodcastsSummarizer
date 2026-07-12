@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ListChecks, RefreshCw, Loader2, PlayCircle, CheckCircle2, XCircle, Clock,
-  Workflow, StopCircle, ExternalLink, MinusCircle,
+  Workflow, StopCircle, ExternalLink, MinusCircle, ChevronDown, ChevronRight, Layers,
 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -48,6 +48,27 @@ interface WorkflowInfo {
   latestRun: RunInfo | null;
 }
 
+interface ChunkDetail {
+  chunkIndex: number;
+  totalChunks: number;
+  phase: string;         // 'summary' | 'synthesis'
+  providerName: string;
+  status: string;        // 'success' | 'failed'
+  errorMsg: string | null;
+  createdAt: string;
+}
+
+interface EpisodeChunks {
+  episodeId: string;
+  sourceId: string;
+  episodeTitle: string;
+  sourceName: string;
+  totalChunks: number;
+  hasFailure: boolean;
+  latestEventAt: string;
+  chunks: ChunkDetail[];
+}
+
 function statusBadge(status: string) {
   if (status === "completed") return { icon: CheckCircle2, color: "#34D399", label: "Completed" };
   if (status === "failed") return { icon: XCircle, color: "#F87171", label: "Failed" };
@@ -74,11 +95,17 @@ export default function TaskStatusManager() {
   const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [retryingFailed, setRetryingFailed] = useState(false);
 
   const [workflows, setWorkflows] = useState<WorkflowInfo[] | null>(null);
   const [workflowsError, setWorkflowsError] = useState("");
   const [workflowsRefreshing, setWorkflowsRefreshing] = useState(false);
   const [busyWorkflow, setBusyWorkflow] = useState<string | null>(null);
+
+  const [extractionEpisodes, setExtractionEpisodes] = useState<EpisodeChunks[] | null>(null);
+  const [extractionError, setExtractionError] = useState("");
+  const [extractionRefreshing, setExtractionRefreshing] = useState(false);
+  const [expandedEpisodeId, setExpandedEpisodeId] = useState<string | null>(null);
 
   const [toast, setToast] = useState<{ msg: string; type: "error" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,7 +147,22 @@ export default function TaskStatusManager() {
     }
   }, []);
 
-  useEffect(() => { load(); loadWorkflows(); }, [load, loadWorkflows]);
+  const loadExtractionChunks = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) setExtractionRefreshing(true);
+    try {
+      const res = await fetch("/api/admin/extraction-chunks");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to load transcription detail");
+      setExtractionEpisodes(data.episodes ?? []);
+      setExtractionError("");
+    } catch (e) {
+      setExtractionError(e instanceof Error ? e.message : "Failed to load transcription detail");
+    } finally {
+      if (!opts.silent) setExtractionRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); loadWorkflows(); loadExtractionChunks(); }, [load, loadWorkflows, loadExtractionChunks]);
 
   // Push-based refresh while a batch is running — requires migration 020
   // (backfill_jobs added to the supabase_realtime publication).
@@ -161,6 +203,24 @@ export default function TaskStatusManager() {
       showToast(e instanceof Error ? e.message : "Failed to trigger batch", "error");
     } finally {
       setTriggering(false);
+    }
+  }
+
+  async function retryFailedNow() {
+    setRetryingFailed(true);
+    try {
+      const res = await fetch("/api/admin/backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "retry_failed" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to trigger retry");
+      showToast(`Retrying ${job?.failed_items ?? failures.length} failed item(s) — GitHub Actions will start within a minute or two.`, "success");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Failed to trigger retry", "error");
+    } finally {
+      setRetryingFailed(false);
     }
   }
 
@@ -430,7 +490,18 @@ export default function TaskStatusManager() {
 
       {failures.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold mb-3" style={{ color: "var(--txt-1)" }}>Recent failures</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>Recent failures</h2>
+            <button
+              onClick={retryFailedNow}
+              disabled={retryingFailed}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60"
+              style={{ background: "var(--acc)", color: "#fff" }}
+            >
+              {retryingFailed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+              Retry {job?.failed_items ?? failures.length} failed
+            </button>
+          </div>
           <div className="rounded-2xl border overflow-hidden divide-y" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
             {failures.map((f) => (
               <div key={f.id} className="px-4 py-3">
@@ -446,6 +517,116 @@ export default function TaskStatusManager() {
           </div>
         </div>
       )}
+
+      {/* ── Episode transcription / chunking detail ────────────────────── */}
+      <div className="mt-8">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4" style={{ color: "var(--txt-3)" }} />
+            <h2 className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>Episode Transcription Detail</h2>
+          </div>
+          <button
+            onClick={() => loadExtractionChunks()}
+            disabled={extractionRefreshing}
+            title="Refresh transcription detail"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60"
+            style={{ background: "var(--bg-elevated)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${extractionRefreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
+        <p className="text-sm mb-3" style={{ color: "var(--txt-3)" }}>
+          The 15 most recently processed long episodes — how many chunks each transcript was split into,
+          which LLM model handled each chunk, and whether it succeeded.
+        </p>
+
+        {extractionError && <p className="text-sm mb-4" style={{ color: "#EF4444" }}>{extractionError}</p>}
+
+        {!extractionEpisodes && !extractionError && (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-4)" }} />
+          </div>
+        )}
+
+        {extractionEpisodes && extractionEpisodes.length === 0 && !extractionError && (
+          <p className="text-sm py-8 text-center" style={{ color: "var(--txt-4)" }}>
+            No chunked extractions logged yet — this only fires for episodes whose transcript was long
+            enough to require map-reduce chunking.
+          </p>
+        )}
+
+        {extractionEpisodes && extractionEpisodes.length > 0 && (
+          <div className="rounded-2xl border overflow-hidden divide-y" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
+            {extractionEpisodes.map((ep) => {
+              const isExpanded = expandedEpisodeId === ep.episodeId;
+              return (
+                <div key={ep.episodeId}>
+                  <button
+                    onClick={() => setExpandedEpisodeId(isExpanded ? null : ep.episodeId)}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: "var(--txt-4)" }} />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: "var(--txt-4)" }} />
+                    )}
+                    {ep.hasFailure ? (
+                      <XCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#F87171" }} />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: "#34D399" }} />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>{ep.episodeTitle}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xs" style={{ color: "var(--txt-4)" }}>{ep.sourceName}</span>
+                        <span className="text-xs" style={{ color: "var(--txt-4)" }}>·</span>
+                        <span className="text-xs" style={{ color: "var(--txt-4)" }}>
+                          {ep.totalChunks} chunk{ep.totalChunks !== 1 ? "s" : ""}
+                        </span>
+                        <span className="text-xs" style={{ color: "var(--txt-4)" }}>·</span>
+                        <span className="text-xs" style={{ color: "var(--txt-4)" }}>
+                          {new Date(ep.latestEventAt).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="px-4 pb-3 pl-11">
+                      <div className="rounded-xl border overflow-hidden divide-y" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
+                        {ep.chunks.map((c, i) => (
+                          <div key={i} className="flex items-center gap-2.5 px-3 py-2">
+                            {c.status === "success" ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#34D399" }} />
+                            ) : (
+                              <XCircle className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "#F87171" }} />
+                            )}
+                            <span className="text-xs font-medium flex-shrink-0" style={{ color: "var(--txt-2)", minWidth: 88 }}>
+                              {c.phase === "synthesis" ? "Synthesis" : `Chunk ${c.chunkIndex}/${c.totalChunks}`}
+                            </span>
+                            <span className="text-xs truncate flex-1" style={{ color: "var(--txt-3)" }}>
+                              {c.providerName}
+                            </span>
+                            <span className="text-xs flex-shrink-0" style={{ color: "var(--txt-4)" }}>
+                              {new Date(c.createdAt).toLocaleTimeString()}
+                            </span>
+                            {c.errorMsg && (
+                              <span className="text-xs flex-shrink-0" style={{ color: "#F87171" }} title={c.errorMsg}>
+                                {c.errorMsg.length > 40 ? `${c.errorMsg.slice(0, 40)}…` : c.errorMsg}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {toast && (
         <div

@@ -37,6 +37,7 @@ class GeminiLLMProvider(LLMProvider):
             data = chunked_extract(
                 self._generate_text, parse_json_response, episode, domain,
                 transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Gemini]",
+                provider_name=GEMINI_MODEL,
             )
         else:
             prompt = textwrap.dedent(EXTRACTION_PROMPT).format(

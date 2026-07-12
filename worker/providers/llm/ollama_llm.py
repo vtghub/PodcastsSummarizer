@@ -50,6 +50,7 @@ class OllamaLLMProvider(LLMProvider):
             data = chunked_extract(
                 self._generate_text, parse_json_response, episode, domain,
                 transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Ollama]",
+                provider_name=self.model,
             )
         else:
             user_msg = _USER_PROMPT.format(

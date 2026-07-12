@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mic2, Search, Bookmark, CalendarDays, Bell, Mail, Volume2, Download, MessageCircle } from "lucide-react";
+import { Mic2, Search, Bookmark, CalendarDays, Bell, Mail, Volume2, Download, MessageCircle, Sparkles } from "lucide-react";
 
 const features = [
   {
@@ -49,6 +49,21 @@ const features = [
   },
 ];
 
+// Deduplicated pool across all three waterfalls (Insight Extraction, Recommendations, Ask AI) —
+// see README's Provider Registry section for exactly which subset each feature draws from.
+const aiModels = [
+  "Gemini 2.0 Flash",
+  "Groq — Llama 3.1 8B",
+  "Groq — Llama 3.3 70B",
+  "Mistral Small",
+  "Cohere Command R",
+  "Together — Llama 3.1 8B",
+  "NVIDIA Nemotron 3 Ultra (OpenRouter)",
+  "NVIDIA Nemotron 3 Nano (OpenRouter)",
+  "Poolside Laguna M.1 (OpenRouter)",
+  "Tencent Hy3 (OpenRouter)",
+];
+
 export default function AboutPage() {
   return (
     <main className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-16">
@@ -87,6 +102,39 @@ export default function AboutPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Powered by Free AI Models */}
+      <div
+        className="flex items-start gap-3 px-3.5 py-3 sm:p-5 rounded-xl border mb-8 sm:mb-12"
+        style={{ background: "var(--bg-card)", borderColor: "var(--bdr)" }}
+      >
+        <div
+          className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center mt-0.5"
+          style={{ background: "var(--acc-bg, rgba(194,65,12,0.08))" }}
+        >
+          <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: "var(--acc)" }} />
+        </div>
+        <div className="min-w-0">
+          <h2 className="font-semibold text-sm sm:text-base leading-snug mb-0.5" style={{ color: "var(--txt-1)" }}>
+            Powered by Free AI Models
+          </h2>
+          <p className="text-xs sm:text-sm leading-relaxed mb-2.5" style={{ color: "var(--txt-3)" }}>
+            Insight extraction, weekly recommendations, and Ask AI each run on a free-tier model waterfall — if
+            one is out of quota, the next takes over automatically. No paid subscriptions behind the scenes.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {aiModels.map((m) => (
+              <span
+                key={m}
+                className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full border"
+                style={{ background: "var(--bg-elevated)", borderColor: "var(--bdr)", color: "var(--txt-3)" }}
+              >
+                {m}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* CTA */}
