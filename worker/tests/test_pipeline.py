@@ -871,6 +871,112 @@ class TestBackfillInsights:
         assert "error" in result
 
 
+class TestRetryFailedBackfillItems:
+
+    def _make_storage(self, latest_job=None, failures=None):
+        storage = MagicMock()
+        storage.get_latest_backfill_job.return_value = latest_job
+        storage.get_backfill_failures.return_value = failures or []
+        storage.get_insight.side_effect = lambda iid: _make_insight(id=iid, episode_id="ep1", source_id="src1")
+        storage.get_episode.side_effect = lambda eid: _make_episode(id=eid)
+        storage.get_transcript.side_effect = lambda eid: Transcript(episode_id=eid, text="full transcript text")
+        return storage
+
+    def _fake_waterfall_llm(self, **kw):
+        provider = MagicMock()
+        provider.extract_insights.return_value = _make_insight(
+            id="__will_be_overwritten__", summary="fixed via json_repair"
+        )
+        return provider
+
+    def test_no_job_found_is_a_noop(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(latest_job=None)
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage):
+            result = retry_failed_items()
+        assert result == {"retried": 0}
+        storage.get_backfill_failures.assert_not_called()
+
+    def test_no_failures_is_a_noop(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(latest_job={"id": "job-1"}, failures=[])
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage):
+            result = retry_failed_items()
+        assert result == {"retried": 0}
+
+    def test_retries_each_failure_and_reports_counts(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        failures = [
+            {"insight_id": "a", "episode_id": "ep1"},
+            {"insight_id": "b", "episode_id": "ep1"},
+        ]
+        storage = self._make_storage(latest_job={"id": "job-1"}, failures=failures)
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            result = retry_failed_items()
+
+        assert result == {"retried": 2, "succeeded": 2, "failed": 0}
+        assert storage.save_insight.call_count == 2
+        assert storage.retry_backfill_failure.call_count == 2
+        for call in storage.retry_backfill_failure.call_args_list:
+            assert call.kwargs["success"] is True
+
+    def test_preserves_identity_on_retry(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(
+            latest_job={"id": "job-1"},
+            failures=[{"insight_id": "orig-id", "episode_id": "ep1"}],
+        )
+        storage.get_insight.side_effect = lambda iid: _make_insight(
+            id=iid, episode_id="ep-x", source_id="src-x", domain="Finance & Investing", date="2026-01-01"
+        )
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            retry_failed_items()
+
+        saved = storage.save_insight.call_args.args[0]
+        assert saved.id == "orig-id"
+        assert saved.episode_id == "ep-x"
+        assert saved.source_id == "src-x"
+        assert saved.domain == "Finance & Investing"
+        assert saved.date == "2026-01-01"
+        assert saved.summary == "fixed via json_repair"
+
+    def test_still_failing_item_reported_and_not_saved(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(
+            latest_job={"id": "job-1"},
+            failures=[{"insight_id": "a", "episode_id": "ep1"}],
+        )
+        storage.get_transcript.side_effect = lambda eid: None  # still broken
+
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=self._fake_waterfall_llm):
+            result = retry_failed_items()
+
+        storage.save_insight.assert_not_called()
+        assert result["succeeded"] == 0
+        assert result["failed"] == 1
+        call = storage.retry_backfill_failure.call_args
+        assert call.kwargs["success"] is False
+
+    def test_no_providers_configured_aborts_without_processing(self):
+        from worker.jobs.backfill_insights import retry_failed_items
+        storage = self._make_storage(
+            latest_job={"id": "job-1"},
+            failures=[{"insight_id": "a", "episode_id": "ep1"}],
+        )
+        with patch("worker.jobs.backfill_insights.get_storage_provider", return_value=storage), \
+             patch("worker.providers.llm.waterfall_llm.WaterfallLLMProvider", side_effect=ValueError("no providers enabled")):
+            result = retry_failed_items()
+
+        storage.save_insight.assert_not_called()
+        storage.retry_backfill_failure.assert_not_called()
+        assert "error" in result
+
+
 # ── Plug-in/plug-out provider registry ─────────────────────────────────────
 
 class TestProviderRegistry:

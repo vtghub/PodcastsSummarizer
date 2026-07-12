@@ -95,6 +95,7 @@ export default function TaskStatusManager() {
   const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const [retryingFailed, setRetryingFailed] = useState(false);
 
   const [workflows, setWorkflows] = useState<WorkflowInfo[] | null>(null);
   const [workflowsError, setWorkflowsError] = useState("");
@@ -202,6 +203,24 @@ export default function TaskStatusManager() {
       showToast(e instanceof Error ? e.message : "Failed to trigger batch", "error");
     } finally {
       setTriggering(false);
+    }
+  }
+
+  async function retryFailedNow() {
+    setRetryingFailed(true);
+    try {
+      const res = await fetch("/api/admin/backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "retry_failed" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to trigger retry");
+      showToast(`Retrying ${job?.failed_items ?? failures.length} failed item(s) — GitHub Actions will start within a minute or two.`, "success");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Failed to trigger retry", "error");
+    } finally {
+      setRetryingFailed(false);
     }
   }
 
@@ -471,7 +490,18 @@ export default function TaskStatusManager() {
 
       {failures.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold mb-3" style={{ color: "var(--txt-1)" }}>Recent failures</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>Recent failures</h2>
+            <button
+              onClick={retryFailedNow}
+              disabled={retryingFailed}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60"
+              style={{ background: "var(--acc)", color: "#fff" }}
+            >
+              {retryingFailed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+              Retry {job?.failed_items ?? failures.length} failed
+            </button>
+          </div>
           <div className="rounded-2xl border overflow-hidden divide-y" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
             {failures.map((f) => (
               <div key={f.id} className="px-4 py-3">

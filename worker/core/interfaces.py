@@ -293,6 +293,29 @@ class StorageProvider(ABC):
         """Return the most recent non-completed job of this type, or None."""
         return None
 
+    def get_latest_backfill_job(self, job_type: str) -> dict | None:
+        """Return the most recent job of this type regardless of status, or None."""
+        return None
+
+    def get_insight(self, insight_id: str) -> "Insight | None":
+        """Return a single insight by id, or None. Default: None (local dev)."""
+        return None
+
+    def get_backfill_failures(self, job_id: str) -> list[dict]:
+        """Return every unresolved failure logged for this backfill job. Default: empty list."""
+        return []
+
+    def retry_backfill_failure(
+        self, job_id: str, insight_id: str, success: bool, error_msg: str | None = None
+    ) -> None:
+        """
+        Record the outcome of retrying one previously-failed backfill item.
+        On success, clears its backfill_failures row(s) and moves it from
+        failed_items to succeeded_items on the job; on repeat failure,
+        updates the logged error in place. Does not touch the job's resume
+        cursor — retries are out-of-band from normal batch progress.
+        """
+
     def create_backfill_job(self, job_type: str, total_items: int, batch_size: int) -> str:
         """Create a new backfill job row. Returns its id (empty string if unsupported)."""
         return ""

@@ -491,6 +491,61 @@ class SupabaseStorageProvider(StorageProvider):
                 row = cur.fetchone()
                 return dict(row) if row else None
 
+    def get_latest_backfill_job(self, job_type: str) -> dict | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM backfill_jobs WHERE job_type = %s ORDER BY started_at DESC LIMIT 1",
+                    (job_type,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def get_insight(self, insight_id: str) -> Insight | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM insights WHERE id = %s", (insight_id,))
+                row = cur.fetchone()
+                return self._row_to_insight(row) if row else None
+
+    def get_backfill_failures(self, job_id: str) -> list[dict]:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM backfill_failures WHERE job_id = %s ORDER BY failed_at ASC",
+                    (job_id,),
+                )
+                return [dict(r) for r in cur.fetchall()]
+
+    def retry_backfill_failure(
+        self, job_id: str, insight_id: str, success: bool, error_msg: str | None = None
+    ) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                if success:
+                    cur.execute(
+                        "DELETE FROM backfill_failures WHERE job_id = %s AND insight_id = %s",
+                        (job_id, insight_id),
+                    )
+                    cur.execute(
+                        """
+                        UPDATE backfill_jobs SET
+                            succeeded_items = succeeded_items + 1,
+                            failed_items = GREATEST(failed_items - 1, 0),
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (job_id,),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE backfill_failures SET error_msg = %s, failed_at = NOW()
+                        WHERE job_id = %s AND insight_id = %s
+                        """,
+                        (error_msg, job_id, insight_id),
+                    )
+
     def create_backfill_job(self, job_type: str, total_items: int, batch_size: int) -> str:
         with self._conn() as conn:
             with conn.cursor() as cur:
