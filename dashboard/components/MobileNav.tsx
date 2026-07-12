@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Headphones, MessageCircle, User } from "lucide-react";
+import { LayoutDashboard, Headphones, MessageCircle, Sparkles, User } from "lucide-react";
 
 interface MobileNavProps {
   newInsightCount?: number;
 }
 
 const TABS = [
-  { href: "/dashboard",  label: "Dashboard", icon: LayoutDashboard },
-  { href: "/podcasts",   label: "Podcasts",  icon: Headphones },
-  { href: "/ask",        label: "Ask",       icon: MessageCircle },
-  { href: "/profile",    label: "Profile",   icon: User },
+  { href: "/dashboard",       label: "Dashboard", icon: LayoutDashboard },
+  { href: "/podcasts",        label: "Podcasts",  icon: Headphones },
+  { href: "/ask",             label: "Ask",       icon: MessageCircle },
+  { href: "/recommendations", label: "For You",   icon: Sparkles },
+  { href: "/profile",         label: "Profile",   icon: User },
 ] as const;
 
 export default function MobileNav({ newInsightCount = 0 }: MobileNavProps) {

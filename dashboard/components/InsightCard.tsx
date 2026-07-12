@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import type { Insight, PlatformLinks } from "@/lib/db";
 import {
   ChevronDown, ChevronUp, Quote, Zap, Tag, Volume2, VolumeX, Globe,
   CalendarDays, ThumbsUp, ThumbsDown, Share2, Eye, EyeOff, MessageCircle,
-  Link2, Check, Send, Trash2, X, Copy, Bookmark,
+  Link2, Check, Send, Trash2, X, Copy, Bookmark, Sparkles,
 } from "lucide-react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useSpeech } from "@/hooks/useSpeech";
@@ -141,6 +142,7 @@ function buildCopyPlain(insight: Insight, shareUrl: string): string {
 }
 
 export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const { enabled: ttsEnabled } = useTTS();
   const speechText = useMemo(() => buildSpeechText(insight), [insight]);
@@ -592,6 +594,18 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
         >
           <Bookmark className={`w-3.5 h-3.5 ${bookmarked ? "fill-current" : ""}`} />
         </EngagementButton>
+
+        {/* Ask AI about this episode */}
+        {isAuthed && (
+          <EngagementButton
+            onClick={() => router.push(`/ask?episode=${encodeURIComponent(insight.episode_id)}`)}
+            active={false}
+            title="Ask AI about this episode"
+            activeColor="var(--acc)"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+          </EngagementButton>
+        )}
 
         {/* Mark as Unread — only shown when card is read and user is signed in */}
         {isAuthed && isRead && (

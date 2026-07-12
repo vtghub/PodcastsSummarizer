@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
-import { Loader2, Send, CheckCircle, AlertCircle, Zap, Clock, Search, ChevronDown } from "lucide-react";
+import { Loader2, Send, CheckCircle, AlertCircle, Zap, Clock, Search, ChevronDown, Sparkles } from "lucide-react";
 import type { Source, EpisodeItem } from "@/lib/db";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -44,6 +45,7 @@ interface Props {
 }
 
 export default function EpisodeDigestPicker({ subscribedSources }: Props) {
+  const router = useRouter();
   const [sourceId, setSourceId]     = useState("");
   const [episodes, setEpisodes]     = useState<EpisodeItem[]>([]);
   const [episodeId, setEpisodeId]   = useState("");
@@ -433,6 +435,15 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
       {/* Action button */}
       {episodeId && selectedEpisode && (
         <div className="space-y-2 pt-1">
+          <button
+            onClick={() => router.push(`/ask?episode=${encodeURIComponent(selectedEpisode.id)}`)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors border"
+            style={{ background: "var(--bg-elevated)", borderColor: "var(--bdr)", color: "var(--txt-2)" }}
+          >
+            <Sparkles className="w-4 h-4" style={{ color: "var(--acc)" }} />
+            Ask AI about this episode
+          </button>
+
           {selectedStatus === "processed" && (
             <button
               onClick={handleSend}
