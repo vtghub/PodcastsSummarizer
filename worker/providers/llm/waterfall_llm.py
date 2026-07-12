@@ -62,6 +62,7 @@ class WaterfallLLMProvider(LLMProvider):
             data = chunked_extract(
                 self._waterfall.generate, parse_json_response, episode, domain,
                 transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Waterfall]",
+                provider_name=lambda: self._waterfall.last_provider or "unknown",
             )
         else:
             prompt = textwrap.dedent(EXTRACTION_PROMPT).format(

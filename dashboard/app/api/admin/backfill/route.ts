@@ -58,14 +58,28 @@ export async function GET() {
   return NextResponse.json({ job, failures, currentTotalInsights: currentTotalInsights ?? null });
 }
 
-/** Manually trigger one backfill batch immediately, instead of waiting for the daily cron. */
-export async function POST() {
+/**
+ * Manually trigger the backfill workflow immediately, instead of waiting for
+ * the daily cron. { mode: "retry_failed" } re-attempts the logged failures
+ * for the most recent job instead of processing a new batch.
+ */
+export async function POST(request: Request) {
   if (!(await isAdmin())) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (!GH_TOKEN) {
     return NextResponse.json({ error: "Not configured (GH_TOKEN missing)" }, { status: 503 });
   }
+
+  let mode: string | undefined;
+  try {
+    const body = await request.json();
+    mode = body?.mode;
+  } catch {
+    // no body — default batch mode
+  }
+
+  const inputs = mode === "retry_failed" ? { retry_failed: "true" } : {};
 
   const dispatchRes = await fetch(
     `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/workflows/${WORKFLOW}/dispatches`,
@@ -76,14 +90,14 @@ export async function POST() {
         Accept: "application/vnd.github.v3+json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ ref: "main", inputs: {} }),
+      body: JSON.stringify({ ref: "main", inputs }),
     }
   );
 
   if (!dispatchRes.ok) {
     const txt = await dispatchRes.text();
     console.error("[admin/backfill] workflow_dispatch failed:", txt);
-    return NextResponse.json({ error: "Failed to queue backfill batch" }, { status: 502 });
+    return NextResponse.json({ error: "Failed to queue backfill run" }, { status: 502 });
   }
 
   return NextResponse.json({ queued: true });

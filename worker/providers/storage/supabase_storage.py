@@ -491,6 +491,61 @@ class SupabaseStorageProvider(StorageProvider):
                 row = cur.fetchone()
                 return dict(row) if row else None
 
+    def get_latest_backfill_job(self, job_type: str) -> dict | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM backfill_jobs WHERE job_type = %s ORDER BY started_at DESC LIMIT 1",
+                    (job_type,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def get_insight(self, insight_id: str) -> Insight | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM insights WHERE id = %s", (insight_id,))
+                row = cur.fetchone()
+                return self._row_to_insight(row) if row else None
+
+    def get_backfill_failures(self, job_id: str) -> list[dict]:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM backfill_failures WHERE job_id = %s ORDER BY failed_at ASC",
+                    (job_id,),
+                )
+                return [dict(r) for r in cur.fetchall()]
+
+    def retry_backfill_failure(
+        self, job_id: str, insight_id: str, success: bool, error_msg: str | None = None
+    ) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                if success:
+                    cur.execute(
+                        "DELETE FROM backfill_failures WHERE job_id = %s AND insight_id = %s",
+                        (job_id, insight_id),
+                    )
+                    cur.execute(
+                        """
+                        UPDATE backfill_jobs SET
+                            succeeded_items = succeeded_items + 1,
+                            failed_items = GREATEST(failed_items - 1, 0),
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (job_id,),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE backfill_failures SET error_msg = %s, failed_at = NOW()
+                        WHERE job_id = %s AND insight_id = %s
+                        """,
+                        (error_msg, job_id, insight_id),
+                    )
+
     def create_backfill_job(self, job_type: str, total_items: int, batch_size: int) -> str:
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -571,6 +626,26 @@ class SupabaseStorageProvider(StorageProvider):
                     "UPDATE backfill_jobs SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = %s",
                     (job_id,),
                 )
+
+    def log_extraction_chunk(
+        self, episode_id: str, source_id: str, chunk_index: int, total_chunks: int,
+        phase: str, provider_name: str, status: str, error_msg: str | None = None,
+    ) -> None:
+        try:
+            with self._conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO extraction_chunk_log
+                        (episode_id, source_id, chunk_index, total_chunks, phase, provider_name, status, error_msg)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (episode_id, source_id, chunk_index, total_chunks, phase, provider_name, status, error_msg),
+                    )
+        except Exception as e:
+            # Table may not exist yet (migration 021 not applied) — never let
+            # logging failures break the actual extraction.
+            print(f"[ExtractionChunkLog] couldn't log chunk ({e}) — continuing without logging")
 
     # ------------------------------------------------------------------
     # Row → dataclass helpers

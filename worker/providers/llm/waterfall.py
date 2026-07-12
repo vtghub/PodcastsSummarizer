@@ -34,6 +34,10 @@ class WaterfallLLM:
             raise ValueError("WaterfallLLM needs at least one provider configured")
         self.steps = steps
         self._dead: set[str] = set()  # provider names that have failed at least once this run
+        # Name of the provider that handled the most recent successful generate()
+        # call — read this right after calling generate() to know which model
+        # actually produced that result (e.g. for per-chunk extraction logging).
+        self.last_provider: str | None = None
 
     def generate(self, prompt: str) -> str:
         last_exc: Exception | None = None
@@ -46,6 +50,7 @@ class WaterfallLLM:
                 text = step.generate(prompt)
                 if not text:
                     raise ValueError("empty response")
+                self.last_provider = step.name
                 return text
             except Exception as e:
                 print(f"    [Waterfall] {step.name} failed ({e}) — marking unavailable for the rest of this run, trying next provider")

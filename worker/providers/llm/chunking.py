@@ -94,16 +94,37 @@ def chunked_extract(
     transcript_text: str,
     chunk_target_chars: int,
     log_prefix: str = "",
+    provider_name: str | Callable[[], str] = "unknown",
 ) -> dict:
     """
     Map-reduce a long transcript into the same JSON shape a single-call
     extraction would produce. `generate` and `parse_json` are provider-specific
     (API call + retry handling, and response JSON parsing respectively) —
     this function only orchestrates the chunking/synthesis flow.
+
+    `provider_name` identifies which model handled each call, for the admin
+    Task Status page's per-chunk detail (see log_extraction_chunk()). Pass a
+    static string for a single fixed provider, or a callable (e.g. reading
+    WaterfallLLM.last_provider after each generate() call) when the actual
+    provider can vary per chunk, as it does inside a waterfall.
     """
     chunks = split_into_chunks(transcript_text, chunk_target_chars)
     if log_prefix:
         print(f"{log_prefix} transcript too long for one call — {len(chunks)} chunks")
+
+    def _resolve_provider() -> str:
+        return provider_name() if callable(provider_name) else provider_name
+
+    def _log(chunk_index: int, phase: str, status: str, error_msg: str | None) -> None:
+        try:
+            from worker.core.registry import get_storage_provider
+            get_storage_provider().log_extraction_chunk(
+                episode_id=episode.id, source_id=episode.source_id,
+                chunk_index=chunk_index, total_chunks=len(chunks), phase=phase,
+                provider_name=_resolve_provider(), status=status, error_msg=error_msg,
+            )
+        except Exception:
+            pass  # logging is best-effort — never let it break extraction
 
     summaries: list[str] = []
     for i, chunk in enumerate(chunks):
@@ -114,7 +135,13 @@ def chunked_extract(
             domain=domain,
             chunk=chunk,
         )
-        summaries.append(generate(prompt).strip())
+        try:
+            result = generate(prompt).strip()
+        except Exception as e:
+            _log(i + 1, "summary", "failed", str(e)[:500])
+            raise
+        summaries.append(result)
+        _log(i + 1, "summary", "success", None)
 
     combined = "\n\n---\n\n".join(
         f"[Segment {i + 1}/{len(chunks)}]\n{s}" for i, s in enumerate(summaries)
@@ -126,5 +153,10 @@ def chunked_extract(
         summaries=combined,
         total_chunks=len(chunks),
     )
-    raw = generate(synth_prompt)
+    try:
+        raw = generate(synth_prompt)
+    except Exception as e:
+        _log(len(chunks), "synthesis", "failed", str(e)[:500])
+        raise
+    _log(len(chunks), "synthesis", "success", None)
     return parse_json(raw)
