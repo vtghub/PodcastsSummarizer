@@ -67,6 +67,24 @@ export async function getNewInsightCount(userId: string): Promise<number> {
   return count ?? 0;
 }
 
+// PostgREST caps unranged .select() results at 1000 rows (db-max-rows) — fetch in
+// pages so counts stay accurate past that point instead of silently flatlining at 1000.
+async function fetchAllRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null }>,
+  pageSize = 1000
+): Promise<T[]> {
+  const rows: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data } = await page(from, from + pageSize - 1);
+    const batch = data ?? [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+  return rows;
+}
+
 export async function getAnalytics(userId: string): Promise<AnalyticsData> {
   const sb = getSupabaseClient();
 
@@ -77,21 +95,23 @@ export async function getAnalytics(userId: string): Promise<AnalyticsData> {
     .eq("enabled", true);
   const sourceIds = (subs ?? []).map((r: { source_id: string }) => r.source_id);
 
-  const { data: rawInsights } = sourceIds.length > 0
-    ? await sb
-        .from("insights")
-        .select("id, date, domain, summary, source_id, sources(name)")
-        .in("source_id", sourceIds)
-    : { data: [] };
+  const insights = sourceIds.length > 0
+    ? await fetchAllRows<InsightRow>((from, to) =>
+        sb
+          .from("insights")
+          .select("id, date, domain, summary, source_id, sources(name)")
+          .in("source_id", sourceIds)
+          .range(from, to)
+      )
+    : [];
 
-  const insights = (rawInsights ?? []) as InsightRow[];
   const insightIds = insights.map((i) => i.id);
 
-  const { data: rawViews } = insightIds.length > 0
-    ? await sb.from("insight_views").select("insight_id").in("insight_id", insightIds)
-    : { data: [] };
-
-  const views = (rawViews ?? []) as ViewRow[];
+  const views = insightIds.length > 0
+    ? await fetchAllRows<ViewRow>((from, to) =>
+        sb.from("insight_views").select("insight_id").in("insight_id", insightIds).range(from, to)
+      )
+    : [];
 
   // Build view-count map
   const viewCountMap: Record<string, number> = {};
