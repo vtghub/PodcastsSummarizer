@@ -21,7 +21,7 @@ interface Message {
   error?: boolean;
 }
 
-const SUGGESTED_QUESTIONS = [
+const FALLBACK_QUESTIONS = [
   "What are the key takeaways about AI from recent episodes?",
   "What investment strategies were discussed this week?",
   "What productivity habits do guests recommend?",
@@ -32,12 +32,23 @@ export default function AskPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [suggestedQuestions, setSuggestedQuestions] = useState(FALLBACK_QUESTIONS);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Personalized from the user's actual subscriptions/recent insights —
+  // falls back to the generic static list on error or if there's nothing
+  // to personalize from yet (no subscriptions, no recent insights).
+  useEffect(() => {
+    fetch("/api/ask/suggestions")
+      .then((r) => r.json())
+      .then((d) => { if (d.questions?.length) setSuggestedQuestions(d.questions); })
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(question: string) {
     const q = question.trim();
@@ -119,7 +130,7 @@ export default function AskPage() {
               Try asking
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {SUGGESTED_QUESTIONS.map((q) => (
+              {suggestedQuestions.map((q) => (
                 <button
                   key={q}
                   onClick={() => handleSubmit(q)}
