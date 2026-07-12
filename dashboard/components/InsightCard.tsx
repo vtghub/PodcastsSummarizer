@@ -6,10 +6,11 @@ import type { Insight, PlatformLinks } from "@/lib/db";
 import {
   ChevronDown, ChevronUp, Quote, Zap, Tag, Volume2, VolumeX, Globe,
   CalendarDays, ThumbsUp, ThumbsDown, Share2, Eye, EyeOff, MessageCircle,
-  Link2, Check, Send, Trash2, X, Copy, Bookmark, Sparkles,
+  Link2, Check, Send, Trash2, X, Copy, Bookmark, Sparkles, BookOpen,
 } from "lucide-react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useSpeech } from "@/hooks/useSpeech";
+import { useWordLookup, DictionaryPopover, LookupableText } from "@/components/WordLookup";
 
 interface Props {
   insight: Insight;
@@ -148,6 +149,12 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   const speechText = useMemo(() => buildSpeechText(insight), [insight]);
   const { speaking, speak } = useSpeech(speechText);
   const dk = domainColorKey(insight.domain ?? "");
+
+  // ── Dictionary lookup ───────────────────────────────────────────────────────
+  // Double-click any word to look it up always works; the toggle additionally
+  // makes every word individually clickable (dotted underline) for discoverability.
+  const [dictionaryMode, setDictionaryMode] = useState(false);
+  const { popover, lookup, close: closeLookup } = useWordLookup();
 
   // ── Engagement state ───────────────────────────────────────────────────────
   const [views, setViews] = useState<number | null>(null);
@@ -379,6 +386,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   }, []);
 
   return (
+    <>
     <article
       id={`insight-${insight.id}`}
       className="card-lift rounded-2xl overflow-hidden border flex flex-col transition-opacity"
@@ -430,7 +438,9 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
         </div>
 
         {/* Summary */}
-        <p className="text-sm leading-relaxed" style={{ color: "var(--txt-3)" }}>{insight.summary}</p>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--txt-3)" }}>
+          <LookupableText text={insight.summary} dictionaryMode={dictionaryMode} onLookup={lookup} />
+        </p>
 
         {/* Tags */}
         {insight.tags.length > 0 && (
@@ -469,7 +479,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
                     className="mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{ background: `var(--d-${dk}-dot)` }}
                   />
-                  <span>{pt}</span>
+                  <LookupableText text={pt} dictionaryMode={dictionaryMode} onLookup={lookup} />
                 </li>
               ))}
             </ul>
@@ -495,7 +505,9 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
               </p>
               <div className="space-y-2">
                 {insight.key_quotes.map((q, i) => (
-                  <p key={i} className="text-sm italic leading-relaxed" style={{ color: "var(--txt-2)" }}>&ldquo;{q}&rdquo;</p>
+                  <p key={i} className="text-sm italic leading-relaxed" style={{ color: "var(--txt-2)" }}>
+                    &ldquo;<LookupableText text={q} dictionaryMode={dictionaryMode} onLookup={lookup} />&rdquo;
+                  </p>
                 ))}
               </div>
             </div>
@@ -509,7 +521,7 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
                 {insight.action_items.map((a, i) => (
                   <li key={i} className="flex gap-2.5 text-sm leading-relaxed" style={{ color: "var(--txt-2)" }}>
                     <span className="flex-shrink-0 font-semibold" style={{ color: "var(--acc)" }}>→</span>
-                    <span>{a}</span>
+                    <LookupableText text={a} dictionaryMode={dictionaryMode} onLookup={lookup} />
                   </li>
                 ))}
               </ul>
@@ -606,6 +618,17 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
             <Sparkles className="w-3.5 h-3.5" />
           </EngagementButton>
         )}
+
+        {/* Dictionary lookup toggle — double-click any word always works;
+            this makes every word individually clickable too */}
+        <EngagementButton
+          onClick={() => setDictionaryMode((v) => !v)}
+          active={dictionaryMode}
+          title={dictionaryMode ? "Turn off word lookup" : "Look up a word (or double-click any word)"}
+          activeColor="#8B5CF6"
+        >
+          <BookOpen className="w-3.5 h-3.5" />
+        </EngagementButton>
 
         {/* Mark as Unread — only shown when card is read and user is signed in */}
         {isAuthed && isRead && (
@@ -724,6 +747,8 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
         </div>
       )}
     </article>
+    <DictionaryPopover popover={popover} onClose={closeLookup} />
+    </>
   );
 }
 

@@ -39,6 +39,7 @@ graph TB
         LLMCONFIG[("llm_provider_config\nscope, provider_key,\nenabled, priority")]
         BACKFILLJOBS[("backfill_jobs\nstatus, total/processed/\nsucceeded/failed_items,\ncursor_created_at, cursor_insight_id")]
         BACKFILLFAILS[("backfill_failures\njob_id, insight_id,\nepisode_id, error_msg")]
+        DICT[("dictionary_entries\nword, pos, definition,\nexamples[], synonyms[]\nseeded from WordNet")]
     end
 
     subgraph AUTH["🔐 Supabase Auth"]
@@ -93,6 +94,7 @@ graph TB
         ARRECOMMEND["/api/recommendations\nGET — on-demand LLM ranking (scope=recommendations)\n+ trending unsubscribed podcasts, authed"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
         ARDIGPREV["/api/digest/preview\nGET — returns digest HTML\n(no email sent)"]
+        ARDICT["/api/dictionary\nGET ?word= — direct retrieval,\nno LLM call; public, no auth"]
     end
 
     HCRON --> FANOUT
@@ -222,6 +224,9 @@ graph TB
     ARADMINWORKFLOWS -.->|list/dispatch/cancel via GitHub API| CI
     BACKFILLJOBS -.->|Realtime broadcast, migration 020| RT
     RT -.->|WebSocket push| ADMINTASK
+
+    DPAGE -.->|double-click / toggle word on Insight Card| ARDICT
+    ARDICT --> DICT
 
     LLM --> EPQUEUE
     INSIGHTS -.->|Realtime broadcast| RT
@@ -372,6 +377,14 @@ erDiagram
         text episode_id
         text error_msg
         timestamptz failed_at
+    }
+    dictionary_entries {
+        bigint id PK
+        text word
+        text pos
+        text definition
+        text[] examples
+        text[] synonyms
     }
 
     auth_users ||--|| user_profiles : "has"
