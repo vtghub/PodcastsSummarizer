@@ -316,6 +316,46 @@ export default function NavBar({
                     <User className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
                     Profile
                   </Link>
+                  {/* Analytics/Saved/About: desktop reaches these via the "More"
+                      dropdown (hidden below sm) — mobile has no other path to
+                      them at all, so surface them here, mobile-only. */}
+                  {userEmail && (
+                    <Link
+                      href="/analytics"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="sm:hidden flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                      style={{ color: "var(--txt-2)" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <BarChart3 className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                      Analytics
+                    </Link>
+                  )}
+                  {userEmail && (
+                    <Link
+                      href="/saved"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="sm:hidden flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                      style={{ color: "var(--txt-2)" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <Bookmark className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                      Saved
+                    </Link>
+                  )}
+                  <Link
+                    href="/about"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="sm:hidden flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                    style={{ color: "var(--txt-2)" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >
+                    <Info className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                    About
+                  </Link>
                   {isAdmin && (
                     <Link
                       href="/admin/users"
