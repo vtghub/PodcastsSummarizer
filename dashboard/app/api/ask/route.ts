@@ -131,6 +131,7 @@ export async function POST(request: Request) {
 
   const { data: ftsData, error: searchError } = await ftsQuery;
   if (searchError) {
+    console.error("[ask] insight search failed:", searchError);
     return NextResponse.json({ error: searchError.message }, { status: 500 });
   }
 
