@@ -58,7 +58,7 @@ graph TB
         PROF["profile/page.tsx\nDisplay name · digest prefs"]
         APAGE["analytics/page.tsx\nKPI cards · chart · top insights"]
         SPAGE["saved/page.tsx\nBookmarked insights list"]
-        ASKPAGE["ask/page.tsx\nLLM Q&A chat UI\nsuggested questions · citations"]
+        ASKPAGE["ask/page.tsx + AskChat.tsx\nLLM Q&A chat UI — two modes:\nMy Podcasts (FTS, personalized suggestions)\nAsk About an Episode (podcast→episode picker,\nreads ?episode=<id> deep link)"]
         ONBOARD["onboarding/page.tsx\nDomain picker + subscribe wizard"]
         ADMINUSERS["admin/users/page.tsx\nAdmin-only — list/search users,\ngrant/revoke admin, reset onboarding,\ncascade-delete user"]
         ADMINLLM["admin/llm-providers/page.tsx\nAdmin-only — toggle/reorder waterfall\nper feature (Pipeline, Ask AI, Recommendations)"]
@@ -84,6 +84,8 @@ graph TB
         AREXP["/api/insights/export\nGET ?format=excel|word&date=\nauthed — download insights\n(PDF generated client-side via jsPDF)"]
         ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
         ARASK["/api/ask\nPOST — LLM Q&A\nnamed-podcast lookup + FTS context\n6-model waterfall: Gemini→Groq 8B→Groq 70B→Mistral→Together→Cohere\norder/enabled from llm_provider_config"]
+        ARASKSUGGEST["/api/ask/suggestions\nGET — personalized suggested questions\nfrom subscriptions + last-7-days insights\n(templated, no LLM call)"]
+        ARASKEPISODE["/api/ask/episode\nGET ?id= episode meta (picker/deep link)\nPOST { episodeId, question } — answers from\nthat episode's saved transcript directly,\nno insight required; scope=ask_ai waterfall"]
         ARADMINUSERS["/api/admin/users\nGET list (admin only)\n/[id] PATCH is_admin|reset_onboarding\n/[id] DELETE — auth.admin.deleteUser cascade\n/[id]/subscriptions GET catalog+subs · POST/DELETE sourceId"]
         ARADMINLLM["/api/admin/llm-providers\nGET providers by scope (admin only)\nPATCH scope, provider_key, enabled?, priority?"]
         ARADMINBACKFILL["/api/admin/backfill\nGET latest backfill job + failures\nPOST — workflow_dispatch one batch now"]
@@ -194,6 +196,17 @@ graph TB
     ARADMINLLM --> LLMCONFIG
     LLM -.->|reads at run start, scope=pipeline| LLMCONFIG
     ARASK -.->|reads per question, scope=ask_ai| LLMCONFIG
+
+    ASKPAGE --> ARASKSUGGEST
+    ARASKSUGGEST --> SUBS
+    ARASKSUGGEST --> INSIGHTS
+    ASKPAGE --> ARASKEPISODE
+    ARASKEPISODE --> EPISODES
+    ARASKEPISODE --> TRANSCRIPTS
+    ARASKEPISODE --> SUBS
+    ARASKEPISODE -.->|reads per question, scope=ask_ai| LLMCONFIG
+    DPAGE -.->|"Ask AI" button on Insight Card, ?episode=id| ASKPAGE
+    PROF -.->|"Ask AI about this episode" on Episode Digest picker, ?episode=id| ASKPAGE
 
     RECPAGE --> ARRECOMMEND
     ARRECOMMEND --> INSIGHTS
@@ -398,6 +411,6 @@ Providers are resolved from environment variables at runtime — no code changes
 
 `WaterfallLLM` (`waterfall.py`) then tries each enabled slot in priority order per chunk. On failure or quota exhaustion it falls through to the next — and marks that provider "sticky dead" for the rest of the run, so later chunks skip straight past it instead of re-trying (and re-failing) it every time. Long transcripts are handled by `chunking.py`'s shared chunked map-reduce: split → per-chunk summarize → synthesize one structured insight.
 
-The dashboard's Ask AI chat (`/api/ask`) has its own independent 6-slot waterfall (adds Together AI, omits the 4 OpenRouter models), configured the same way but under scope `ask_ai` — see [request-workflow.md](request-workflow.md) for its sequence diagram.
+The dashboard's Ask AI chat (`/api/ask`) has its own independent 6-slot waterfall (adds Together AI, omits the 4 OpenRouter models), configured the same way but under scope `ask_ai` — see [request-workflow.md](request-workflow.md) for its sequence diagram. `/api/ask/episode` (answering a question from one episode's saved transcript directly, rather than FTS-retrieved insight content) reuses this exact same `ask_ai`-scoped waterfall via `lib/llm-waterfall.ts`.
 
 A third scope, `recommendations`, ranks the best insights from the past week (replacing a pure "sort by richness" heuristic with an actual LLM call). It has two call sites reading the *same* config rows but with different provider reach: the worker's weekly job (`WaterfallLLMProvider(scope="recommendations")`, all 9 pipeline-style adapters incl. OpenRouter) and the dashboard's on-demand `/api/recommendations` refresh (`lib/llm-waterfall.ts`'s `runWaterfall("recommendations", prompt)`, limited to the 5 JS-callable providers — OpenRouter slots enabled here only take effect for the pre-computed weekly email). Both fall back to the heuristic ranking if no provider is configured/available.

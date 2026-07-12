@@ -952,15 +952,22 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant B as Browser (signed in)
-    participant PAGE as ask/page.tsx
+    participant PAGE as AskChat.tsx (mode="general")
+    participant SUG as /api/ask/suggestions
     participant API as /api/ask
     participant DB as Supabase
     participant LLM1 as Gemini 2.0 Flash
     participant LLM2 as Groq (Llama 3.1 8B / 3.3 70B)
     participant LLM3 as Mistral / Together / Cohere
 
-    B->>PAGE: navigate to /ask
-    PAGE->>PAGE: render chat UI + 4 suggested questions
+    B->>PAGE: navigate to /ask ("My Podcasts" mode, default)
+    PAGE->>PAGE: render chat UI with 4 static fallback questions immediately
+    PAGE->>SUG: GET /api/ask/suggestions
+    SUG->>DB: SELECT subscribed source_ids, then last-7-days insights (domain, source name)
+    DB-->>SUG: rows (or empty — no subscriptions/recent insights)
+    SUG->>SUG: template up to 6 questions from real podcast names + domains<br/>("What's the latest from X?", "What's new in Y this week?"), no LLM call
+    SUG-->>PAGE: { questions } — falls back to the static list if nothing to personalize from
+    PAGE->>PAGE: swap in personalized suggestions once loaded
 
     B->>PAGE: click suggested question (or type + Enter)
     PAGE->>PAGE: append user bubble, setLoading(true)
@@ -1310,4 +1317,58 @@ sequenceDiagram
     RT-->>MGR: postgres_changes event
     MGR->>BFAPI: GET /api/admin/backfill (silent refetch)
     MGR->>B: progress bar updates live, no manual refresh needed
+```
+
+---
+
+## 30. Ask AI — About a Specific Episode
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (signed in)
+    participant CARD as InsightCard.tsx / EpisodeDigestPicker.tsx
+    participant PAGE as AskChat.tsx (mode="episode")
+    participant META as GET /api/ask/episode
+    participant ASK as POST /api/ask/episode
+    participant DB as Supabase
+    participant WF as lib/llm-waterfall.ts
+
+    alt Deep link from an Insight Card or the Episode Digest picker
+        B->>CARD: click "Ask AI about this episode" (Sparkles icon / button)
+        CARD->>B: router.push("/ask?episode=<id>")
+        B->>PAGE: navigate to /ask?episode=<id>
+        PAGE->>PAGE: mode="episode" (auto-selected)
+        PAGE->>META: GET /api/ask/episode?id=<id>
+        META->>DB: SELECT episode (title, title_en, source_id)
+        META->>DB: verify user_subscriptions has this source_id
+        META->>DB: SELECT sources.name · SELECT transcripts.episode_id (existence only)
+        META-->>PAGE: { title, sourceName, sourceId, hasTranscript }
+        PAGE->>PAGE: show episode header ("Asking about: <title>"), ready to chat
+    else Manual pick from /ask directly
+        B->>PAGE: click "Ask About an Episode" toggle
+        PAGE->>PAGE: render podcast search list (subscribedSources, server-fetched prop)
+        B->>PAGE: click a podcast
+        PAGE->>DB: GET /api/digest/episodes?sourceId=&includeAll=true (existing endpoint)
+        DB-->>PAGE: every RSS episode + processed flag (✓ has insight / ○ doesn't yet)
+        B->>PAGE: choose an episode from the <select>
+        PAGE->>PAGE: selectedEpisode set directly (title already known from the list)
+    end
+
+    B->>PAGE: type a question, Enter
+    PAGE->>ASK: POST /api/ask/episode { episodeId, question }
+    ASK->>DB: getUserId() from JWT cookie; re-verify episode + subscription
+    alt no transcript saved for this episode
+        ASK-->>PAGE: 404 { error: "This episode hasn't been transcribed yet..." }
+        PAGE->>PAGE: show error bubble (same rendering path as a failed general-mode answer)
+    else transcript exists
+        ASK->>DB: SELECT transcripts.text WHERE episode_id=?
+        ASK->>ASK: truncate to 16,000 chars if longer (single-call budget,<br/>no chunked map-reduce — this is one ad-hoc question, not full extraction)
+        ASK->>ASK: build prompt — episode title + (possibly truncated) transcript + question
+        ASK->>WF: runWaterfall("ask_ai", prompt) — same waterfall as general-mode /api/ask
+        WF->>DB: SELECT llm_provider_config WHERE scope='ask_ai' (enabled/priority)
+        WF->>WF: try Gemini → Groq 8B → Groq 70B → Mistral → Together → Cohere in order
+        WF-->>ASK: { text, model }
+        ASK-->>PAGE: { answer, model, episodeTitle, truncated }
+        PAGE->>PAGE: append assistant bubble (no citations — grounded in one transcript, not FTS-retrieved insights)
+    end
 ```
