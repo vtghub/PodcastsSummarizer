@@ -337,6 +337,45 @@ class TestPipelineResilience:
         assert not _is_quota_error(Exception("500 Internal Server Error"))
 
 
+# ── Lenient JSON parsing of LLM responses ────────────────────────────────────
+
+class TestParseJsonResponse:
+    """parse_json_response() must recover from the malformed-JSON shapes real
+    models actually produce, not just well-formed output with markdown fences."""
+
+    def test_parses_clean_json(self):
+        from worker.providers.llm.text_utils import parse_json_response
+        result = parse_json_response('{"summary": "s", "key_points": ["a"]}')
+        assert result == {"summary": "s", "key_points": ["a"]}
+
+    def test_strips_markdown_fences(self):
+        from worker.providers.llm.text_utils import parse_json_response
+        result = parse_json_response('```json\n{"summary": "s"}\n```')
+        assert result == {"summary": "s"}
+
+    def test_recovers_from_unescaped_quote_inside_string_value(self):
+        # The exact production failure mode: "Expecting ',' delimiter" — a
+        # direct podcast quote inside a string value wasn't escaped.
+        from worker.providers.llm.text_utils import parse_json_response
+        broken = '{"summary": "He said "hello" to everyone", "key_points": []}'
+        result = parse_json_response(broken)
+        assert result["summary"] == 'He said "hello" to everyone'
+        assert result["key_points"] == []
+
+    def test_recovers_from_truncated_response(self):
+        # The other production failure mode: "Unterminated string starting
+        # at" — the model's response was cut off mid-string (token limit).
+        from worker.providers.llm.text_utils import parse_json_response
+        broken = '{"title_en": "Test", "summary": "cut off mid'
+        result = parse_json_response(broken)
+        assert result["title_en"] == "Test"
+
+    def test_raises_value_error_when_unrecoverable(self):
+        from worker.providers.llm.text_utils import parse_json_response
+        with pytest.raises(ValueError, match="LLM returned invalid JSON"):
+            parse_json_response("this is not JSON at all, just prose.")
+
+
 # ── Chunked (map-reduce) extraction for long transcripts ──────────────────────
 
 class TestChunking:
