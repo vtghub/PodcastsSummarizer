@@ -422,6 +422,104 @@ class TestChunking:
         assert result["summary"] == "s"
 
 
+class TestChunkedExtractLogging:
+    """chunked_extract() logs each LLM call via storage.log_extraction_chunk()
+    for the admin Task Status page's per-chunk detail — best-effort, must
+    never break extraction itself."""
+
+    def _fake_generate_ok(self):
+        def fake_generate(prompt: str) -> str:
+            if "Segment summaries (in chronological order):" in prompt:
+                return '{"summary": "s", "key_points": [], "key_quotes": [], "action_items": [], "tags": []}'
+            return "A dense summary of this segment."
+        return fake_generate
+
+    def test_logs_success_for_each_chunk_and_synthesis(self):
+        from worker.providers.llm.chunking import chunked_extract
+        episode = _make_episode(id="ep1", source_id="src1", title="Long Episode")
+        transcript_text = " ".join(f"Sentence {i}." for i in range(200))
+        storage = MagicMock()
+
+        with patch("worker.core.registry.get_storage_provider", return_value=storage):
+            chunked_extract(
+                self._fake_generate_ok(), lambda t: __import__("json").loads(t),
+                episode, "Technology & AI", transcript_text,
+                chunk_target_chars=200, provider_name="gemini-2.0-flash",
+            )
+
+        calls = storage.log_extraction_chunk.call_args_list
+        assert len(calls) > 1
+        # Every call succeeded, used the static provider name, and referenced this episode
+        for c in calls:
+            assert c.kwargs["status"] == "success"
+            assert c.kwargs["provider_name"] == "gemini-2.0-flash"
+            assert c.kwargs["episode_id"] == "ep1"
+            assert c.kwargs["source_id"] == "src1"
+        # Last call is the synthesis phase; chunk_index equals total_chunks there
+        assert calls[-1].kwargs["phase"] == "synthesis"
+        assert calls[-1].kwargs["chunk_index"] == calls[-1].kwargs["total_chunks"]
+        # Earlier calls are the per-chunk map phase
+        assert calls[0].kwargs["phase"] == "summary"
+
+    def test_resolves_callable_provider_name_per_call(self):
+        from worker.providers.llm.chunking import chunked_extract
+        episode = _make_episode(id="ep1", source_id="src1")
+        transcript_text = " ".join(f"Sentence {i}." for i in range(200))
+        storage = MagicMock()
+
+        names = iter(["gemini-2.0-flash", "groq/llama-3.1-8b-instant", "mistral-small-latest"])
+        current = {"name": "gemini-2.0-flash"}
+
+        def fake_generate(prompt: str) -> str:
+            current["name"] = next(names, current["name"])
+            if "Segment summaries (in chronological order):" in prompt:
+                return '{"summary": "s", "key_points": [], "key_quotes": [], "action_items": [], "tags": []}'
+            return "A dense summary of this segment."
+
+        with patch("worker.core.registry.get_storage_provider", return_value=storage):
+            chunked_extract(
+                fake_generate, lambda t: __import__("json").loads(t),
+                episode, "Technology & AI", transcript_text,
+                chunk_target_chars=200, provider_name=lambda: current["name"],
+            )
+
+        logged_names = {c.kwargs["provider_name"] for c in storage.log_extraction_chunk.call_args_list}
+        assert "groq/llama-3.1-8b-instant" in logged_names  # a mid-run provider switch was captured
+
+    def test_logs_failure_and_reraises_on_chunk_error(self):
+        from worker.providers.llm.chunking import chunked_extract
+        episode = _make_episode(id="ep1", source_id="src1")
+        transcript_text = " ".join(f"Sentence {i}." for i in range(200))
+        storage = MagicMock()
+
+        def failing_generate(prompt: str) -> str:
+            raise RuntimeError("quota exceeded")
+
+        with patch("worker.core.registry.get_storage_provider", return_value=storage):
+            with pytest.raises(RuntimeError, match="quota exceeded"):
+                chunked_extract(
+                    failing_generate, lambda t: {}, episode, "Technology & AI",
+                    transcript_text, chunk_target_chars=200, provider_name="groq/llama-3.1-8b-instant",
+                )
+
+        storage.log_extraction_chunk.assert_called_once()
+        call = storage.log_extraction_chunk.call_args
+        assert call.kwargs["status"] == "failed"
+        assert "quota exceeded" in call.kwargs["error_msg"]
+
+    def test_logging_failure_does_not_break_extraction(self):
+        from worker.providers.llm.chunking import chunked_extract
+        episode = _make_episode(id="ep1", source_id="src1")
+        transcript_text = "A short transcript that fits in one chunk."
+
+        with patch("worker.core.registry.get_storage_provider", side_effect=RuntimeError("DB unreachable")):
+            result = chunked_extract(
+                self._fake_generate_ok(), lambda t: __import__("json").loads(t),
+                episode, "Technology & AI", transcript_text, chunk_target_chars=10_000,
+            )
+        assert result["summary"] == "s"  # extraction still completed despite logging being broken
+
+
 # ── Multi-provider waterfall ────────────────────────────────────────────────
 
 class TestWaterfall:

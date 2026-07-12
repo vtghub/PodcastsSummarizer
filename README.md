@@ -57,7 +57,7 @@ PodcastsSummarizer/
 │   │   │   ├── mistral_llm.py       # Mistral Small (REST)
 │   │   │   ├── cohere_llm.py        # Cohere Command R (REST)
 │   │   │   ├── openrouter_llm.py    # OpenRouter — parametrized model (4 free-tier slots)
-│   │   │   ├── chunking.py          # Shared chunked map-reduce extraction for long transcripts (split → per-chunk summarize → synthesize)
+│   │   │   ├── chunking.py          # Shared chunked map-reduce extraction for long transcripts (split → per-chunk summarize → synthesize); logs each call's chunk/phase/provider/status to extraction_chunk_log (best-effort, migration 021)
 │   │   │   ├── text_utils.py        # parse_json_response() — lenient fence/prose-stripping JSON parser shared by all providers
 │   │   │   ├── waterfall.py         # WaterfallLLM — chains ordered (name, generate_fn) steps; sticky dead-provider tracking (skips a failed provider for the rest of the run instead of retrying it every chunk)
 │   │   │   ├── provider_registry.py # PROVIDER_SLOTS (code-defined adapters that exist) + build_enabled_slots(config) — resolves against admin-configured enabled/priority
@@ -74,7 +74,7 @@ PodcastsSummarizer/
 │       ├── backfill_published_at.py    # One-time job: backfill episode published dates from RSS feeds
 │       └── backfill_insights.py        # Resumable job: re-runs every existing insight through the current LLM waterfall (scope='pipeline'), reusing its saved transcript; one bounded batch per invocation, progress tracked in backfill_jobs (migration 020)
 │   └── tests/
-│       └── test_pipeline.py         # Pytest suite (55 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience, chunked extraction, waterfall (incl. sticky dead-provider fallback), LLM-backed ranking, insight backfill job, provider registry
+│       └── test_pipeline.py         # Pytest suite (59 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience, chunked extraction (incl. per-chunk logging), waterfall (incl. sticky dead-provider fallback), LLM-backed ranking, insight backfill job, provider registry
 │
 ├── supabase/
 │   └── migrations/
@@ -98,7 +98,8 @@ PodcastsSummarizer/
 │       ├── 017_episode_title_en.sql # title_en TEXT on episodes — English translation of non-English episode titles
 │       ├── 018_llm_provider_config.sql # llm_provider_config table (provider_key, enabled, priority) — admin-editable LLM waterfall config
 │       ├── 019_llm_provider_config_scopes.sql # Adds scope column ('pipeline' | 'ask_ai'); primary key becomes (scope, provider_key) so extraction and Ask AI have independent waterfalls
-│       └── 020_backfill_jobs.sql    # backfill_jobs + backfill_failures tables — tracks the resumable insight-reextraction backfill job (admin-only RLS, Realtime on backfill_jobs)
+│       ├── 020_backfill_jobs.sql    # backfill_jobs + backfill_failures tables — tracks the resumable insight-reextraction backfill job (admin-only RLS, Realtime on backfill_jobs)
+│       └── 021_extraction_chunk_log.sql # extraction_chunk_log table — per-chunk LLM call detail (which model, status, error) written by chunked_extract(), admin-only RLS
 │
 ├── dashboard/                       # Next.js 15 web dashboard
 │   ├── app/
@@ -148,6 +149,7 @@ PodcastsSummarizer/
 │   │       ├── admin/llm-providers/ # GET — providers grouped by scope ({pipeline, ask_ai, recommendations}) · PATCH { scope, provider_key, enabled?, priority? } — admin only
 │   │       ├── admin/backfill/      # GET — latest insight-reextraction backfill job + recent failures · POST — workflow_dispatch one batch now, admin only
 │   │       ├── admin/workflows/     # GET — every GitHub Actions workflow + its most recent run · POST { action: "dispatch"|"cancel" } — trigger or cancel a run, admin only
+│   │       ├── admin/extraction-chunks/ # GET — the 15 most recently chunked episodes with per-chunk LLM model/status/error detail, admin only
 │   │       ├── recommendations/     # GET — on-demand best-of-week insight ranking (scope='recommendations') + trending unsubscribed podcasts, authed
 │   │       └── comments/[id]/       # DELETE own comment · /react POST like/dislike comment
 │   ├── components/
@@ -359,12 +361,12 @@ npm run dev      # http://localhost:3000
 | **Analytics** | `/analytics` page (signed-in only) — four KPI cards (total insights, views, subscribed sources, days with insights); SVG bar chart of insights per day (last 30 days); domain breakdown with proportional horizontal bars; top-10 most-viewed insights ranked list with deep links back to the insight card |
 | **Ask AI (Q&A)** | Signed-in users can ask any question in plain language on the `/ask` page. Retrieval first checks whether the question names a specific subscribed podcast (e.g. "latest episode from Signals & Threads") and fetches that source's own recent insights directly — since Postgres FTS only searches insight content and never matches a bare podcast name; falls back to FTS over subscribed episode insights, then to most-recent-across-subscriptions if both come up empty. Builds a context block (entries marked newest-first per podcast) and calls an LLM to answer with inline citations (e.g. [1], [2]); each citation card links directly to the exact insight on the dashboard. **6-model free-tier waterfall** — Gemini 2.0 Flash → Groq Llama 3.1 8B → Groq Llama 3.3 70B → Mistral Small → Together AI Llama 3.1 8B → Cohere Command R; providers are tried in order and skipped on 429/quota without surfacing errors to the user; enabled/order is admin-editable on `/admin/llm-providers` (falls back to this default order if unconfigured). "Ask" link in desktop navbar; **Ask** tab in mobile bottom bar. |
 | **LLM Providers (admin)** | Admin-only `/admin/llm-providers` page — two independently toggle/reorder-able sections: **Pipeline Extraction** (worker's insight-extraction waterfall — Gemini, Groq 8B/70B, Mistral, Cohere, 4× OpenRouter free models) and **Ask AI** (the `/ask` chat waterfall). Toggling/reordering writes to `llm_provider_config` (scoped by feature); the pipeline picks up changes on its next run, Ask AI picks them up on the next question. Each row shows whether its API key is detected in the current environment. |
-| **About Page** | Public `/about` page — no auth required; hero, 9 feature cards with Lucide icons (including Ask AI and Export), and Get Started / Sign in CTA; "About" link visible in the navbar for all visitors |
+| **About Page** | Public `/about` page — no auth required; hero, 9 feature cards with Lucide icons (including Ask AI and Export), a "Powered by Free AI Models" section listing every model in each of the three waterfalls (Insight Extraction, Recommendations, Ask AI) as chip tags, and Get Started / Sign in CTA; "About" link visible in the navbar for all visitors |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level |
 | **New Insights Indicator** | When new episodes have been processed since the user's last visit, a **"N new"** orange pill appears inline next to the Dashboard link on desktop (with a tooltip); on mobile, the Dashboard bottom-tab icon shows a count badge and a **"new"** sublabel beneath the tab text. Count is derived from `last_visited_at` on `user_profiles` vs. `insights.created_at` for the user's subscribed sources. |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar (My Podcasts hidden — accessible via bottom tab bar), fixed bottom tab bar (Dashboard · Podcasts · **Ask** · Profile); domain filter strips are horizontally scrollable on mobile across Dashboard and Podcast Catalog |
 | **Recommendations ("For You")** | Signed-in users can view/refresh their best-of-week insight picks and trending-podcast suggestions on demand at `/recommendations`, in addition to the Sunday email — same LLM ranking (`scope='recommendations'`), computed fresh on request. "For You" link in desktop navbar. |
-| **Task Status (admin)** | Admin-only `/admin/task-status` page with two sections: **GitHub Actions Runners** — every workflow in the repo with its most recent run status, a "Run now" button (workflow_dispatch), and a "Cancel" button when a run is queued/in progress, polled every 20s; and **Insight Backfill** — live progress of the insight-reextraction backfill job (progress bar, succeeded/failed/remaining counts, recent failure list, "Run batch now"), Realtime-updated. |
+| **Task Status (admin)** | Admin-only `/admin/task-status` page with three sections: **GitHub Actions Runners** — every workflow in the repo with its most recent run status, a "Run now" button (workflow_dispatch), and a "Cancel" button when a run is queued/in progress, polled every 20s; **Insight Backfill** — live progress of the insight-reextraction backfill job (orchestration estimate, progress bar, succeeded/failed/remaining counts, recent failure list, "Run batch now"), Realtime-updated; and **Episode Transcription Detail** — the 15 most recently chunked episodes, expandable to show every chunk's LLM model, status, timestamp, and error message. |
 
 ---
 

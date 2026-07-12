@@ -572,6 +572,26 @@ class SupabaseStorageProvider(StorageProvider):
                     (job_id,),
                 )
 
+    def log_extraction_chunk(
+        self, episode_id: str, source_id: str, chunk_index: int, total_chunks: int,
+        phase: str, provider_name: str, status: str, error_msg: str | None = None,
+    ) -> None:
+        try:
+            with self._conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO extraction_chunk_log
+                        (episode_id, source_id, chunk_index, total_chunks, phase, provider_name, status, error_msg)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (episode_id, source_id, chunk_index, total_chunks, phase, provider_name, status, error_msg),
+                    )
+        except Exception as e:
+            # Table may not exist yet (migration 021 not applied) — never let
+            # logging failures break the actual extraction.
+            print(f"[ExtractionChunkLog] couldn't log chunk ({e}) — continuing without logging")
+
     # ------------------------------------------------------------------
     # Row → dataclass helpers
     # ------------------------------------------------------------------

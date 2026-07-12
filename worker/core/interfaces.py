@@ -318,6 +318,19 @@ class StorageProvider(ABC):
     def complete_backfill_job(self, job_id: str) -> None:
         """Mark a backfill job status='completed'. Default: no-op."""
 
+    def log_extraction_chunk(
+        self, episode_id: str, source_id: str, chunk_index: int, total_chunks: int,
+        phase: str, provider_name: str, status: str, error_msg: str | None = None,
+    ) -> None:
+        """
+        Record one LLM call made by chunked_extract() (worker/providers/llm/
+        chunking.py) — which chunk, which provider handled it, and whether it
+        succeeded — for the admin Task Status page's per-episode chunking
+        detail. phase is 'summary' (per-chunk map step) or 'synthesis' (final
+        reduce step); status is 'success' or 'failed'. Default: no-op (local
+        dev) — never let logging failures break extraction itself.
+        """
+
 
 class EmailProvider(ABC):
     """Sends the daily digest email."""

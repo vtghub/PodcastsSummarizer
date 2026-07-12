@@ -49,6 +49,7 @@ export interface Database {
           id: string;
           source_id: string;
           title: string;
+          title_en: string | null;
           url: string;
           published_at: string;
           duration_seconds: number;
@@ -60,6 +61,7 @@ export interface Database {
           id: string;
           source_id: string;
           title: string;
+          title_en?: string | null;
           url: string;
           published_at: string;
           duration_seconds?: number;
@@ -71,6 +73,7 @@ export interface Database {
           id?: string;
           source_id?: string;
           title?: string;
+          title_en?: string | null;
           url?: string;
           published_at?: string;
           duration_seconds?: number;
@@ -366,6 +369,23 @@ export interface Database {
           episode_id: string;
           error_msg: string | null;
           failed_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      extraction_chunk_log: {
+        Row: {
+          id: number;
+          episode_id: string;
+          source_id: string;
+          chunk_index: number;
+          total_chunks: number;
+          phase: string;
+          provider_name: string;
+          status: string;
+          error_msg: string | null;
+          created_at: string;
         };
         Insert: never;
         Update: never;
