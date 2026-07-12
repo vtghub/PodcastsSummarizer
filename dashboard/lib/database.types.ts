@@ -391,6 +391,19 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      dictionary_entries: {
+        Row: {
+          id: number;
+          word: string;
+          pos: string;
+          definition: string;
+          examples: string[];
+          synonyms: string[];
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

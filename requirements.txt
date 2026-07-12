@@ -11,6 +11,7 @@ python-dotenv>=1.0.0        # .env file loading
 APScheduler>=3.10.4         # Local cron scheduler
 tzdata>=2024.1               # IANA timezone database — zoneinfo has no built-in data on Windows (Linux/Mac use the OS's own tzdata)
 json-repair>=0.61.0          # Recovers malformed LLM JSON (unescaped quotes, truncated responses) that json.loads rejects
+nltk>=3.9.0                  # WordNet corpus — one-time dictionary_entries seed (worker/jobs/seed_dictionary.py)
 
 # ---------------------------------------------------------------------------
 # Cloud providers

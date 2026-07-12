@@ -1372,3 +1372,45 @@ sequenceDiagram
         PAGE->>PAGE: append assistant bubble (no citations — grounded in one transcript, not FTS-retrieved insights)
     end
 ```
+
+## 31. Dictionary Word Lookup (Insight Card)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (guest or signed in)
+    participant CARD as InsightCard.tsx
+    participant WL as WordLookup.tsx (useWordLookup + LookupableText)
+    participant API as GET /api/dictionary
+    participant DB as Supabase (dictionary_entries)
+
+    alt Double-click a word (always available, any card text)
+        B->>WL: dblclick — window.getSelection() reads selected word
+    else Dictionary-mode toggle is on (BookOpen button)
+        B->>CARD: click BookOpen toggle
+        CARD->>CARD: setDictionaryMode(true)
+        CARD->>WL: LookupableText renders every word as a<br/>clickable, dotted-underline span
+        B->>WL: click a word span
+    end
+
+    WL->>WL: cleanWord() — strip punctuation, lowercase
+    alt word already in module-level lookupCache
+        WL->>WL: read cached DictEntry[], skip network call
+    else not cached
+        WL->>WL: show popover in loading state
+        WL->>API: GET /api/dictionary?word=<word>
+        API->>API: validate word (alpha + apostrophes only)
+        API->>DB: SELECT pos, definition, examples, synonyms<br/>WHERE word=? LIMIT 12
+        alt table missing / migration 022 not yet applied
+            DB-->>API: error
+            API-->>WL: { word, entries: [], error: "Dictionary not available yet" }
+        else lookup succeeds
+            DB-->>API: matching entries (0 or more)
+            API->>API: sort by pos (noun → verb → adjective → adverb)
+            API-->>WL: { word, entries }
+        end
+        WL->>WL: cache result in lookupCache
+    end
+    WL->>B: DictionaryPopover renders (portal to document.body)<br/>— definition(s) by part of speech, or "No definition found"
+```
+
+`dictionary_entries` is seeded once (idempotently) by `worker/jobs/seed_dictionary.py`, loading the Princeton WordNet corpus (~130k word-sense entries) via NLTK — triggered manually through the `Seed Dictionary` GitHub Actions workflow, not run automatically. The lookup itself is pure retrieval (no LLM call) and is public — no auth check, works for guests on the public insight preview too.
