@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mic2, Search, Bookmark, CalendarDays, Bell, Mail, Volume2, Download, MessageCircle, Sparkles, Zap } from "lucide-react";
+import { Mic2, Search, Bookmark, CalendarDays, Bell, Mail, Volume2, Download, MessageCircle, Sparkles } from "lucide-react";
 
 const features = [
   {
@@ -49,40 +49,19 @@ const features = [
   },
 ];
 
-const aiModelChains = [
-  {
-    icon: Zap,
-    title: "Insight Extraction",
-    body:
-      "Audio is transcribed locally with OpenAI's open-source Whisper model — free, no API calls. " +
-      "Turning that transcript into a summary, key points, quotes, and action items uses a free-tier " +
-      "LLM waterfall: if one model is out of quota, the next one in line picks up automatically.",
-    models: [
-      "Gemini 2.0 Flash",
-      "Groq — Llama 3.1 8B",
-      "Groq — Llama 3.3 70B",
-      "Mistral Small",
-      "Cohere Command R",
-      "NVIDIA Nemotron 3 Ultra (OpenRouter)",
-      "NVIDIA Nemotron 3 Nano (OpenRouter)",
-      "Poolside Laguna M.1 (OpenRouter)",
-      "Tencent Hy3 (OpenRouter)",
-    ],
-  },
-  {
-    icon: Sparkles,
-    title: "Recommendations",
-    body:
-      "Your weekly \"best of\" picks are chosen by an LLM, not just sorted by length — it reads the week's " +
-      "insights and picks the most interesting, varied set for your subscriptions.",
-    models: ["Gemini 2.0 Flash", "Groq — Llama 3.1 8B", "Groq — Llama 3.3 70B", "Mistral Small", "Cohere Command R"],
-  },
-  {
-    icon: MessageCircle,
-    title: "Ask AI",
-    body: "Answers to your questions are generated from your subscribed episodes' insights, with the same free-tier fallback chain.",
-    models: ["Gemini 2.0 Flash", "Groq — Llama 3.1 8B", "Groq — Llama 3.3 70B", "Mistral Small", "Together — Llama 3.1 8B", "Cohere Command R"],
-  },
+// Deduplicated pool across all three waterfalls (Insight Extraction, Recommendations, Ask AI) —
+// see README's Provider Registry section for exactly which subset each feature draws from.
+const aiModels = [
+  "Gemini 2.0 Flash",
+  "Groq — Llama 3.1 8B",
+  "Groq — Llama 3.3 70B",
+  "Mistral Small",
+  "Cohere Command R",
+  "Together — Llama 3.1 8B",
+  "NVIDIA Nemotron 3 Ultra (OpenRouter)",
+  "NVIDIA Nemotron 3 Nano (OpenRouter)",
+  "Poolside Laguna M.1 (OpenRouter)",
+  "Tencent Hy3 (OpenRouter)",
 ];
 
 export default function AboutPage() {
@@ -126,47 +105,35 @@ export default function AboutPage() {
       </div>
 
       {/* Powered by Free AI Models */}
-      <div className="mb-8 sm:mb-12">
-        <h2 className="text-lg sm:text-xl font-bold text-center mb-1" style={{ color: "var(--txt-1)" }}>
-          Powered by Free AI Models
-        </h2>
-        <p className="text-xs sm:text-sm text-center mb-5 sm:mb-6 max-w-md mx-auto" style={{ color: "var(--txt-4)" }}>
-          Every AI feature runs on free-tier models chained into a fallback waterfall — no paid subscriptions behind the scenes.
-        </p>
-        <div className="space-y-2.5 sm:space-y-4">
-          {aiModelChains.map(({ icon: Icon, title, body, models }) => (
-            <div
-              key={title}
-              className="flex items-start gap-3 px-3.5 py-3 sm:p-5 rounded-xl border card-lift"
-              style={{ background: "var(--bg-card)", borderColor: "var(--bdr)" }}
-            >
-              <div
-                className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center mt-0.5"
-                style={{ background: "var(--acc-bg, rgba(194,65,12,0.08))" }}
+      <div
+        className="flex items-start gap-3 px-3.5 py-3 sm:p-5 rounded-xl border mb-8 sm:mb-12"
+        style={{ background: "var(--bg-card)", borderColor: "var(--bdr)" }}
+      >
+        <div
+          className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center mt-0.5"
+          style={{ background: "var(--acc-bg, rgba(194,65,12,0.08))" }}
+        >
+          <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: "var(--acc)" }} />
+        </div>
+        <div className="min-w-0">
+          <h2 className="font-semibold text-sm sm:text-base leading-snug mb-0.5" style={{ color: "var(--txt-1)" }}>
+            Powered by Free AI Models
+          </h2>
+          <p className="text-xs sm:text-sm leading-relaxed mb-2.5" style={{ color: "var(--txt-3)" }}>
+            Insight extraction, weekly recommendations, and Ask AI each run on a free-tier model waterfall — if
+            one is out of quota, the next takes over automatically. No paid subscriptions behind the scenes.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {aiModels.map((m) => (
+              <span
+                key={m}
+                className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full border"
+                style={{ background: "var(--bg-elevated)", borderColor: "var(--bdr)", color: "var(--txt-3)" }}
               >
-                <Icon className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: "var(--acc)" }} />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold text-sm sm:text-base leading-snug mb-0.5" style={{ color: "var(--txt-1)" }}>
-                  {title}
-                </h3>
-                <p className="text-xs sm:text-sm leading-relaxed mb-2.5" style={{ color: "var(--txt-3)" }}>
-                  {body}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {models.map((m) => (
-                    <span
-                      key={m}
-                      className="text-[10px] sm:text-xs px-2 py-0.5 rounded-full border"
-                      style={{ background: "var(--bg-elevated)", borderColor: "var(--bdr)", color: "var(--txt-3)" }}
-                    >
-                      {m}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ))}
+                {m}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
