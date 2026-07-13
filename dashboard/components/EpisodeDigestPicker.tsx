@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { Loader2, Send, CheckCircle, AlertCircle, Zap, Clock, Search, ChevronDown, Sparkles } from "lucide-react";
@@ -59,6 +59,12 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   const podcastRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const [episodeQuery, setEpisodeQuery] = useState("");
+  const [episodeOpen, setEpisodeOpen]   = useState(false);
+  const [episodePanelPos, setEpisodePanelPos] = useState({ top: 0, left: 0, width: 0, maxHeight: 320 });
+  const episodeRef = useRef<HTMLDivElement>(null);
+  const episodePanelRef = useRef<HTMLDivElement>(null);
+
   // Computes the panel's position AND how tall it's allowed to be, capped to
   // whatever space is actually visible around the trigger. On mobile this
   // visible area shrinks to whatever's above the on-screen keyboard — since
@@ -72,8 +78,8 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   const MAX_PANEL_HEIGHT = 320;
   const GAP = 4;
 
-  function computePanelRect() {
-    const rect = podcastRef.current?.getBoundingClientRect();
+  function computePanelRect(triggerRef: RefObject<HTMLDivElement | null>) {
+    const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return null;
     const vv = window.visualViewport;
     const visibleTop = vv ? vv.offsetTop : 0;
@@ -92,18 +98,27 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   }
 
   function openPodcastDropdown() {
-    const next = computePanelRect();
+    const next = computePanelRect(podcastRef);
     if (next) setPanelPos(next);
     setPodcastOpen(true);
   }
 
-  // Click outside either the trigger or the portal'd panel closes it
+  function openEpisodeDropdown() {
+    const next = computePanelRect(episodeRef);
+    if (next) setEpisodePanelPos(next);
+    setEpisodeOpen(true);
+  }
+
+  // Click outside either trigger or its portal'd panel closes that dropdown
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       const target = e.target as Node;
-      if (podcastRef.current?.contains(target)) return;
-      if (panelRef.current?.contains(target)) return;
-      setPodcastOpen(false);
+      if (!podcastRef.current?.contains(target) && !panelRef.current?.contains(target)) {
+        setPodcastOpen(false);
+      }
+      if (!episodeRef.current?.contains(target) && !episodePanelRef.current?.contains(target)) {
+        setEpisodeOpen(false);
+      }
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
@@ -125,7 +140,7 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   useEffect(() => {
     if (!podcastOpen) return;
     function reposition() {
-      const next = computePanelRect();
+      const next = computePanelRect(podcastRef);
       if (next) setPanelPos(next);
     }
     window.addEventListener("scroll", reposition, true);
@@ -139,6 +154,24 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
       window.visualViewport?.removeEventListener("scroll", reposition);
     };
   }, [podcastOpen]);
+
+  useEffect(() => {
+    if (!episodeOpen) return;
+    function reposition() {
+      const next = computePanelRect(episodeRef);
+      if (next) setEpisodePanelPos(next);
+    }
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("scroll", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("scroll", reposition);
+    };
+  }, [episodeOpen]);
 
   // Tracks which episode ID should be auto-sent once processing completes.
   // Using a ref avoids stale-closure issues inside the Realtime useEffect.
@@ -247,6 +280,7 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   const selectedStatus: EpisodeStatus = selectedEpisode ? epStatus(selectedEpisode) : "unprocessed";
 
   const loadEpisodes = useCallback(async (sid: string) => {
+    setEpisodeQuery("");
     if (!sid) { setEpisodes([]); setEpisodeId(""); return; }
     setState("loading-episodes");
     setEpisodes([]);
@@ -321,6 +355,10 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
   const filteredSources = podcastQuery
     ? subscribedSources.filter((s) => s.name.toLowerCase().includes(podcastQuery.toLowerCase()))
     : subscribedSources;
+
+  const filteredEpisodes = episodeQuery
+    ? episodes.filter((ep) => ep.title.toLowerCase().includes(episodeQuery.toLowerCase()))
+    : episodes;
 
   return (
     <div className="space-y-3">
@@ -410,19 +448,80 @@ export default function EpisodeDigestPicker({ subscribedSources }: Props) {
           ) : episodes.length === 0 ? (
             <p className="text-xs py-2" style={{ color: "var(--txt-4)" }}>No episodes found.</p>
           ) : (
-            <select
-              value={episodeId}
-              onChange={(e) => { setEpisodeId(e.target.value); setState("idle"); setMessage(""); }}
-              className="input"
-              disabled={busy}
-            >
-              <option value="">— choose an episode —</option>
-              {episodes.map((ep) => (
-                <option key={ep.id} value={ep.id}>{epLabel(ep)}</option>
-              ))}
-            </select>
+            <div ref={episodeRef} className="relative">
+              <button
+                type="button"
+                onClick={() => (episodeOpen ? setEpisodeOpen(false) : openEpisodeDropdown())}
+                disabled={busy}
+                className="input flex items-center justify-between gap-2 disabled:opacity-60"
+              >
+                <span className="truncate" style={{ color: selectedEpisode ? "var(--txt-1)" : "var(--txt-4)" }}>
+                  {selectedEpisode ? epLabel(selectedEpisode) : "— choose an episode —"}
+                </span>
+                <ChevronDown
+                  className="w-4 h-4 flex-shrink-0 transition-transform"
+                  style={{ color: "var(--txt-4)", transform: episodeOpen ? "rotate(180deg)" : undefined }}
+                />
+              </button>
+            </div>
           )}
         </div>
+      )}
+
+      {episodeOpen && typeof document !== "undefined" && createPortal(
+        <div
+          ref={episodePanelRef}
+          className="fixed rounded-xl border shadow-xl overflow-hidden flex flex-col"
+          style={{
+            top: episodePanelPos.top,
+            left: episodePanelPos.left,
+            width: episodePanelPos.width,
+            maxHeight: episodePanelPos.maxHeight,
+            zIndex: 100,
+            background: "var(--bg-nav)",
+            borderColor: "var(--bdr-hov)",
+          }}
+        >
+          <div className="relative p-2 border-b flex-shrink-0" style={{ borderColor: "var(--bdr)" }}>
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--txt-4)" }} />
+            <input
+              value={episodeQuery}
+              onChange={(e) => setEpisodeQuery(e.target.value)}
+              placeholder="Search episodes…"
+              className="input"
+              style={{ paddingLeft: "2.25rem" }}
+              autoComplete="off"
+            />
+          </div>
+          <ul className="overflow-y-auto" style={{ minHeight: 0 }}>
+            {filteredEpisodes.length === 0 ? (
+              <li className="px-3 py-2.5 text-xs" style={{ color: "var(--txt-4)" }}>No episodes match.</li>
+            ) : (
+              filteredEpisodes.map((ep) => (
+                <li key={ep.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEpisodeId(ep.id);
+                      setState("idle");
+                      setMessage("");
+                      setEpisodeOpen(false);
+                      setEpisodeQuery("");
+                    }}
+                    className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:opacity-80"
+                    style={{
+                      color: "var(--txt-1)",
+                      background: ep.id === episodeId ? "var(--bg-elevated)" : "transparent",
+                    }}
+                  >
+                    {epLabel(ep)}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>,
+        document.body
       )}
 
       {/* Legend */}
