@@ -184,6 +184,10 @@ export default function NavBar({
             )}
           </span>
           <span className="hidden sm:inline">{navLink("/podcasts", "My Podcasts")}</span>
+          {/* Guests have nothing else to put in the "More" dropdown (Analytics/
+              Saved require sign-in), so give them a direct top-level link
+              instead of burying the one thing they can access a click deep. */}
+          {!userEmail && <span className="hidden sm:inline">{navLink("/about", "About")}</span>}
           {userEmail && (
             <span className="hidden sm:inline">
               <Link
@@ -211,22 +215,24 @@ export default function NavBar({
             </span>
           )}
 
-          {/* More dropdown — secondary links kept off the primary row */}
-          <div className="hidden sm:block relative" ref={moreRef}>
-            <button
-              onClick={() => setMoreOpen((v) => !v)}
-              className={`transition-colors text-sm flex items-center gap-0.5 ${moreOpen ? "font-medium" : "hover:opacity-80"}`}
-              style={{ color: moreOpen || ["/analytics", "/saved", "/about"].includes(pathname) ? "var(--acc)" : "var(--txt-3)" }}
-            >
-              More
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
-            </button>
-            {moreOpen && (
-              <div
-                className="absolute right-0 top-full mt-2 w-44 rounded-xl shadow-2xl border p-1.5 z-50"
-                style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
+          {/* More dropdown — secondary links kept off the primary row.
+              Guests get About as a direct top-level link above instead (Analytics/
+              Saved require sign-in, so there'd be nothing else in here for them). */}
+          {userEmail && (
+            <div className="hidden sm:block relative" ref={moreRef}>
+              <button
+                onClick={() => setMoreOpen((v) => !v)}
+                className={`transition-colors text-sm flex items-center gap-0.5 ${moreOpen ? "font-medium" : "hover:opacity-80"}`}
+                style={{ color: moreOpen || ["/analytics", "/saved", "/about"].includes(pathname) ? "var(--acc)" : "var(--txt-3)" }}
               >
-                {userEmail && (
+                More
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
+              </button>
+              {moreOpen && (
+                <div
+                  className="absolute right-0 top-full mt-2 w-44 rounded-xl shadow-2xl border p-1.5 z-50"
+                  style={{ background: "var(--bg-nav)", borderColor: "var(--bdr-hov)" }}
+                >
                   <Link
                     href="/analytics"
                     onClick={() => setMoreOpen(false)}
@@ -238,8 +244,6 @@ export default function NavBar({
                     <BarChart3 className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
                     Analytics
                   </Link>
-                )}
-                {userEmail && (
                   <Link
                     href="/saved"
                     onClick={() => setMoreOpen(false)}
@@ -251,21 +255,21 @@ export default function NavBar({
                     <Bookmark className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
                     Saved
                   </Link>
-                )}
-                <Link
-                  href="/about"
-                  onClick={() => setMoreOpen(false)}
-                  className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
-                  style={{ color: pathname === "/about" ? "var(--acc)" : "var(--txt-2)" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                >
-                  <Info className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
-                  About
-                </Link>
-              </div>
-            )}
-          </div>
+                  <Link
+                    href="/about"
+                    onClick={() => setMoreOpen(false)}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                    style={{ color: pathname === "/about" ? "var(--acc)" : "var(--txt-2)" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >
+                    <Info className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                    About
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Search */}
           <button
