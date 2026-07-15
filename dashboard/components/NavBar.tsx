@@ -409,13 +409,25 @@ export default function NavBar({
               )}
             </div>
           ) : (
-            <Link
-              href="/login"
-              className="text-sm transition-colors hover:opacity-80"
-              style={{ color: "var(--txt-3)" }}
-            >
-              Sign in
-            </Link>
+            <>
+              {/* Desktop guests reach About via the "More" dropdown (hidden
+                  below sm) — mobile guests have no other path to it since
+                  there's no account menu to sign in first, so surface it here. */}
+              <Link
+                href="/about"
+                className="sm:hidden text-sm transition-colors hover:opacity-80"
+                style={{ color: pathname === "/about" ? "var(--acc)" : "var(--txt-3)" }}
+              >
+                About
+              </Link>
+              <Link
+                href="/login"
+                className="text-sm transition-colors hover:opacity-80"
+                style={{ color: "var(--txt-3)" }}
+              >
+                Sign in
+              </Link>
+            </>
           )}
 
           {/* TTS toggle */}
