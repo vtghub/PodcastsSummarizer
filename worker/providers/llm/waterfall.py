@@ -39,6 +39,11 @@ class WaterfallLLM:
         # actually produced that result (e.g. for per-chunk extraction logging).
         self.last_provider: str | None = None
 
+    @property
+    def all_dead(self) -> bool:
+        """True once every configured provider has failed at least once this run."""
+        return len(self._dead) >= len(self.steps)
+
     def generate(self, prompt: str) -> str:
         last_exc: Exception | None = None
         attempted_any = False

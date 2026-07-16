@@ -40,30 +40,41 @@ sequenceDiagram
     end
 
     loop per episode (4 workers) — new + retry queue
-        PY->>RSS: fetch_transcript_text()
-        alt captions available
-            RSS-->>PY: text transcript
-        else no captions
-            PY->>RSS: download_audio()
-            PY->>W: transcribe(audio, domain=source.domain)
-            Note right of W: domain-aware initial_prompt (8 domains)<br/>+ post-processing corrections for known mishearings
-            W-->>PY: corrected transcript text
-        end
-        alt transcript exceeds chunk threshold
-            PY->>PY: chunking.py — split into chunks, summarize each,<br/>synthesize one structured insight from chunk summaries
-        end
-        PY->>LLM: extract_insights(episode, transcript)
-        alt current provider quota exceeded or fails
-            PY->>PY: mark provider "sticky dead" for this run
-            PY->>LLM: retry with next enabled provider in priority order<br/>(Gemini → Groq 8B/70B → Mistral → Cohere → OpenRouter x4)
-        end
-        alt success
-            LLM-->>PY: Insight (summary, key_points, quotes, actions, tags)
-            Note over PY: insight.date = episode.published_at (UTC)<br/>falls back to pipeline run date if missing/pre-2020
-            PY->>DB: save_insight(insight, date=episode.published_at)
-            PY->>DB: mark_episode_done(episode_id)
-        else failure
-            PY->>DB: increment_episode_retry(episode_id, retry_after=exponential)
+        alt every provider already dead this run (all_providers_dead)
+            PY->>PY: return "deferred" immediately — no transcript fetch,<br/>no audio download, no LLM call, no retry-count penalty
+        else at least one provider still alive
+            PY->>DB: get_transcript(episode_id) — already saved from a prior attempt?
+            alt cached transcript found
+                DB-->>PY: reuse as-is — skip captions fetch and Whisper entirely
+            else no cached transcript
+                PY->>RSS: fetch_transcript_text()
+                alt captions available
+                    RSS-->>PY: text transcript
+                else no captions
+                    PY->>RSS: download_audio()
+                    PY->>W: transcribe(audio, domain=source.domain)
+                    Note right of W: domain-aware initial_prompt (8 domains)<br/>+ post-processing corrections for known mishearings
+                    W-->>PY: corrected transcript text
+                end
+            end
+            alt transcript exceeds chunk threshold
+                PY->>PY: chunking.py — split into chunks, summarize each,<br/>synthesize one structured insight from chunk summaries
+            end
+            Note over PY,LLM: _LLM_LOCK held for the whole call — only one episode's<br/>chunk map-reduce runs at a time, so a burst across episodes<br/>can't trip a shared provider's per-minute rate limit
+            PY->>LLM: extract_insights(episode, transcript)
+            alt current provider quota exceeded or fails
+                PY->>PY: mark provider "sticky dead" for this run
+                PY->>LLM: retry with next enabled provider in priority order<br/>(Gemini → Groq 8B/70B → Mistral → Cohere → Cerebras → OpenRouter x4)
+            end
+            alt success
+                LLM-->>PY: Insight (summary, key_points, quotes, actions, tags)
+                Note over PY: insight.date = episode.published_at (UTC)<br/>falls back to pipeline run date if missing/pre-2020
+                PY->>DB: save_insight(insight, date=episode.published_at)
+                PY->>DB: mark_episode_done(episode_id)
+                PY->>DB: mark_episode_queue_resolved(episode_id) — flips a stale 'failed' row to 'done'
+            else failure
+                PY->>DB: increment_episode_retry(episode_id, retry_after=exponential)
+            end
         end
     end
 
@@ -1242,7 +1253,7 @@ sequenceDiagram
 
 ---
 
-## 29. Admin — Task Status (Runners + Insight Backfill)
+## 29. Admin — Task Status (Runners + Failed Episodes)
 
 ```mermaid
 sequenceDiagram
@@ -1250,11 +1261,10 @@ sequenceDiagram
     participant PAGE as admin/task-status/page.tsx
     participant MGR as TaskStatusManager.tsx
     participant WFAPI as /api/admin/workflows
-    participant BFAPI as /api/admin/backfill
+    participant FEAPI as /api/admin/failed-episodes
     participant GH as GitHub Actions API
     participant DB as Supabase
-    participant JOB as worker/jobs/backfill_insights.py
-    participant RT as Supabase Realtime
+    participant JOB as worker/jobs/retry_failed_episodes.py
 
     B->>PAGE: navigate to /admin/task-status
     PAGE->>PAGE: isAdmin() — false? redirect /dashboard
@@ -1264,18 +1274,19 @@ sequenceDiagram
         MGR->>WFAPI: GET /api/admin/workflows
         WFAPI->>WFAPI: isAdmin() check
         WFAPI->>GH: GET /repos/.../actions/workflows
-        GH-->>WFAPI: every workflow (daily_pipeline, hourly_digest,<br/>weekly_recommendations, backfill_*, ...)
+        GH-->>WFAPI: every workflow (daily_pipeline, hourly_digest,<br/>weekly_recommendations, backfill_*, retry_failed_episodes, ...)
         WFAPI->>GH: per workflow, GET .../runs?per_page=1
         GH-->>WFAPI: latest run (status, conclusion, created_at, html_url)
         WFAPI-->>MGR: { workflows: [{ id, name, fileName, latestRun }] }
         MGR->>B: render status badge + last-run time + Run now / Cancel per workflow
         Note over MGR,WFAPI: no GitHub push channel available in-browser —<br/>re-poll every 20s while the page is open
-    and Insight backfill section
-        MGR->>BFAPI: GET /api/admin/backfill
-        BFAPI->>DB: SELECT * FROM backfill_jobs WHERE job_type='insight_reextraction' ORDER BY started_at DESC LIMIT 1
-        BFAPI->>DB: SELECT * FROM backfill_failures WHERE job_id=? ORDER BY failed_at DESC LIMIT 20
-        BFAPI-->>MGR: { job, failures }
-        MGR->>B: render progress bar, succeeded/failed/remaining, recent failures
+    and Failed Episodes section
+        MGR->>FEAPI: GET /api/admin/failed-episodes
+        FEAPI->>DB: SELECT episode_id, source_id, error_msg, retry_count, updated_at<br/>FROM episode_queue WHERE status='failed' ORDER BY updated_at DESC LIMIT 30
+        FEAPI->>DB: SELECT id, title, title_en FROM episodes WHERE id IN (...)
+        FEAPI->>DB: SELECT id, name FROM sources WHERE id IN (...)
+        FEAPI-->>MGR: { episodes: [{ episodeTitle, sourceName, retryCount, errorMsg, updatedAt }] }
+        MGR->>B: render list — title, source, retry count, last error, last updated
     end
 
     alt Trigger a workflow run
@@ -1291,32 +1302,32 @@ sequenceDiagram
         WFAPI->>GH: POST .../actions/runs/{runId}/cancel
         GH-->>WFAPI: 202
         WFAPI-->>MGR: { cancelled: true }
-    else Run an insight-backfill batch now
-        B->>MGR: click "Run batch now"
-        MGR->>BFAPI: POST /api/admin/backfill
-        BFAPI->>GH: POST .../workflows/backfill_insights.yml/dispatches
-        GH-->>BFAPI: 204 (queued)
+    else Retry failed episodes now
+        B->>MGR: click "Retry now"
+        MGR->>FEAPI: POST /api/admin/failed-episodes
+        FEAPI->>GH: POST .../workflows/retry_failed_episodes.yml/dispatches
+        GH-->>FEAPI: 204 (queued)
     end
 
     Note over GH,JOB: GitHub Actions starts the runner within ~1 minute
-    GH->>JOB: run backfill_insights.py --batch-size N
-    JOB->>DB: get_active_backfill_job() or create_backfill_job() (first run)
-    JOB->>DB: get_next_backfill_batch(job_id, N) — resumes from (created_at, id) cursor
-    loop per insight in batch
-        JOB->>DB: get_episode() + get_transcript()
-        alt found
+    GH->>JOB: run retry_failed_episodes.py --limit N
+    JOB->>DB: get_episodes_for_retry(max_retries=10)
+    loop per (episode, source) pair, up to limit
+        JOB->>JOB: _process_episode() — reused from pipeline.py
+        alt every provider already exhausted this run
+            JOB->>JOB: return "deferred" — stop the loop, no further attempts this run
+        else transcript already saved
+            JOB->>DB: get_transcript() — reused, no re-fetch/re-Whisper
             JOB->>JOB: WaterfallLLMProvider(scope="pipeline").extract_insights()
-            JOB->>DB: save_insight() — overwrite in place, same id
-            JOB->>DB: advance_backfill_cursor(success=True)
-        else missing
-            JOB->>DB: advance_backfill_cursor(success=False, error_msg) → INSERT backfill_failures
+            alt success
+                JOB->>DB: save_insight() + mark_episode_done()
+                JOB->>DB: mark_episode_queue_resolved() — flips episode_queue.status to 'done'
+            else failure
+                JOB->>DB: increment_episode_retry(retry_after=+4h)
+            end
         end
     end
-    JOB->>DB: UPDATE backfill_jobs (counts, cursor, updated_at) — or complete_backfill_job() if batch was empty
-    DB->>RT: UPDATE/INSERT on backfill_jobs broadcast (migration 020)
-    RT-->>MGR: postgres_changes event
-    MGR->>BFAPI: GET /api/admin/backfill (silent refetch)
-    MGR->>B: progress bar updates live, no manual refresh needed
+    Note over B,FEAPI: no push channel for this list — refreshed via the<br/>manual "Refresh" button, same as the Runners section
 ```
 
 ---

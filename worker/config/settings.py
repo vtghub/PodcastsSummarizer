@@ -73,6 +73,12 @@ COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
 COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r")
 
 # ---------------------------------------------------------------------------
+# Cerebras (free tier — fast inference, generous per-minute request budget)
+# ---------------------------------------------------------------------------
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
+CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
+
+# ---------------------------------------------------------------------------
 # OpenRouter (free tier — hosts many ":free"-suffixed models under one key;
 # each model gets its own PROVIDER_SLOT, same idea as Groq's two models)
 # ---------------------------------------------------------------------------

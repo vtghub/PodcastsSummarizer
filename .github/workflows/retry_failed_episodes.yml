@@ -1,0 +1,62 @@
+name: Retry Failed Episodes
+# Dedicated recovery pass for episodes that failed during ingestion — mostly
+# LLM/chunk failures where every provider was exhausted for that run. Runs on
+# its own schedule (offset from daily_pipeline.yml's every-4-hours cadence)
+# so a fresh waterfall instance gets another shot once quota's likely back,
+# without waiting on daily_pipeline's own in-band retry (which reuses
+# whichever waterfall instance its run already built). See
+# worker/jobs/retry_failed_episodes.py and the admin Task Status page
+# (/admin/task-status) for live progress.
+
+on:
+  schedule:
+    - cron: "0 2,8,14,20 * * *"   # 4x/day, offset 2h from daily_pipeline.yml's 0 */4
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max failed episodes to retry this run"
+        required: false
+        default: "20"
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install system deps (ffmpeg for Whisper)
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Cache Whisper model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/whisper
+          key: whisper-tiny-${{ runner.os }}
+
+      - name: Retry failed episodes
+        env:
+          STORAGE_PROVIDER: supabase
+          LLM_PROVIDER: waterfall
+          TRANSCRIPTION_PROVIDER: local_whisper
+          WHISPER_MODEL: tiny
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          PYTHONUTF8: "1"
+        run: python -m worker.jobs.retry_failed_episodes --limit "${{ github.event.inputs.limit || '20' }}"

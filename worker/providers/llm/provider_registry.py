@@ -52,6 +52,11 @@ def _cohere():
     return CohereLLMProvider()
 
 
+def _cerebras():
+    from worker.providers.llm.cerebras_llm import CerebrasLLMProvider
+    return CerebrasLLMProvider()
+
+
 def _make_openrouter(model: str) -> Callable[[], object]:
     def _build():
         from worker.providers.llm.openrouter_llm import OpenRouterLLMProvider
@@ -81,6 +86,7 @@ PROVIDER_SLOTS: list[ProviderSlot] = [
     ProviderSlot("groq_70b", "Groq — Llama 3.3 70B", "GROQ_API_KEY", _groq_70b),
     ProviderSlot("mistral", "Mistral Small", "MISTRAL_API_KEY", _mistral),
     ProviderSlot("cohere", "Cohere Command R", "COHERE_API_KEY", _cohere),
+    ProviderSlot("cerebras", "Cerebras Llama 3.3 70B", "CEREBRAS_API_KEY", _cerebras),
     *[
         ProviderSlot(key, display_name, "OPENROUTER_API_KEY", _make_openrouter(model))
         for key, display_name, model in _OPENROUTER_MODELS

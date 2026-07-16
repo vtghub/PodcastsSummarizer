@@ -30,6 +30,14 @@ from worker.providers.source.youtube_source import YouTubeSourceProvider
 _FETCH_WORKERS = 8    # parallel RSS / YouTube metadata fetches
 _EPISODE_WORKERS = 4  # concurrent LLM + transcript workers
 _WHISPER_LOCK = threading.Lock()  # prevent simultaneous Whisper runs (CPU-bound)
+# Serializes LLM extraction across episode workers — transcript fetch/audio
+# download stay parallel (pure I/O), but only one episode is ever inside its
+# chunk map-reduce at a time. Without this, _EPISODE_WORKERS concurrent
+# episodes can burst enough requests at a shared provider to trip its
+# per-minute rate limit, which WaterfallLLM then treats as "dead for the rest
+# of the run" — cascading failures onto every other in-flight episode that
+# happened to be sharing that provider, not just the one that hit the limit.
+_LLM_LOCK = threading.Lock()
 
 
 def run_pipeline(
@@ -59,7 +67,7 @@ def run_pipeline(
     sources = storage.get_sources(enabled_only=True)
     print(f"[Pipeline] Running for {len(sources)} source(s) | since={since.date()}")
 
-    stats = {"processed": 0, "skipped": 0, "errors": 0, "insights": 0}
+    stats = {"processed": 0, "skipped": 0, "errors": 0, "insights": 0, "deferred": 0}
     stats_lock = threading.Lock()
     errors: list[str] = []
     errors_lock = threading.Lock()
@@ -362,16 +370,32 @@ def _process_episode(
         print(f"  {tag} duplicate of already-processed episode {dup_id[:8]} (URL changed) — skip")
         return "skipped", None
 
+    # Once every provider in this run has already failed once, every remaining
+    # episode is guaranteed to fail the same way — bail before doing any work
+    # (no transcript fetch, no audio download, no LLM call) instead of burning
+    # one of this episode's limited retry attempts on a call known to fail.
+    # This episode is left completely untouched, so it's picked up fresh
+    # (not penalized) whenever quota is next available.
+    if llm.all_providers_dead:
+        print(f"  {tag} skip — every LLM provider is already exhausted this run")
+        return "deferred", None
+
     storage.save_episode(episode)
 
-    transcript_text: str | None = None
-    transcript_source = ""
-    try:
-        transcript_text = provider.fetch_transcript_text(episode)
-        if transcript_text:
-            transcript_source = "text"
-    except Exception as e:
-        print(f"  {tag} [warn] text transcript failed: {e}")
+    # A previous attempt may have already saved a transcript and only failed
+    # at the LLM step — skip straight to extraction instead of re-fetching
+    # captions or re-downloading/re-transcribing audio for no reason.
+    cached_transcript = storage.get_transcript(episode.id)
+    transcript_text: str | None = cached_transcript.text if cached_transcript else None
+    transcript_source = "cached" if transcript_text else ""
+
+    if not transcript_text:
+        try:
+            transcript_text = provider.fetch_transcript_text(episode)
+            if transcript_text:
+                transcript_source = "text"
+        except Exception as e:
+            print(f"  {tag} [warn] text transcript failed: {e}")
 
     if not transcript_text:
         print(f"  {tag} downloading audio for Whisper…")
@@ -396,9 +420,12 @@ def _process_episode(
     if not transcript_text:
         return "errors", f"  {tag} [ERROR] no transcript available"
 
-    from worker.core.interfaces import Transcript
-    transcript = Transcript(episode_id=episode.id, text=transcript_text, language="en")
-    storage.save_transcript(transcript)
+    if cached_transcript and transcript_source == "cached":
+        transcript = cached_transcript
+    else:
+        from worker.core.interfaces import Transcript
+        transcript = Transcript(episode_id=episode.id, text=transcript_text, language="en")
+        storage.save_transcript(transcript)
     print(f"  {tag} transcript [{transcript_source}]: {len(transcript_text):,} chars")
 
     # Use the episode's release date so the insight appears on the day the podcast
@@ -409,15 +436,17 @@ def _process_episode(
         ep_date = episode.published_at.astimezone(timezone.utc).strftime("%Y-%m-%d")
 
     try:
-        insight = llm.extract_insights(episode, transcript, domain=source.domain)
+        with _LLM_LOCK:
+            insight = llm.extract_insights(episode, transcript, domain=source.domain)
         insight.date = ep_date
     except Exception as e:
         if _is_quota_error(e) and GROQ_API_KEY:
             print(f"  {tag} Gemini quota — falling back to Groq")
             try:
                 from worker.providers.llm.groq_llm import GroqLLMProvider
-                groq = GroqLLMProvider()
-                insight = groq.extract_insights(episode, transcript, domain=source.domain)
+                with _LLM_LOCK:
+                    groq = GroqLLMProvider()
+                    insight = groq.extract_insights(episode, transcript, domain=source.domain)
                 insight.date = ep_date
             except Exception as groq_e:
                 return "errors", f"  {tag} [ERROR] Groq fallback also failed: {groq_e}"
@@ -428,6 +457,7 @@ def _process_episode(
     if insight.title_en and insight.title_en != episode.title:
         storage.update_episode_title_en(episode.id, insight.title_en)
     storage.mark_episode_done(episode.id)
+    storage.mark_episode_queue_resolved(episode.id)
     print(f"  {tag} insights: {len(insight.key_points)} points, {len(insight.key_quotes)} quotes")
     return "insights", None
 

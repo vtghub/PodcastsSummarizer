@@ -43,6 +43,9 @@ def get_llm_provider() -> LLMProvider:
         case "cohere":
             from worker.providers.llm.cohere_llm import CohereLLMProvider
             return CohereLLMProvider()
+        case "cerebras":
+            from worker.providers.llm.cerebras_llm import CerebrasLLMProvider
+            return CerebrasLLMProvider()
         case "waterfall":
             from worker.providers.llm.waterfall_llm import WaterfallLLMProvider
             return WaterfallLLMProvider()

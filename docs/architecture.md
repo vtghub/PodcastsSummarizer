@@ -7,6 +7,7 @@ graph TB
         HCRON["🕐 hourly_digest.yml\nCron: every hour\nper-user digest fan-out\n+ workflow_dispatch\n(date, force, target_email)"]
         WCRON["📅 weekly_recommendations.yml\nCron: Sundays 10 AM UTC\nweekly recommendations email"]
         BCRON["♻️ backfill_insights.yml\nCron: daily 3:30 AM UTC\n+ workflow_dispatch (batch_size)\nresumable, spans many runs/days"]
+        RCRON["🔁 retry_failed_episodes.yml\nCron: 4×/day (2,8,14,20 UTC)\n+ workflow_dispatch (limit)\nfresh waterfall instance per run"]
     end
 
     subgraph PIPELINE["🐍 Python Worker Pipeline"]
@@ -15,11 +16,12 @@ graph TB
         TXT["Text Transcript\n(captions / subtitles)"]
         AUDIO["Download Audio"]
         WHISPER["Whisper STT\n(tiny model, local)\ndomain-aware initial_prompt"]
-        LLM["LLM Insight Extraction\nWaterfall: Gemini → Groq 8B/70B →\nMistral → Cohere → 4× OpenRouter\nchunked map-reduce for long transcripts\nsticky dead-provider fallback"]
+        LLM["LLM Insight Extraction\nWaterfall: Gemini → Groq 8B/70B →\nMistral → Cohere → Cerebras → 4× OpenRouter\nchunked map-reduce for long transcripts\nserialized per-episode (_LLM_LOCK);\nsticky dead-provider fallback;\ndefers (no retry penalty) once all dead"]
         FANOUT["Per-User Digest Fan-out\nuser_profiles × user_subscriptions"]
         EMAIL["Gmail SMTP\nPersonalized HTML email"]
         RECJOB["Weekly Recommendations Job\nLLM-ranked (scope=recommendations,\nheuristic fallback) + get_trending_sources"]
         BACKFILLJOB["Insight Backfill Job\nRe-extracts via waterfall (scope=pipeline)\nfrom saved transcript; resumable cursor;\none bounded batch per invocation"]
+        RETRYJOB["Retry Failed Episodes Job\nReuses _process_episode (transcript-cache\nskip + exhaustion short-circuit);\nbounded batch, stops early if exhausted again"]
     end
 
     subgraph STORE["🗄️ Supabase PostgreSQL"]
@@ -63,7 +65,7 @@ graph TB
         ONBOARD["onboarding/page.tsx\nDomain picker + subscribe wizard"]
         ADMINUSERS["admin/users/page.tsx\nAdmin-only — list/search users,\ngrant/revoke admin, reset onboarding,\ncascade-delete user"]
         ADMINLLM["admin/llm-providers/page.tsx\nAdmin-only — toggle/reorder waterfall\nper feature (Pipeline, Ask AI, Recommendations)"]
-        ADMINTASK["admin/task-status/page.tsx\nAdmin-only — GitHub Actions runners\n(run now/cancel, polled) +\ninsight backfill progress (Realtime)"]
+        ADMINTASK["admin/task-status/page.tsx\nAdmin-only — GitHub Actions runners\n(run now/cancel, polled) +\nFailed Episodes list (retry now)"]
         RECPAGE["recommendations/page.tsx\nOn-demand best-of-week insights\n+ trending podcasts, Refresh button"]
         REG["register/page.tsx"]
         LOGIN["login/page.tsx"]
@@ -89,7 +91,7 @@ graph TB
         ARASKEPISODE["/api/ask/episode\nGET ?id= episode meta (picker/deep link)\nPOST { episodeId, question } — answers from\nthat episode's saved transcript directly,\nno insight required; scope=ask_ai waterfall"]
         ARADMINUSERS["/api/admin/users\nGET list (admin only)\n/[id] PATCH is_admin|reset_onboarding\n/[id] DELETE — auth.admin.deleteUser cascade\n/[id]/subscriptions GET catalog+subs · POST/DELETE sourceId"]
         ARADMINLLM["/api/admin/llm-providers\nGET providers by scope (admin only)\nPATCH scope, provider_key, enabled?, priority?"]
-        ARADMINBACKFILL["/api/admin/backfill\nGET latest backfill job + failures\nPOST — workflow_dispatch one batch now"]
+        ARFAILEDEPS["/api/admin/failed-episodes\nGET episode_queue status='failed' rows\nPOST — workflow_dispatch retry now"]
         ARADMINWORKFLOWS["/api/admin/workflows\nGET every GH Actions workflow + latest run\nPOST { action: dispatch|cancel }"]
         ARRECOMMEND["/api/recommendations\nGET — on-demand LLM ranking (scope=recommendations)\n+ trending unsubscribed podcasts, authed"]
         ARREV["/api/revalidate\nPOST — bust public insight cache"]
@@ -109,6 +111,11 @@ graph TB
     BACKFILLJOB -.->|reads at run start, scope=pipeline| LLMCONFIG
     BACKFILLJOB --> BACKFILLJOBS
     BACKFILLJOB --> BACKFILLFAILS
+    RCRON --> RETRYJOB
+    RETRYJOB --> INSIGHTS
+    RETRYJOB --> TRANSCRIPTS
+    RETRYJOB -.->|fresh instance each run, scope=pipeline| LLMCONFIG
+    RETRYJOB --> EPQUEUE
     CRON --> SRC
     SRC --> FETCH
     FETCH --> TXT
@@ -216,14 +223,11 @@ graph TB
     ARRECOMMEND --> SUBS
     ARRECOMMEND -.->|reads per request, scope=recommendations, 5 JS-callable providers only| LLMCONFIG
 
-    ADMINTASK --> ARADMINBACKFILL
-    ARADMINBACKFILL --> BACKFILLJOBS
-    ARADMINBACKFILL --> BACKFILLFAILS
-    ARADMINBACKFILL -.->|workflow_dispatch| CI
+    ADMINTASK --> ARFAILEDEPS
+    ARFAILEDEPS --> EPQUEUE
+    ARFAILEDEPS -.->|workflow_dispatch retry_failed_episodes.yml| CI
     ADMINTASK --> ARADMINWORKFLOWS
     ARADMINWORKFLOWS -.->|list/dispatch/cancel via GitHub API| CI
-    BACKFILLJOBS -.->|Realtime broadcast, migration 020| RT
-    RT -.->|WebSocket push| ADMINTASK
 
     DPAGE -.->|double-click / toggle word on Insight Card| ARDICT
     ARDICT --> DICT
@@ -411,19 +415,21 @@ Providers are resolved from environment variables at runtime — no code changes
 | Env var | Options |
 |---|---|
 | `STORAGE_PROVIDER` | `sqlite` (dev) · `supabase` (prod) — controls content storage only; Supabase is always required for auth and engagement |
-| `LLM_PROVIDER` | `gemini` · `groq` · `mistral` · `cohere` · `ollama` · `waterfall` (chains every configured provider — see below) |
+| `LLM_PROVIDER` | `gemini` · `groq` · `mistral` · `cohere` · `cerebras` · `ollama` · `waterfall` (chains every configured provider — see below) |
 | `TRANSCRIPTION_PROVIDER` | `local_whisper` |
 | `EMAIL_PROVIDER` | `console` (dev) · `gmail_smtp` (prod) |
 
 ### LLM Waterfall (`LLM_PROVIDER=waterfall`)
 
-`worker/providers/llm/provider_registry.py` declares every provider *adapter* that exists in code (`PROVIDER_SLOTS`) — currently Gemini, Groq 8B, Groq 70B, Mistral, Cohere, and 4 OpenRouter free models. `build_enabled_slots(config)` resolves that list against:
+`worker/providers/llm/provider_registry.py` declares every provider *adapter* that exists in code (`PROVIDER_SLOTS`) — currently Gemini, Groq 8B, Groq 70B, Mistral, Cohere, Cerebras, and 4 OpenRouter free models (10 total). `build_enabled_slots(config)` resolves that list against:
 
 1. Whether the slot's env var (e.g. `OPENROUTER_API_KEY`) is actually set
 2. Admin-configured `enabled`/`priority` overrides in `llm_provider_config` (scope `pipeline`), editable at `/admin/llm-providers` without a deploy
 
-`WaterfallLLM` (`waterfall.py`) then tries each enabled slot in priority order per chunk. On failure or quota exhaustion it falls through to the next — and marks that provider "sticky dead" for the rest of the run, so later chunks skip straight past it instead of re-trying (and re-failing) it every time. Long transcripts are handled by `chunking.py`'s shared chunked map-reduce: split → per-chunk summarize → synthesize one structured insight.
+`WaterfallLLM` (`waterfall.py`) then tries each enabled slot in priority order per chunk. On failure or quota exhaustion it falls through to the next — and marks that provider "sticky dead" for the rest of the run, so later chunks skip straight past it instead of re-trying (and re-failing) it every time; `all_dead` flips true once every slot has failed. Long transcripts are handled by `chunking.py`'s shared chunked map-reduce: split → per-chunk summarize → synthesize one structured insight.
+
+The daily ingestion pipeline (`worker/jobs/pipeline.py`) serializes LLM extraction across its 4 concurrent episode workers (`_LLM_LOCK`) — transcript fetch/audio download stay parallel, but only one episode is ever inside its chunk map-reduce at a time, so a burst of concurrent requests can't trip a shared provider's per-minute rate limit and cascade "dead" onto unrelated episodes. Once `all_providers_dead` is true, `_process_episode()` returns a `"deferred"` status for every remaining episode without attempting any work and without counting against that episode's retry limit — it's picked up fresh whenever quota is next available, either by the next scheduled `daily_pipeline.yml` run or by `retry_failed_episodes.yml` (a dedicated recovery job on its own 4×/day schedule, building a fresh waterfall instance each time so a run that previously found every provider dead gets a real second chance rather than reusing exhausted state).
 
 The dashboard's Ask AI chat (`/api/ask`) has its own independent 6-slot waterfall (adds Together AI, omits the 4 OpenRouter models), configured the same way but under scope `ask_ai` — see [request-workflow.md](request-workflow.md) for its sequence diagram. `/api/ask/episode` (answering a question from one episode's saved transcript directly, rather than FTS-retrieved insight content) reuses this exact same `ask_ai`-scoped waterfall via `lib/llm-waterfall.ts`.
 
-A third scope, `recommendations`, ranks the best insights from the past week (replacing a pure "sort by richness" heuristic with an actual LLM call). It has two call sites reading the *same* config rows but with different provider reach: the worker's weekly job (`WaterfallLLMProvider(scope="recommendations")`, all 9 pipeline-style adapters incl. OpenRouter) and the dashboard's on-demand `/api/recommendations` refresh (`lib/llm-waterfall.ts`'s `runWaterfall("recommendations", prompt)`, limited to the 5 JS-callable providers — OpenRouter slots enabled here only take effect for the pre-computed weekly email). Both fall back to the heuristic ranking if no provider is configured/available.
+A third scope, `recommendations`, ranks the best insights from the past week (replacing a pure "sort by richness" heuristic with an actual LLM call). It has two call sites reading the *same* config rows but with different provider reach: the worker's weekly job (`WaterfallLLMProvider(scope="recommendations")`, all 10 pipeline-style adapters incl. OpenRouter and Cerebras) and the dashboard's on-demand `/api/recommendations` refresh (`lib/llm-waterfall.ts`'s `runWaterfall("recommendations", prompt)`, limited to the 5 JS-callable providers — OpenRouter slots enabled here only take effect for the pre-computed weekly email). Both fall back to the heuristic ranking if no provider is configured/available.

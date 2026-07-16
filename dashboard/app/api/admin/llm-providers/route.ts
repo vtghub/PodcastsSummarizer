@@ -37,6 +37,7 @@ const PIPELINE_SLOTS = [
   { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: false },
   { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: false },
   { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: false },
+  { key: "cerebras", display_name: "Cerebras Llama 3.3 70B", env_var: "CEREBRAS_API_KEY", runs_here: false },
   { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
   { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
   { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
@@ -44,10 +45,13 @@ const PIPELINE_SLOTS = [
 ];
 
 // The on-demand /api/recommendations refresh runs in the dashboard and can
-// call the same 5 JS-callable providers as ask_ai — but not OpenRouter.
+// call the same 5 JS-callable providers as ask_ai — but not OpenRouter or
+// Cerebras (Python-only adapters, no lib/llm-waterfall.ts implementation).
+// Enabling either here still works for the pre-computed weekly email, which
+// runs the Python waterfall directly — just not for the live on-demand refresh.
 const RECOMMENDATIONS_SLOTS = PIPELINE_SLOTS.map((slot) => ({
   ...slot,
-  runs_here: !slot.key.startsWith("openrouter_"),
+  runs_here: !slot.key.startsWith("openrouter_") && slot.key !== "cerebras",
 }));
 
 const PROVIDER_SLOTS: Record<Scope, { key: string; display_name: string; env_var: string; runs_here: boolean }[]> = {
