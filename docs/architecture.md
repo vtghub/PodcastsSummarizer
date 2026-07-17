@@ -21,7 +21,7 @@ graph TB
         EMAIL["Gmail SMTP\nPersonalized HTML email"]
         RECJOB["Weekly Recommendations Job\nLLM-ranked (scope=recommendations,\nheuristic fallback) + get_trending_sources"]
         BACKFILLJOB["Insight Backfill Job\nRe-extracts via waterfall (scope=pipeline)\nfrom saved transcript; resumable cursor;\none bounded batch per invocation"]
-        RETRYJOB["Retry Failed Episodes Job\nReuses _process_episode (transcript-cache\nskip + exhaustion short-circuit);\nbounded batch, stops early if exhausted again"]
+        RETRYJOB["Retry Failed Episodes Job\nReuses _process_episode (transcript-cache\nskip + exhaustion short-circuit);\nbounded batch, stops early if exhausted again;\nget_episodes_for_retry() atomically claims rows\n(bumps retry_after) so a concurrent caller can't\ndouble-process the same episode"]
     end
 
     subgraph STORE["🗄️ Supabase PostgreSQL"]
@@ -314,7 +314,7 @@ erDiagram
         text status
         text error_msg
         int retry_count
-        timestamptz retry_after
+        timestamptz retry_after "backoff delay AND claim marker — see get_episodes_for_retry()"
         timestamptz updated_at
     }
     insight_views {
