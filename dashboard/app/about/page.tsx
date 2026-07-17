@@ -122,6 +122,37 @@ export default function AboutPage() {
         </div>
       </div>
 
+      {/* Footer credit */}
+      <div className="mb-10 sm:mb-16 flex justify-center">
+        <div
+          className="inline-flex items-center gap-3 px-4 py-2 rounded-full border text-xs sm:text-sm"
+          style={{ color: "var(--txt-3)", borderColor: "var(--bdr)", background: "var(--bg-card)" }}
+        >
+          <span>Venu Talluri</span>
+          <span aria-hidden style={{ color: "var(--bdr)" }}>·</span>
+          <a
+            href="https://www.linkedin.com/in/venutalluri/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition-opacity hover:opacity-70"
+            style={{ color: "#0A66C2" }}
+          >
+            <LinkedInIcon />
+            <span className="sr-only">Connect on LinkedIn</span>
+          </a>
+          <a
+            href="https://github.com/vtghub"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition-opacity hover:opacity-70"
+            style={{ color: "var(--txt-1)" }}
+          >
+            <GitHubIcon />
+            <span className="sr-only">View on GitHub</span>
+          </a>
+        </div>
+      </div>
+
       {/* Features */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4 mb-8 sm:mb-14">
         {features.map(({ icon: Icon, title, body }, i) => {
@@ -210,37 +241,6 @@ export default function AboutPage() {
           >
             Sign in
           </Link>
-        </div>
-      </div>
-
-      {/* Footer credit */}
-      <div className="mt-8 sm:mt-12 flex justify-center">
-        <div
-          className="inline-flex items-center gap-3 px-4 py-2 rounded-full border text-xs sm:text-sm"
-          style={{ color: "var(--txt-3)", borderColor: "var(--bdr)", background: "var(--bg-card)" }}
-        >
-          <span>Venu Talluri</span>
-          <span aria-hidden style={{ color: "var(--bdr)" }}>·</span>
-          <a
-            href="https://www.linkedin.com/in/venutalluri/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="transition-opacity hover:opacity-70"
-            style={{ color: "#0A66C2" }}
-          >
-            <LinkedInIcon />
-            <span className="sr-only">Connect on LinkedIn</span>
-          </a>
-          <a
-            href="https://github.com/vtghub"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="transition-opacity hover:opacity-70"
-            style={{ color: "var(--txt-1)" }}
-          >
-            <GitHubIcon />
-            <span className="sr-only">View on GitHub</span>
-          </a>
         </div>
       </div>
     </main>
