@@ -27,62 +27,62 @@ const features = [
   {
     icon: Mic2,
     title: "Daily Digest Email",
-    body: "Personalized key takeaways from only the podcasts you follow — no fluff, delivered every morning.",
+    body: "Key takeaways from only the podcasts you follow, delivered every morning.",
   },
   {
     icon: MessageCircle,
     title: "Ask Your Podcasts (AI)",
-    body: "Ask any question in plain language and the AI searches your subscribed episodes to answer it — with citations linking back to the exact insight. Personalized suggested questions get you started, and you can also ask about one specific episode's transcript directly.",
+    body: "Ask anything in plain language — the AI answers with citations back to the exact insight.",
   },
   {
     icon: BookOpen,
     title: "Dictionary Lookup",
-    body: "Double-click any word on an insight card — or tap the book icon to make every word clickable — for an instant definition popover. Backed by the Princeton WordNet database, no AI call needed.",
+    body: "Double-click any word for an instant definition — WordNet-powered, no AI call needed.",
   },
   {
     icon: Search,
     title: "Instant Search",
-    body: "Search by keyword, guest name, podcast channel, or episode title and jump straight to the card.",
+    body: "Search by keyword, guest, podcast, or episode title and jump straight to the card.",
   },
   {
     icon: Compass,
     title: "For You",
-    body: "On-demand best-of-week picks and trending podcast suggestions, ranked by AI — refresh anytime, or get it Sunday mornings in your inbox.",
+    body: "AI-ranked best-of-week picks and trending podcasts, refreshed on demand or every Sunday.",
   },
   {
     icon: BarChart3,
     title: "Your Analytics",
-    body: "See your reading habits at a glance — insights viewed, domains explored, and your most-read cards over the last 30 days.",
+    body: "Views, domains explored, and your most-read cards over the last 30 days, at a glance.",
   },
   {
     icon: Bookmark,
     title: "Bookmark & Revisit",
-    body: "Star any insight to save it. Your bookmarks live on a dedicated page, ready whenever you need them.",
+    body: "Star any insight to save it to a dedicated page, ready whenever you need it.",
   },
   {
     icon: CalendarDays,
     title: "Browse by Date & Topic",
-    body: "Insights organized by date and domain — Technology, Business, Health, Finance, and more.",
+    body: "Insights organized by date and domain — Tech, Business, Health, Finance, and more.",
   },
   {
     icon: Bell,
     title: "Never Miss an Episode",
-    body: "Fresh episodes picked up every 4 hours. New cards appear on your dashboard in real time.",
+    body: "New episodes picked up every 4 hours, appearing on your dashboard in real time.",
   },
   {
     icon: Mail,
     title: "On-Demand Digest",
-    body: 'Hit "Send Digest Now" from your profile and your digest lands in your inbox instantly.',
+    body: 'One click on "Send Digest Now" and it lands in your inbox instantly.',
   },
   {
     icon: Download,
     title: "Export Your Insights",
-    body: "Download a day's insights as a PDF, Excel spreadsheet, or Word document — useful for sharing, archiving, or building a personal knowledge base.",
+    body: "Download a day's insights as PDF, Excel, or Word — great for sharing or archiving.",
   },
   {
     icon: Volume2,
     title: "Listen to Insights",
-    body: "Enable Read Aloud and the dashboard reads the cards to you — hands-free.",
+    body: "Enable Read Aloud and the dashboard reads your cards to you, hands-free.",
   },
 ];
 
@@ -103,9 +103,9 @@ const aiModels = [
 
 export default function AboutPage() {
   return (
-    <main className="max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-20">
+    <main className="max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
       {/* Hero */}
-      <div className="relative mb-10 sm:mb-16 text-center">
+      <div className="relative mb-8 sm:mb-10 text-center">
         <div
           aria-hidden
           className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/4 w-64 h-64 sm:w-80 sm:h-80 rounded-full pointer-events-none"
@@ -123,7 +123,7 @@ export default function AboutPage() {
       </div>
 
       {/* Footer credit */}
-      <div className="mb-10 sm:mb-16 flex justify-center">
+      <div className="mb-10 sm:mb-14 flex justify-center">
         <div
           className="inline-flex items-center gap-3.5 px-5 py-2.5 rounded-full border text-sm sm:text-base"
           style={{ color: "var(--txt-3)", borderColor: "var(--bdr)", background: "var(--bg-card)" }}
@@ -154,23 +154,23 @@ export default function AboutPage() {
       </div>
 
       {/* Features */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4 mb-8 sm:mb-14">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3.5 mb-8 sm:mb-12">
         {features.map(({ icon: Icon, title, body }, i) => {
           const dk = DOMAIN_KEYS[i % DOMAIN_KEYS.length];
           return (
             <div
               key={title}
-              className="flex items-start gap-3 px-3.5 py-3 sm:p-5 rounded-xl border card-lift"
+              className="flex items-start gap-3 px-3.5 py-3 sm:p-4 rounded-xl border card-lift"
               style={{ background: "var(--bg-card)", borderColor: "var(--bdr)" }}
             >
               <div
-                className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center mt-0.5"
+                className="flex-shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center mt-0.5"
                 style={{ background: `var(--d-${dk}-bg)` }}
               >
                 <Icon className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: `var(--d-${dk}-txt)` }} />
               </div>
               <div className="min-w-0">
-                <h2 className="font-semibold text-sm sm:text-base leading-snug mb-0.5" style={{ color: "var(--txt-1)" }}>
+                <h2 className="font-semibold text-sm leading-snug mb-0.5" style={{ color: "var(--txt-1)" }}>
                   {title}
                 </h2>
                 <p className="text-xs sm:text-sm leading-relaxed" style={{ color: "var(--txt-3)" }}>
@@ -184,11 +184,11 @@ export default function AboutPage() {
 
       {/* Powered by Free AI Models */}
       <div
-        className="flex items-start gap-3 px-3.5 py-3 sm:p-6 rounded-xl border mb-8 sm:mb-14"
+        className="flex items-start gap-3 px-3.5 py-3 sm:p-5 rounded-xl border mb-8 sm:mb-12"
         style={{ background: "var(--bg-card)", borderColor: "var(--bdr)" }}
       >
         <div
-          className="flex-shrink-0 w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center mt-0.5"
+          className="flex-shrink-0 w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center mt-0.5"
           style={{ background: "var(--acc-bg, rgba(194,65,12,0.08))" }}
         >
           <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: "var(--acc)" }} />
@@ -198,11 +198,9 @@ export default function AboutPage() {
             Powered by Free AI Models
           </h2>
           <p className="text-xs sm:text-sm leading-relaxed mb-2.5" style={{ color: "var(--txt-3)" }}>
-            Insight extraction, weekly recommendations, and Ask AI — including answering questions about one
-            specific episode's transcript — each run on a free-tier model waterfall: if one provider is out of
-            quota, the next takes over automatically, with no interruption and no paid subscriptions behind the
-            scenes. Dictionary Lookup is the one exception — word definitions are retrieved directly from a stored
-            WordNet database, so no AI model or quota is involved at all.
+            Every AI feature runs on a free-tier model waterfall — if one provider's out of quota, the next
+            takes over automatically, no paid subscriptions involved. Dictionary Lookup is the exception:
+            pure WordNet retrieval, no AI call at all.
           </p>
           <div className="flex flex-wrap gap-1.5">
             {aiModels.map((m) => (
