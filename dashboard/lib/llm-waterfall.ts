@@ -91,12 +91,19 @@ export async function callTogether(apiKey: string, prompt: string): Promise<LLMR
   return { text: data?.choices?.[0]?.message?.content ?? "" };
 }
 
+// Cerebras's free-tier catalog changes over time (unlike the other fixed
+// model strings here) — the Python worker discovers it live at request time
+// (provider_registry.py's _discover_cerebras_slots), but doing the same for
+// every /api/ask request here would add real latency/cost to each question,
+// so this stays a fixed model instead. gpt-oss-120b is Cerebras's
+// "Production" tier as of when this was last checked — if Cerebras retires
+// it, update this string (matches the worker's _CEREBRAS_FALLBACK_MODELS).
 export async function callCerebras(apiKey: string, prompt: string): Promise<LLMResult> {
   const res = await fetch("https://api.cerebras.ai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: "llama-3.3-70b",
+      model: "gpt-oss-120b",
       messages: [{ role: "user", content: prompt }],
       max_tokens: 512,
       temperature: 0.3,
@@ -217,7 +224,7 @@ export async function runWaterfall(scope: string, prompt: string): Promise<{ tex
     { provider_key: "mistral",  name: "mistral-small",             hasKey: !!mistralKey,  fn: () => callMistral(mistralKey, prompt) },
     { provider_key: "together", name: "together/llama-3.1-8b",     hasKey: !!togetherKey, fn: () => callTogether(togetherKey, prompt) },
     { provider_key: "cohere",   name: "cohere/command-r",          hasKey: !!cohereKey,   fn: () => callCohere(cohereKey, prompt) },
-    { provider_key: "cerebras", name: "cerebras/llama-3.3-70b",    hasKey: !!cerebrasKey, fn: () => callCerebras(cerebrasKey, prompt) },
+    { provider_key: "cerebras", name: "cerebras/gpt-oss-120b",     hasKey: !!cerebrasKey, fn: () => callCerebras(cerebrasKey, prompt) },
     ...OPENROUTER_MODELS.map((m) => ({
       provider_key: m.key,
       name: m.name,

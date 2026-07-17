@@ -50,6 +50,7 @@ jobs:
           DIGEST_FORCE: ${{ github.event.inputs.force || 'false' }}
           DIGEST_TARGET_EMAIL: ${{ github.event.inputs.target_email || '' }}
           PYTHONUTF8: "1"
+          PYTHONUNBUFFERED: "1"
         run: |
           python - <<'EOF'
           import sys, os

@@ -37,7 +37,17 @@ const PIPELINE_SLOTS = [
   { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: false },
   { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY", runs_here: false },
   { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: false },
-  { key: "cerebras", display_name: "Cerebras Llama 3.3 70B", env_var: "CEREBRAS_API_KEY", runs_here: false },
+  // Cerebras's free-tier catalog is live-discovered by the worker at
+  // waterfall-build time (provider_registry.py's _discover_cerebras_slots),
+  // not hardcoded like the others — these 3 are the fallback list used
+  // when discovery can't run, shown here for admin visibility/toggling.
+  // The actual live set for a given run may differ if Cerebras has added
+  // or removed models since this was last updated; new models still work
+  // automatically, they just won't have a row here to toggle individually
+  // until this list is updated to match.
+  { key: "cerebras_gpt_oss_120b", display_name: "Gpt Oss 120B (Cerebras)", env_var: "CEREBRAS_API_KEY", runs_here: false },
+  { key: "cerebras_gemma_3_31b", display_name: "Gemma 3 31B (Cerebras)", env_var: "CEREBRAS_API_KEY", runs_here: false },
+  { key: "cerebras_zai_glm_4_7", display_name: "Zai Glm 4.7 (Cerebras)", env_var: "CEREBRAS_API_KEY", runs_here: false },
   { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
   { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
   { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },

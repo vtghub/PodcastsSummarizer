@@ -76,7 +76,7 @@ COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r")
 # Cerebras (free tier — fast inference, generous per-minute request budget)
 # ---------------------------------------------------------------------------
 CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
-CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
+CEREBRAS_MODEL = os.getenv("CEREBRAS_MODEL", "gpt-oss-120b")
 
 # ---------------------------------------------------------------------------
 # Together AI (free tier)

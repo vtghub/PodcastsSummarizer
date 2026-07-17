@@ -1166,11 +1166,22 @@ class TestProviderRegistry:
             monkeypatch.delenv(slot.env_var, raising=False)
         assert build_enabled_slots({}) == []
 
+    # Cerebras's slots are live-discovered (see TestCerebrasModelDiscovery
+    # below) — list_available_models() is patched to raise in every test
+    # here so build_enabled_slots() deterministically falls back to
+    # _CEREBRAS_FALLBACK_MODELS (matching PROVIDER_SLOTS' static snapshot)
+    # instead of making a real network call to Cerebras during a test run.
+    _no_cerebras_discovery = patch(
+        "worker.providers.llm.cerebras_llm.list_available_models",
+        side_effect=RuntimeError("no network in tests"),
+    )
+
     def test_default_order_matches_declared_list_when_env_vars_present(self, monkeypatch):
         from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
         for slot in PROVIDER_SLOTS:
             monkeypatch.setenv(slot.env_var, "fake-key")
-        slots = build_enabled_slots({})
+        with self._no_cerebras_discovery:
+            slots = build_enabled_slots({})
         assert [s.key for s in slots] == [s.key for s in PROVIDER_SLOTS]
 
     def test_config_can_disable_a_slot(self, monkeypatch):
@@ -1178,7 +1189,8 @@ class TestProviderRegistry:
         for slot in PROVIDER_SLOTS:
             monkeypatch.setenv(slot.env_var, "fake-key")
         config = {"gemini": {"enabled": False, "priority": 0}}
-        slots = build_enabled_slots(config)
+        with self._no_cerebras_discovery:
+            slots = build_enabled_slots(config)
         assert "gemini" not in [s.key for s in slots]
         assert len(slots) == len(PROVIDER_SLOTS) - 1
 
@@ -1188,7 +1200,8 @@ class TestProviderRegistry:
             monkeypatch.setenv(slot.env_var, "fake-key")
         # Push cohere to the very front
         config = {"cohere": {"enabled": True, "priority": -1}}
-        slots = build_enabled_slots(config)
+        with self._no_cerebras_discovery:
+            slots = build_enabled_slots(config)
         assert slots[0].key == "cohere"
 
     def test_disabled_slot_without_key_is_still_excluded(self, monkeypatch):
@@ -1196,5 +1209,64 @@ class TestProviderRegistry:
         from worker.providers.llm.provider_registry import build_enabled_slots
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         config = {"gemini": {"enabled": True, "priority": 0}}
-        slots = build_enabled_slots(config)
+        with self._no_cerebras_discovery:
+            slots = build_enabled_slots(config)
         assert "gemini" not in [s.key for s in slots]
+
+
+class TestCerebrasModelDiscovery:
+    """provider_registry.py's live Cerebras catalog discovery — new models
+    show up as new waterfall slots automatically; failures fall back to a
+    small hardcoded list so a Cerebras outage can't break slot-building."""
+
+    def test_discovers_live_models_as_slots(self, monkeypatch):
+        from worker.providers.llm import provider_registry
+
+        monkeypatch.setenv("CEREBRAS_API_KEY", "fake-key")
+        with patch(
+            "worker.providers.llm.cerebras_llm.list_available_models",
+            return_value=["gpt-oss-120b", "some-new-model"],
+        ):
+            slots = provider_registry._discover_cerebras_slots()
+
+        assert [s.key for s in slots] == ["cerebras_gpt_oss_120b", "cerebras_some_new_model"]
+        assert all(s.env_var == "CEREBRAS_API_KEY" for s in slots)
+
+    def test_falls_back_when_discovery_fails(self, monkeypatch):
+        from worker.providers.llm import provider_registry
+
+        monkeypatch.setenv("CEREBRAS_API_KEY", "fake-key")
+        with patch(
+            "worker.providers.llm.cerebras_llm.list_available_models",
+            side_effect=RuntimeError("network error"),
+        ):
+            slots = provider_registry._discover_cerebras_slots()
+
+        assert [s.key for s in slots] == [key for key, _, _ in provider_registry._CEREBRAS_FALLBACK_MODELS]
+
+    def test_falls_back_when_key_not_set(self, monkeypatch):
+        from worker.providers.llm import provider_registry
+
+        monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+        slots = provider_registry._discover_cerebras_slots()
+        assert [s.key for s in slots] == [key for key, _, _ in provider_registry._CEREBRAS_FALLBACK_MODELS]
+
+    def test_discovered_slots_build_working_providers(self, monkeypatch):
+        # Each discovered slot's build() must actually produce a usable
+        # CerebrasLLMProvider bound to that specific model — not all
+        # pointing at the same one via a closure-capture bug.
+        from worker.providers.llm import provider_registry
+
+        monkeypatch.setenv("CEREBRAS_API_KEY", "fake-key")
+        # cerebras_llm.py imports CEREBRAS_API_KEY as a plain module-level
+        # constant (same pattern as every other provider), captured once at
+        # first import — setenv() alone doesn't reach it retroactively.
+        monkeypatch.setattr("worker.providers.llm.cerebras_llm.CEREBRAS_API_KEY", "fake-key")
+        with patch(
+            "worker.providers.llm.cerebras_llm.list_available_models",
+            return_value=["model-a", "model-b"],
+        ):
+            slots = provider_registry._discover_cerebras_slots()
+
+        providers = [s.build() for s in slots]
+        assert [p._model for p in providers] == ["model-a", "model-b"]
