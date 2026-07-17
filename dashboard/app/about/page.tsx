@@ -128,7 +128,7 @@ export default function AboutPage() {
           className="inline-flex items-center gap-3.5 px-5 py-2.5 rounded-full border text-sm sm:text-base"
           style={{ color: "var(--txt-3)", borderColor: "var(--bdr)", background: "var(--bg-card)" }}
         >
-          <span>Venu Talluri</span>
+          <span className="font-semibold" style={{ color: "var(--txt-1)" }}>Venu Talluri</span>
           <span aria-hidden style={{ color: "var(--bdr)" }}>·</span>
           <a
             href="https://www.linkedin.com/in/venutalluri/"
