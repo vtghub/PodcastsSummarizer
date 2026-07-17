@@ -281,8 +281,19 @@ class SupabaseStorageProvider(StorageProvider):
     def get_episodes_for_retry(self, max_retries: int = 3) -> list[tuple]:
         with self._conn() as conn:
             with conn.cursor() as cur:
+                # episodes and sources both have `id` and `url` columns —
+                # selecting e.*, s.* together silently collides on those
+                # (whichever comes last in the row wins), which previously
+                # made every episode built from this query use the SOURCE's
+                # id/url instead of its own, and left "episode_id" undefined
+                # entirely (neither table actually has a column by that
+                # name — only episode_queue does, and it's never selected).
+                # Alias the episode-side columns explicitly to avoid this.
                 cur.execute("""
-                    SELECT e.*, s.*,
+                    SELECT e.id AS episode_id, e.source_id AS episode_source_id,
+                           e.title, e.url AS episode_url, e.published_at,
+                           e.duration_seconds, e.description,
+                           s.*,
                            eq.retry_count, eq.error_msg AS eq_error_msg
                     FROM episode_queue eq
                     JOIN episodes e ON e.id = eq.episode_id
@@ -297,8 +308,8 @@ class SupabaseStorageProvider(StorageProvider):
         for r in rows:
             from worker.core.interfaces import Episode as _Ep
             ep = _Ep(
-                id=r["episode_id"], source_id=r["source_id"],
-                title=r["title"] or "(Untitled)", url=r["url"] or "",
+                id=r["episode_id"], source_id=r["episode_source_id"],
+                title=r["title"] or "(Untitled)", url=r["episode_url"] or "",
                 published_at=r["published_at"] or datetime.now(timezone.utc),
                 duration_seconds=r.get("duration_seconds") or 0,
                 description=r.get("description") or "",
