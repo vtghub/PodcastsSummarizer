@@ -60,4 +60,5 @@ jobs:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
           PYTHONUTF8: "1"
+          PYTHONUNBUFFERED: "1"
         run: python -m worker.jobs.retry_failed_episodes --limit "${{ github.event.inputs.limit || '20' }}"
