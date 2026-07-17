@@ -1028,14 +1028,14 @@ sequenceDiagram
             DB-->>API: config rows (or empty — falls back to hardcoded default order)
             API->>API: filter to steps with an API key present, sort by config priority
 
-            Note over API,LLM1: 6-model waterfall (admin-editable order) — try each until one succeeds
+            Note over API,LLM1: 11-model waterfall (admin-editable order) — try each until one succeeds
             API->>LLM1: POST generateContent (Gemini 2.0 Flash)
             alt Gemini quota exceeded (429 / RESOURCE_EXHAUSTED)
                 API->>LLM2: POST /openai/v1/chat (Groq llama-3.1-8b-instant)
                 alt Groq 8B quota exceeded
                     API->>LLM2: POST /openai/v1/chat (Groq llama-3.3-70b-versatile)
                     alt Groq 70B quota exceeded
-                        API->>LLM3: POST Mistral / Together / Cohere (first key available)
+                        API->>LLM3: POST Mistral / Together / Cohere / Cerebras /<br/>4× OpenRouter (first key + enabled slot available, in priority order)
                     end
                 end
             end
@@ -1227,7 +1227,7 @@ sequenceDiagram
             API->>WF: runWaterfall("recommendations", prompt)
             WF->>DB: SELECT provider_key, enabled, priority FROM llm_provider_config WHERE scope='recommendations'
             DB-->>WF: config (or empty — falls back to default order)
-            WF->>WF: filter to the 5 JS-callable providers with a key present, sorted by priority
+            WF->>WF: filter to the 11 JS-callable providers with a key present, sorted by priority
             Note over WF: try each until one succeeds — same pattern as /api/ask
             WF-->>API: { text, model } or throws if all exhausted
 

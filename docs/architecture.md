@@ -86,7 +86,7 @@ graph TB
         ARENG["/api/insights/[id]/engagement\nGET ?view=1 · /unread DELETE\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
         AREXP["/api/insights/export\nGET ?format=excel|word&date=\nauthed — download insights\n(PDF generated client-side via jsPDF)"]
         ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
-        ARASK["/api/ask\nPOST — LLM Q&A\nnamed-podcast lookup + FTS context\n6-model waterfall: Gemini→Groq 8B→Groq 70B→Mistral→Together→Cohere\norder/enabled from llm_provider_config"]
+        ARASK["/api/ask\nPOST — LLM Q&A\nnamed-podcast lookup + FTS context\n11-model waterfall: Gemini→Groq 8B→Groq 70B→Mistral→Together→\nCohere→Cerebras→4× OpenRouter\norder/enabled from llm_provider_config"]
         ARASKSUGGEST["/api/ask/suggestions\nGET — personalized suggested questions\nfrom subscriptions + last-7-days insights\n(templated, no LLM call)"]
         ARASKEPISODE["/api/ask/episode\nGET ?id= episode meta (picker/deep link)\nPOST { episodeId, question } — answers from\nthat episode's saved transcript directly,\nno insight required; scope=ask_ai waterfall"]
         ARADMINUSERS["/api/admin/users\nGET list (admin only)\n/[id] PATCH is_admin|reset_onboarding\n/[id] DELETE — auth.admin.deleteUser cascade\n/[id]/subscriptions GET catalog+subs · POST/DELETE sourceId"]
@@ -221,7 +221,7 @@ graph TB
     ARRECOMMEND --> INSIGHTS
     ARRECOMMEND --> SOURCES
     ARRECOMMEND --> SUBS
-    ARRECOMMEND -.->|reads per request, scope=recommendations, 5 JS-callable providers only| LLMCONFIG
+    ARRECOMMEND -.->|reads per request, scope=recommendations, same 11 JS-callable providers as ask_ai| LLMCONFIG
 
     ADMINTASK --> ARFAILEDEPS
     ARFAILEDEPS --> EPQUEUE
@@ -432,4 +432,4 @@ The daily ingestion pipeline (`worker/jobs/pipeline.py`) serializes LLM extracti
 
 The dashboard's Ask AI chat (`/api/ask`) has its own independent 6-slot waterfall (adds Together AI, omits the 4 OpenRouter models), configured the same way but under scope `ask_ai` — see [request-workflow.md](request-workflow.md) for its sequence diagram. `/api/ask/episode` (answering a question from one episode's saved transcript directly, rather than FTS-retrieved insight content) reuses this exact same `ask_ai`-scoped waterfall via `lib/llm-waterfall.ts`.
 
-A third scope, `recommendations`, ranks the best insights from the past week (replacing a pure "sort by richness" heuristic with an actual LLM call). It has two call sites reading the *same* config rows but with different provider reach: the worker's weekly job (`WaterfallLLMProvider(scope="recommendations")`, all 10 pipeline-style adapters incl. OpenRouter and Cerebras) and the dashboard's on-demand `/api/recommendations` refresh (`lib/llm-waterfall.ts`'s `runWaterfall("recommendations", prompt)`, limited to the 5 JS-callable providers — OpenRouter slots enabled here only take effect for the pre-computed weekly email). Both fall back to the heuristic ranking if no provider is configured/available.
+A third scope, `recommendations`, ranks the best insights from the past week (replacing a pure "sort by richness" heuristic with an actual LLM call). It has two call sites reading the *same* config rows: the worker's weekly job (`WaterfallLLMProvider(scope="recommendations")`, all 10 pipeline-style adapters incl. OpenRouter and Cerebras) and the dashboard's on-demand `/api/recommendations` refresh (`lib/llm-waterfall.ts`'s `runWaterfall("recommendations", prompt)` — the exact same function `ask_ai` uses, just a different scope name for config lookup, so it now has the same 11-provider reach: Gemini, Groq 8B/70B, Mistral, Together, Cohere, Cerebras, and 4× OpenRouter). Both fall back to the heuristic ranking if no provider is configured/available.
