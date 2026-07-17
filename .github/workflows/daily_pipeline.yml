@@ -59,13 +59,18 @@ jobs:
       - name: Run pipeline
         env:
           STORAGE_PROVIDER: supabase
-          LLM_PROVIDER: ${{ secrets.GROQ_API_KEY != '' && 'groq' || 'gemini' }}
+          LLM_PROVIDER: waterfall
           TRANSCRIPTION_PROVIDER: local_whisper
           EMAIL_PROVIDER: gmail_smtp
           WHISPER_MODEL: tiny
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           NEXT_APP_URL: ${{ secrets.NEXT_APP_URL }}
@@ -99,7 +104,7 @@ jobs:
               from worker.jobs.pipeline import run_pipeline
               since_days = int(os.environ.get("SINCE_DAYS", "1"))
               since = datetime.now(timezone.utc) - timedelta(days=since_days)
-              print(f"Running pipeline | since={since.date()} | storage=supabase | llm=gemini")
+              print(f"Running pipeline | since={since.date()} | storage=supabase | llm=waterfall")
               force_email = os.environ.get("FORCE_EMAIL", "false").lower() == "true"
               stats = run_pipeline(since=since, send_email=False, force_email=force_email)
               print(f"Done: {stats}")

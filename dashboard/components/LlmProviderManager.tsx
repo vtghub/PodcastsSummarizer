@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, CheckCircle2, XCircle, Workflow, MessageCircleQuestion, Sparkles, HelpCircle } from "lucide-react";
+import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, ChevronRight, CheckCircle2, XCircle, Workflow, MessageCircleQuestion, Sparkles, HelpCircle } from "lucide-react";
 
 interface Provider {
   key: string;
@@ -41,8 +41,7 @@ const SECTIONS: { scope: Scope; title: string; icon: typeof Workflow; descriptio
     description:
       "Weekly best-of-week insight ranking — used by both the Sunday recommendations email (worker, " +
       "picks up changes on its next run) and the on-demand “Refresh” button on /recommendations " +
-      "(dashboard, immediate). The dashboard's on-demand refresh can only call Gemini, Groq, Mistral, " +
-      "Together, and Cohere — OpenRouter providers enabled here apply to the weekly email only.",
+      "(dashboard, immediate). Both call the same 11-provider waterfall as Ask AI.",
   },
 ];
 
@@ -51,6 +50,12 @@ export default function LlmProviderManager() {
   const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<Scope, boolean>>({
+    pipeline: false, ask_ai: false, recommendations: false,
+  });
+  function toggleCollapsed(scope: Scope) {
+    setCollapsed((prev) => ({ ...prev, [scope]: !prev[scope] }));
+  }
 
   const [toast, setToast] = useState<{ msg: string; type: "error" | "success" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -180,17 +185,34 @@ export default function LlmProviderManager() {
       {providersByScope &&
         SECTIONS.map(({ scope, title, icon: Icon, description }) => {
           const providers = providersByScope[scope];
+          const isCollapsed = collapsed[scope];
+          const enabledCount = providers.filter((p) => p.enabled).length;
           return (
             <div key={scope} className="mb-8">
-              <div className="flex items-center gap-2 mb-1">
-                <Icon className="w-4 h-4" style={{ color: "var(--txt-3)" }} />
+              <button
+                type="button"
+                onClick={() => toggleCollapsed(scope)}
+                className="w-full flex items-center gap-2 mb-1 text-left"
+              >
+                {isCollapsed ? (
+                  <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: "var(--txt-4)" }} />
+                ) : (
+                  <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: "var(--txt-4)" }} />
+                )}
+                <Icon className="w-4 h-4 flex-shrink-0" style={{ color: "var(--txt-3)" }} />
                 <h2 className="text-base font-semibold" style={{ color: "var(--txt-1)" }}>{title}</h2>
-              </div>
-              <p className="text-xs mb-3" style={{ color: "var(--txt-4)" }}>{description}</p>
+                <span className="text-xs flex-shrink-0" style={{ color: "var(--txt-4)" }}>
+                  {enabledCount}/{providers.length} enabled
+                </span>
+              </button>
 
-              <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
-                <div className="divide-y" style={{ borderColor: "var(--bdr)" }}>
-                  {providers.map((p, i) => {
+              {!isCollapsed && (
+                <>
+                  <p className="text-xs mb-3 pl-6" style={{ color: "var(--txt-4)" }}>{description}</p>
+
+                  <div className="rounded-2xl border overflow-hidden" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
+                    <div className="divide-y" style={{ borderColor: "var(--bdr)" }}>
+                      {providers.map((p, i) => {
                     const busy = busyKey === `${scope}:${p.key}`;
                     return (
                       <div key={p.key} className="flex items-center gap-4 px-4 py-3" style={{ opacity: p.enabled ? 1 : 0.55 }}>
@@ -265,9 +287,11 @@ export default function LlmProviderManager() {
                         </button>
                       </div>
                     );
-                  })}
-                </div>
-              </div>
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           );
         })}

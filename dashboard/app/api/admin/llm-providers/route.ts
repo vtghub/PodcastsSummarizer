@@ -17,12 +17,11 @@ const SCOPES: Scope[] = ["pipeline", "ask_ai", "recommendations"];
  *
  * "recommendations" — weekly best-of-week insight ranking. Two call sites
  * read this same scope: the worker's weekly_recommendations job (Python,
- * pre-computed, uses the same 9 adapters as "pipeline" — see
+ * pre-computed, uses the pipeline-scope adapters — see
  * worker/providers/llm/waterfall_llm.py rank_insights()) and the dashboard's
- * on-demand /api/recommendations refresh (TypeScript, via lib/llm-waterfall.ts
- * — only able to call the 5 providers it has JS callers for, so any
- * openrouter_* slots enabled here apply only to the pre-computed weekly
- * email, not the live on-demand refresh).
+ * on-demand /api/recommendations refresh (TypeScript, via lib/llm-waterfall.ts's
+ * same runWaterfall() used by ask_ai — same provider set, since it's the
+ * same function).
  *
  * Either way, this list is only for displaying/toggling — adding a new
  * provider TYPE is still a code change in the relevant waterfall.
@@ -36,31 +35,37 @@ const PIPELINE_SLOTS = [
   { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: false },
   { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: false },
   { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: false },
+  { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY", runs_here: false },
   { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: false },
+  { key: "cerebras", display_name: "Cerebras Llama 3.3 70B", env_var: "CEREBRAS_API_KEY", runs_here: false },
   { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
   { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
   { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
   { key: "openrouter_hy3", display_name: "Tencent Hy3 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
 ];
 
-// The on-demand /api/recommendations refresh runs in the dashboard and can
-// call the same 5 JS-callable providers as ask_ai — but not OpenRouter.
-const RECOMMENDATIONS_SLOTS = PIPELINE_SLOTS.map((slot) => ({
-  ...slot,
-  runs_here: !slot.key.startsWith("openrouter_"),
-}));
+// ask_ai and recommendations both run through the exact same runWaterfall()
+// in lib/llm-waterfall.ts (just a different scope name for config lookup),
+// so they share one provider list — including OpenRouter and Cerebras, both
+// of which now have JS implementations there (callOpenRouterModel, callCerebras).
+const ASK_AI_SLOTS = [
+  { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY", runs_here: true },
+  { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: true },
+  { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: true },
+  { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: true },
+  { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY", runs_here: true },
+  { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: true },
+  { key: "cerebras", display_name: "Cerebras Llama 3.3 70B", env_var: "CEREBRAS_API_KEY", runs_here: true },
+  { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
+  { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
+  { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
+  { key: "openrouter_hy3", display_name: "Tencent Hy3 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
+];
 
 const PROVIDER_SLOTS: Record<Scope, { key: string; display_name: string; env_var: string; runs_here: boolean }[]> = {
   pipeline: PIPELINE_SLOTS,
-  ask_ai: [
-    { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY", runs_here: true },
-    { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: true },
-    { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: true },
-    { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: true },
-    { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY", runs_here: true },
-    { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: true },
-  ],
-  recommendations: RECOMMENDATIONS_SLOTS,
+  ask_ai: ASK_AI_SLOTS,
+  recommendations: ASK_AI_SLOTS,
 };
 
 interface ConfigRow {

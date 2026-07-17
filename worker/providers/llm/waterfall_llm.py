@@ -57,6 +57,10 @@ class WaterfallLLMProvider(LLMProvider):
         print(f"[Waterfall:{scope}] configured with {len(steps)} provider(s): {', '.join(s.name for s in steps)}")
         self._waterfall = WaterfallLLM(steps)
 
+    @property
+    def all_providers_dead(self) -> bool:
+        return self._waterfall.all_dead
+
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
         if len(transcript.text) > _MAX_TRANSCRIPT_CHARS:
             data = chunked_extract(

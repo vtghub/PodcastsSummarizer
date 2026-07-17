@@ -134,6 +134,19 @@ def default_rank_insights(insights: list[Insight], domains: list[str], top_n: in
 class LLMProvider(ABC):
     """Extracts structured insights from a transcript."""
 
+    @property
+    def all_providers_dead(self) -> bool:
+        """
+        True once every provider this instance can fall back to has failed at
+        least once this run — a signal to callers (see pipeline.py's
+        _process_episode) that any further attempt is guaranteed to fail too,
+        so they should stop rather than burn a retry attempt on a doomed call.
+        Single-provider implementations have nothing to fall back to, so this
+        stays False for them; WaterfallLLMProvider overrides it to proxy its
+        underlying WaterfallLLM.all_dead.
+        """
+        return False
+
     @abstractmethod
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
         ...
@@ -241,6 +254,9 @@ class StorageProvider(ABC):
 
     def increment_episode_retry(self, episode_id: str, source_id: str, retry_after: "datetime", error_msg: str | None = None) -> None:
         """Increment retry_count, set retry_after, keep status=failed. Default: no-op (local dev)."""
+
+    def mark_episode_queue_resolved(self, episode_id: str) -> None:
+        """Flip a stale 'failed' episode_queue row to 'done' after a successful retry. Default: no-op (local dev)."""
 
     def update_source_backoff(self, source_id: str, backoff_until: "datetime", error_count: int) -> None:
         """Set backoff_until and fetch_error_count after a 429/503. Default: no-op."""

@@ -2,33 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  ListChecks, RefreshCw, Loader2, PlayCircle, CheckCircle2, XCircle, Clock,
+  ListChecks, RefreshCw, Loader2, PlayCircle, CheckCircle2, XCircle, AlertTriangle,
   Workflow, StopCircle, ExternalLink, MinusCircle, ChevronDown, ChevronRight, Layers,
 } from "lucide-react";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
-
-interface BackfillJob {
-  id: string;
-  job_type: string;
-  status: string;
-  total_items: number;
-  processed_items: number;
-  succeeded_items: number;
-  failed_items: number;
-  batch_size: number;
-  started_at: string;
-  updated_at: string;
-  completed_at: string | null;
-  last_error: string | null;
-}
-
-interface BackfillFailure {
-  id: number;
-  insight_id: string;
-  episode_id: string;
-  error_msg: string | null;
-  failed_at: string;
-}
 
 interface RunInfo {
   id: number;
@@ -69,10 +45,14 @@ interface EpisodeChunks {
   chunks: ChunkDetail[];
 }
 
-function statusBadge(status: string) {
-  if (status === "completed") return { icon: CheckCircle2, color: "#34D399", label: "Completed" };
-  if (status === "failed") return { icon: XCircle, color: "#F87171", label: "Failed" };
-  return { icon: Clock, color: "var(--acc)", label: "Running" };
+interface FailedEpisode {
+  episodeId: string;
+  sourceId: string;
+  episodeTitle: string;
+  sourceName: string;
+  retryCount: number;
+  errorMsg: string | null;
+  updatedAt: string;
 }
 
 function runBadge(run: RunInfo | null) {
@@ -86,21 +66,16 @@ function runBadge(run: RunInfo | null) {
   return { icon: MinusCircle, color: "var(--txt-4)", label: run.conclusion ?? run.status };
 }
 
-const DEFAULT_BATCH_SIZE = 30; // matches backfill_insights.yml's workflow_dispatch default and migration 020's column default
-
 export default function TaskStatusManager() {
-  const [job, setJob] = useState<BackfillJob | null>(null);
-  const [failures, setFailures] = useState<BackfillFailure[]>([]);
-  const [currentTotalInsights, setCurrentTotalInsights] = useState<number | null>(null);
-  const [loadError, setLoadError] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
-  const [triggering, setTriggering] = useState(false);
-  const [retryingFailed, setRetryingFailed] = useState(false);
-
   const [workflows, setWorkflows] = useState<WorkflowInfo[] | null>(null);
   const [workflowsError, setWorkflowsError] = useState("");
   const [workflowsRefreshing, setWorkflowsRefreshing] = useState(false);
   const [busyWorkflow, setBusyWorkflow] = useState<string | null>(null);
+
+  const [failedEpisodes, setFailedEpisodes] = useState<FailedEpisode[] | null>(null);
+  const [failedEpisodesError, setFailedEpisodesError] = useState("");
+  const [failedEpisodesRefreshing, setFailedEpisodesRefreshing] = useState(false);
+  const [retryingFailedEpisodes, setRetryingFailedEpisodes] = useState(false);
 
   const [extractionEpisodes, setExtractionEpisodes] = useState<EpisodeChunks[] | null>(null);
   const [extractionError, setExtractionError] = useState("");
@@ -115,23 +90,6 @@ export default function TaskStatusManager() {
     toastTimer.current = setTimeout(() => setToast(null), 5000);
   }
 
-  const load = useCallback(async (opts: { silent?: boolean } = {}) => {
-    if (!opts.silent) setRefreshing(true);
-    try {
-      const res = await fetch("/api/admin/backfill");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to load status");
-      setJob(data.job ?? null);
-      setFailures(data.failures ?? []);
-      setCurrentTotalInsights(data.currentTotalInsights ?? null);
-      setLoadError("");
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load status");
-    } finally {
-      if (!opts.silent) setRefreshing(false);
-    }
-  }, []);
-
   const loadWorkflows = useCallback(async (opts: { silent?: boolean } = {}) => {
     if (!opts.silent) setWorkflowsRefreshing(true);
     try {
@@ -144,6 +102,21 @@ export default function TaskStatusManager() {
       setWorkflowsError(e instanceof Error ? e.message : "Failed to load workflows");
     } finally {
       if (!opts.silent) setWorkflowsRefreshing(false);
+    }
+  }, []);
+
+  const loadFailedEpisodes = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) setFailedEpisodesRefreshing(true);
+    try {
+      const res = await fetch("/api/admin/failed-episodes");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to load failed episodes");
+      setFailedEpisodes(data.episodes ?? []);
+      setFailedEpisodesError("");
+    } catch (e) {
+      setFailedEpisodesError(e instanceof Error ? e.message : "Failed to load failed episodes");
+    } finally {
+      if (!opts.silent) setFailedEpisodesRefreshing(false);
     }
   }, []);
 
@@ -162,28 +135,7 @@ export default function TaskStatusManager() {
     }
   }, []);
 
-  useEffect(() => { load(); loadWorkflows(); loadExtractionChunks(); }, [load, loadWorkflows, loadExtractionChunks]);
-
-  // Push-based refresh while a batch is running — requires migration 020
-  // (backfill_jobs added to the supabase_realtime publication).
-  useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
-    const channel = supabase
-      .channel("admin-backfill")
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "backfill_jobs" },
-        () => load({ silent: true })
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "backfill_jobs" },
-        () => load({ silent: true })
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { loadWorkflows(); loadFailedEpisodes(); loadExtractionChunks(); }, [loadWorkflows, loadFailedEpisodes, loadExtractionChunks]);
 
   // GitHub Actions has no push channel we can subscribe to from the browser
   // — poll lightly instead so in-progress runs update without a manual click.
@@ -191,38 +143,6 @@ export default function TaskStatusManager() {
     const interval = setInterval(() => loadWorkflows({ silent: true }), 20000);
     return () => clearInterval(interval);
   }, [loadWorkflows]);
-
-  async function runBatchNow() {
-    setTriggering(true);
-    try {
-      const res = await fetch("/api/admin/backfill", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to trigger batch");
-      showToast("Batch queued — GitHub Actions will start it within a minute or two.", "success");
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Failed to trigger batch", "error");
-    } finally {
-      setTriggering(false);
-    }
-  }
-
-  async function retryFailedNow() {
-    setRetryingFailed(true);
-    try {
-      const res = await fetch("/api/admin/backfill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "retry_failed" }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to trigger retry");
-      showToast(`Retrying ${job?.failed_items ?? failures.length} failed item(s) — GitHub Actions will start within a minute or two.`, "success");
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Failed to trigger retry", "error");
-    } finally {
-      setRetryingFailed(false);
-    }
-  }
 
   async function runWorkflowNow(fileName: string) {
     setBusyWorkflow(fileName);
@@ -262,20 +182,19 @@ export default function TaskStatusManager() {
     }
   }
 
-  const pct = job && job.total_items > 0 ? Math.min(100, Math.round((job.processed_items / job.total_items) * 100)) : 0;
-  const badge = job ? statusBadge(job.status) : null;
-
-  // Orchestration estimate — answers "how many batches / days will this take"
-  // both before a job has ever run (using the current total) and while one
-  // is in progress (using its remaining count). Assumes the daily cron as
-  // the baseline cadence; clicking "Run now" or "Run batch now" adds extra
-  // batches beyond that, shortening the estimate.
-  const batchSize = job?.batch_size ?? DEFAULT_BATCH_SIZE;
-  const activeJob = job && job.status !== "completed";
-  const remainingItems = activeJob
-    ? Math.max(0, job.total_items - job.processed_items)
-    : currentTotalInsights;
-  const remainingBatches = remainingItems !== null ? Math.ceil(remainingItems / batchSize) : null;
+  async function retryFailedEpisodesNow() {
+    setRetryingFailedEpisodes(true);
+    try {
+      const res = await fetch("/api/admin/failed-episodes", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to trigger retry");
+      showToast("Retry queued — GitHub Actions will start within a minute or two.", "success");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Failed to trigger retry", "error");
+    } finally {
+      setRetryingFailedEpisodes(false);
+    }
+  }
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -288,27 +207,6 @@ export default function TaskStatusManager() {
       <p className="text-sm mb-6" style={{ color: "var(--txt-3)" }}>
         Background jobs and scheduled GitHub Actions runners for this project.
       </p>
-
-      {remainingBatches !== null && remainingItems !== null && (
-        <div className="rounded-2xl border p-4 mb-6" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
-          <p className="text-sm font-semibold mb-1" style={{ color: "var(--txt-1)" }}>
-            Insight backfill orchestration
-          </p>
-          <p className="text-sm" style={{ color: "var(--txt-3)" }}>
-            {activeJob ? (
-              <>{remainingItems} insight{remainingItems !== 1 ? "s" : ""} left to reprocess</>
-            ) : (
-              <>{remainingItems} insight{remainingItems !== 1 ? "s" : ""} exist right now</>
-            )}
-            {" — at "}{batchSize}{" per batch, that's "}
-            <strong style={{ color: "var(--txt-1)" }}>{remainingBatches} batch{remainingBatches !== 1 ? "es" : ""}</strong>.
-            {" "}The daily cron runs one batch/day, so a hands-off backfill would take about{" "}
-            <strong style={{ color: "var(--txt-1)" }}>{remainingBatches} day{remainingBatches !== 1 ? "s" : ""}</strong>
-            {" "}(3:30 AM UTC each day) — click <strong>Run now</strong> / <strong>Run batch now</strong> to add extra batches
-            and finish sooner. New episodes processed while this is running aren't counted here until a later job picks them up.
-          </p>
-        </div>
-      )}
 
       {/* ── GitHub Actions Runners ─────────────────────────────────────── */}
       <div className="mb-8">
@@ -399,124 +297,81 @@ export default function TaskStatusManager() {
         )}
       </div>
 
-      {/* ── Insight backfill job ───────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>Insight Backfill</h2>
-        <button
-          onClick={() => load()}
-          disabled={refreshing}
-          title="Refresh status"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60"
-          style={{ background: "var(--bg-elevated)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-      </div>
-      <p className="text-sm mb-3" style={{ color: "var(--txt-3)" }}>
-        Re-runs every existing insight through the current LLM waterfall, reusing its saved transcript.
-        Runs one batch daily (or via the runner above) and resumes automatically.
-      </p>
-
-      {loadError && <p className="text-sm mb-4" style={{ color: "#EF4444" }}>{loadError}</p>}
-
-      {!job && !loadError && !refreshing && (
-        <p className="text-sm py-8 text-center" style={{ color: "var(--txt-4)" }}>
-          No backfill job has run yet.
+      {/* ── Failed Episodes ──────────────────────────────────────────────── */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" style={{ color: "var(--txt-3)" }} />
+            <h2 className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>Failed Episodes</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            {failedEpisodes && failedEpisodes.length > 0 && (
+              <button
+                onClick={retryFailedEpisodesNow}
+                disabled={retryingFailedEpisodes}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60"
+                style={{ background: "var(--acc)", color: "#fff" }}
+              >
+                {retryingFailedEpisodes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+                Retry now
+              </button>
+            )}
+            <button
+              onClick={() => loadFailedEpisodes()}
+              disabled={failedEpisodesRefreshing}
+              title="Refresh failed episodes"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60"
+              style={{ background: "var(--bg-elevated)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${failedEpisodesRefreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+          </div>
+        </div>
+        <p className="text-sm mb-3" style={{ color: "var(--txt-3)" }}>
+          Episodes still stuck after ingestion — usually every free-tier LLM provider was exhausted mid-run.
+          The <strong>Retry Failed Episodes</strong> workflow above re-attempts these automatically 4×/day; "Retry now" runs it immediately.
         </p>
-      )}
 
-      {refreshing && !job && (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-4)" }} />
-        </div>
-      )}
+        {failedEpisodesError && <p className="text-sm mb-4" style={{ color: "#EF4444" }}>{failedEpisodesError}</p>}
 
-      {job && badge && (
-        <div className="rounded-2xl border p-5 mb-6" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <badge.icon className="w-4 h-4" style={{ color: badge.color }} />
-              <span className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>{badge.label}</span>
-            </div>
-            <span className="text-xs" style={{ color: "var(--txt-4)" }}>
-              {job.processed_items} / {job.total_items} processed
-            </span>
+        {!failedEpisodes && !failedEpisodesError && (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--txt-4)" }} />
           </div>
+        )}
 
-          {/* Progress bar */}
-          <div className="w-full h-2 rounded-full overflow-hidden mb-4" style={{ background: "var(--bg-elevated)" }}>
-            <div
-              className="h-full rounded-full transition-all"
-              style={{ width: `${pct}%`, background: job.status === "completed" ? "#34D399" : "var(--acc)" }}
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div>
-              <p className="text-lg font-bold" style={{ color: "#34D399" }}>{job.succeeded_items}</p>
-              <p className="text-xs" style={{ color: "var(--txt-4)" }}>Succeeded</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold" style={{ color: job.failed_items > 0 ? "#F87171" : "var(--txt-3)" }}>{job.failed_items}</p>
-              <p className="text-xs" style={{ color: "var(--txt-4)" }}>Failed</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold" style={{ color: "var(--txt-3)" }}>
-                {Math.max(0, job.total_items - job.processed_items)}
-              </p>
-              <p className="text-xs" style={{ color: "var(--txt-4)" }}>Remaining</p>
-            </div>
-          </div>
-
-          <p className="text-xs mb-4" style={{ color: "var(--txt-4)" }}>
-            Started {new Date(job.started_at).toLocaleString()} · Last update {new Date(job.updated_at).toLocaleString()}
-            {job.batch_size ? ` · ${job.batch_size} per batch` : ""}
+        {failedEpisodes && failedEpisodes.length === 0 && !failedEpisodesError && (
+          <p className="text-sm py-8 text-center" style={{ color: "var(--txt-4)" }}>
+            No failed episodes right now.
           </p>
+        )}
 
-          {job.status !== "completed" && (
-            <button
-              onClick={runBatchNow}
-              disabled={triggering}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-              style={{ background: "var(--acc)", color: "#fff" }}
-            >
-              {triggering ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
-              Run batch now
-            </button>
-          )}
-        </div>
-      )}
-
-      {failures.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold" style={{ color: "var(--txt-1)" }}>Recent failures</h2>
-            <button
-              onClick={retryFailedNow}
-              disabled={retryingFailed}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60"
-              style={{ background: "var(--acc)", color: "#fff" }}
-            >
-              {retryingFailed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-              Retry {job?.failed_items ?? failures.length} failed
-            </button>
-          </div>
+        {failedEpisodes && failedEpisodes.length > 0 && (
           <div className="rounded-2xl border overflow-hidden divide-y" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
-            {failures.map((f) => (
-              <div key={f.id} className="px-4 py-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-mono truncate" style={{ color: "var(--txt-3)" }}>{f.insight_id}</span>
+            {failedEpisodes.map((ep) => (
+              <div key={ep.episodeId} className="px-4 py-3">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>{ep.episodeTitle}</p>
                   <span className="text-xs flex-shrink-0" style={{ color: "var(--txt-4)" }}>
-                    {new Date(f.failed_at).toLocaleString()}
+                    {new Date(ep.updatedAt).toLocaleString()}
                   </span>
                 </div>
-                <p className="text-xs" style={{ color: "#F87171" }}>{f.error_msg ?? "Unknown error"}</p>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-xs" style={{ color: "var(--txt-4)" }}>{ep.sourceName}</span>
+                  <span className="text-xs" style={{ color: "var(--txt-4)" }}>·</span>
+                  <span className="text-xs" style={{ color: "var(--txt-4)" }}>
+                    {ep.retryCount} retr{ep.retryCount !== 1 ? "ies" : "y"}
+                  </span>
+                </div>
+                {ep.errorMsg && (
+                  <p className="text-xs truncate" style={{ color: "#F87171" }} title={ep.errorMsg}>{ep.errorMsg}</p>
+                )}
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ── Episode transcription / chunking detail ────────────────────── */}
       <div className="mt-8">
