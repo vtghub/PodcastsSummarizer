@@ -118,9 +118,9 @@ PodcastsSummarizer/
 │   │   ├── onboarding/page.tsx      # New-user onboarding wizard (auth-required; redirects to /dashboard if already subscribed)
 │   │   ├── admin/users/page.tsx     # Admin-only user management — list/search users, grant/revoke admin, reset onboarding, cascade-delete user (redirects non-admins to /dashboard)
 │   │   ├── admin/llm-providers/page.tsx # Admin-only LLM waterfall control — toggle/reorder providers per feature (Pipeline Extraction, Ask AI, Recommendations), no deploy needed
-│   │   ├── admin/task-status/page.tsx # Admin-only backfill job progress — live status of the insight-reextraction backfill (progress bar, succeeded/failed/remaining, recent failures, "Run batch now")
+│   │   ├── admin/task-status/page.tsx # Admin-only pipeline health — GitHub Actions runner status, episode transcription details (3-state: succeeded / recovered after retry / failed), Failed Episodes list with "Retry now"
 │   │   ├── recommendations/page.tsx # On-demand best-of-week insights + trending podcasts, refreshed live via /api/recommendations (signed-in)
-│   │   ├── about/page.tsx           # Public About page — feature overview, CTA buttons (no auth required)
+│   │   ├── about/page.tsx           # Public About page — feature overview, free-model waterfall list, credit pill, CTA buttons (no auth required)
 │   │   ├── ask/page.tsx             # Server wrapper — fetches subscribedSources, renders AskChat (signed-in)
 │   │   ├── login/page.tsx           # Email + password sign-in
 │   │   ├── register/page.tsx        # New user registration
