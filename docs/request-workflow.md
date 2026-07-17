@@ -21,7 +21,8 @@ sequenceDiagram
     PY->>DB: get_sources(enabled=True, backoff_until<=NOW)
     DB-->>PY: sources (429/503-backoffed sources excluded)
     PY->>DB: get_episodes_for_retry(max_retries=3)
-    DB-->>PY: failed episodes due for retry (retry_after<=NOW)
+    Note over PY,DB: Atomic claim, not a plain read — UPDATE episode_queue<br/>SET retry_after=NOW()+60min ... RETURNING, in one statement.<br/>A concurrent caller (e.g. retry_failed_episodes.yml, if its<br/>schedule ever overlaps this one again) can't match the same<br/>rows once this transaction commits — prevents the duplicate-<br/>insight bug this was written to fix. Claim auto-expires after<br/>60min if this run crashes/times out mid-batch.
+    DB-->>PY: failed episodes due for retry (now claimed)
 
     loop parallel (8 workers)
         PY->>RSS: fetch_latest_episodes(since)
@@ -1312,6 +1313,7 @@ sequenceDiagram
     Note over GH,JOB: GitHub Actions starts the runner within ~1 minute
     GH->>JOB: run retry_failed_episodes.py --limit N
     JOB->>DB: get_episodes_for_retry(max_retries=10)
+    Note over JOB,DB: Atomic claim (see pipeline sequence diagram above) —<br/>episodes returned here are unavailable to any other concurrent<br/>caller (e.g. daily_pipeline.yml's own in-band retry) for 60min
     loop per (episode, source) pair, up to limit
         JOB->>JOB: _process_episode() — reused from pipeline.py
         alt every provider already exhausted this run
