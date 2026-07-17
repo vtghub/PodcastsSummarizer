@@ -7,7 +7,7 @@ graph TB
         HCRON["🕐 hourly_digest.yml\nCron: every hour\nper-user digest fan-out\n+ workflow_dispatch\n(date, force, target_email)"]
         WCRON["📅 weekly_recommendations.yml\nCron: Sundays 10 AM UTC\nweekly recommendations email"]
         BCRON["♻️ backfill_insights.yml\nCron: daily 3:30 AM UTC\n+ workflow_dispatch (batch_size)\nresumable, spans many runs/days"]
-        RCRON["🔁 retry_failed_episodes.yml\nCron: 4×/day (2,8,14,20 UTC)\n+ workflow_dispatch (limit)\nfresh waterfall instance per run"]
+        RCRON["🔁 retry_failed_episodes.yml\nCron: 4×/day (3,9,15,21 UTC)\n+ workflow_dispatch (limit)\nfresh waterfall instance per run"]
     end
 
     subgraph PIPELINE["🐍 Python Worker Pipeline"]
