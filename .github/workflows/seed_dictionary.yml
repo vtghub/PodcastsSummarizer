@@ -29,4 +29,5 @@ jobs:
           STORAGE_PROVIDER: supabase
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           PYTHONUTF8: "1"
+          PYTHONUNBUFFERED: "1"
         run: python -m worker.jobs.seed_dictionary

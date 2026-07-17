@@ -48,6 +48,11 @@ class SupabaseStorageProvider(StorageProvider):
             user=user,
             password=password,
             cursor_factory=psycopg2.extras.RealDictCursor,
+            # Without this, a network blip during connect() hangs indefinitely
+            # (no default timeout) instead of failing fast — cost a whole GH
+            # Actions job its full 45-minute budget once, with zero log output
+            # to show why. 10s is generous for reaching Supabase's pooler.
+            connect_timeout=10,
         )
 
     @contextmanager

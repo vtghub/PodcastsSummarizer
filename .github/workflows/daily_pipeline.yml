@@ -81,6 +81,7 @@ jobs:
           EPISODE_SOURCE_ID: ${{ github.event.inputs.source_id || '' }}
           TARGET_EMAIL: ${{ github.event.inputs.target_email || '' }}
           PYTHONUTF8: "1"
+          PYTHONUNBUFFERED: "1"
         run: |
           python - <<'EOF'
           import sys, os
