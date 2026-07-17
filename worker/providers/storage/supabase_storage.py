@@ -325,6 +325,21 @@ class SupabaseStorageProvider(StorageProvider):
                           updated_at  = NOW()
                 """, (episode_id, source_id, retry_after, error_msg))
 
+    def mark_episode_queue_resolved(self, episode_id: str) -> None:
+        """
+        Flip a stale 'failed' episode_queue row to 'done' after a successful
+        retry — a plain conditional UPDATE, not an upsert, so it's a no-op for
+        episodes that never had a queue row (the common case, first attempt
+        succeeding) and never inserts an unwanted new row.
+        """
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE episode_queue SET status = 'done', updated_at = NOW() "
+                    "WHERE episode_id = %s AND status = 'failed'",
+                    (episode_id,),
+                )
+
     def update_source_backoff(self, source_id: str, backoff_until: datetime, error_count: int) -> None:
         with self._conn() as conn:
             with conn.cursor() as cur:

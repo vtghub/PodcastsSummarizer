@@ -337,6 +337,74 @@ class TestPipelineResilience:
         assert not _is_quota_error(Exception("500 Internal Server Error"))
 
 
+class TestProcessEpisode:
+    """_process_episode()'s exhaustion short-circuit and transcript-cache reuse."""
+
+    def _base_mocks(self):
+        storage = MagicMock()
+        storage.episode_exists.return_value = False
+        storage.find_duplicate_episode_id.return_value = None
+        storage.get_transcript.return_value = None
+        llm = MagicMock()
+        llm.all_providers_dead = False
+        provider = MagicMock()
+        provider.fetch_transcript_text.return_value = "fresh transcript text"
+        llm.extract_insights.return_value = _make_insight()
+        return storage, llm, provider
+
+    def test_defers_without_any_work_when_all_providers_dead(self):
+        from worker.jobs.pipeline import _process_episode
+
+        storage, llm, provider = self._base_mocks()
+        llm.all_providers_dead = True
+        source = _make_source()
+        episode = _make_episode()
+
+        status, error_msg = _process_episode(storage, llm, source, provider, episode, "2026-07-16")
+
+        assert (status, error_msg) == ("deferred", None)
+        storage.save_episode.assert_not_called()
+        provider.fetch_transcript_text.assert_not_called()
+        provider.download_audio.assert_not_called()
+        llm.extract_insights.assert_not_called()
+
+    def test_reuses_saved_transcript_instead_of_refetching(self):
+        from worker.jobs.pipeline import _process_episode
+
+        storage, llm, provider = self._base_mocks()
+        storage.get_transcript.return_value = Transcript(
+            episode_id="ep1", text="already-saved transcript", language="en"
+        )
+        source = _make_source()
+        episode = _make_episode()
+
+        status, error_msg = _process_episode(storage, llm, source, provider, episode, "2026-07-16")
+
+        assert status == "insights"
+        assert error_msg is None
+        provider.fetch_transcript_text.assert_not_called()
+        provider.download_audio.assert_not_called()
+        storage.save_transcript.assert_not_called()  # reused as-is, not re-saved
+        used_transcript = llm.extract_insights.call_args.args[1]
+        assert used_transcript.text == "already-saved transcript"
+        storage.mark_episode_queue_resolved.assert_called_once_with(episode.id)
+
+    def test_fetches_transcript_when_none_cached(self):
+        from worker.jobs.pipeline import _process_episode
+
+        storage, llm, provider = self._base_mocks()
+        source = _make_source()
+        episode = _make_episode()
+
+        status, error_msg = _process_episode(storage, llm, source, provider, episode, "2026-07-16")
+
+        assert status == "insights"
+        provider.fetch_transcript_text.assert_called_once_with(episode)
+        storage.save_transcript.assert_called_once()
+        used_transcript = llm.extract_insights.call_args.args[1]
+        assert used_transcript.text == "fresh transcript text"
+
+
 # ── Lenient JSON parsing of LLM responses ────────────────────────────────────
 
 class TestParseJsonResponse:
@@ -690,6 +758,32 @@ class TestWaterfall:
         with pytest.raises(RuntimeError, match="already marked"):
             wf.generate("chunk 2")
 
+    def test_all_dead_false_until_every_step_has_failed(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def failing(prompt: str) -> str:
+            raise RuntimeError("quota exceeded")
+
+        def working(prompt: str) -> str:
+            return "ok"
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", working)])
+        assert wf.all_dead is False
+        wf.generate("chunk 1")  # A fails and is marked dead, B succeeds
+        assert wf.all_dead is False  # B is still alive
+
+    def test_all_dead_true_once_every_step_has_failed(self):
+        from worker.providers.llm.waterfall import WaterfallLLM, WaterfallStep
+
+        def failing(prompt: str) -> str:
+            raise RuntimeError("quota exceeded")
+
+        wf = WaterfallLLM([WaterfallStep("A", failing), WaterfallStep("B", failing)])
+        assert wf.all_dead is False
+        with pytest.raises(RuntimeError):
+            wf.generate("chunk 1")
+        assert wf.all_dead is True
+
 
 # ── LLM-backed weekly ranking ────────────────────────────────────────────────
 
@@ -975,6 +1069,87 @@ class TestRetryFailedBackfillItems:
         storage.save_insight.assert_not_called()
         storage.retry_backfill_failure.assert_not_called()
         assert "error" in result
+
+
+class TestRetryFailedEpisodes:
+    """worker/jobs/retry_failed_episodes.py — the dedicated recovery job for
+    episodes that failed during ingestion, run on its own schedule so a
+    fresh waterfall instance gets another shot once quota's likely back."""
+
+    def _make_storage(self, pairs=None):
+        storage = MagicMock()
+        storage.get_episodes_for_retry.return_value = pairs or []
+        storage.episode_exists.return_value = False
+        storage.find_duplicate_episode_id.return_value = None
+        storage.get_transcript.return_value = Transcript(episode_id="ep1", text="saved transcript", language="en")
+        return storage
+
+    def test_no_failed_episodes_is_a_noop(self):
+        from worker.jobs.retry_failed_episodes import retry_failed_episodes
+        storage = self._make_storage(pairs=[])
+        llm = MagicMock(all_providers_dead=False)
+        with patch("worker.jobs.retry_failed_episodes.get_storage_provider", return_value=storage), \
+             patch("worker.jobs.retry_failed_episodes.get_llm_provider", return_value=llm):
+            result = retry_failed_episodes()
+        assert result == {"attempted": 0, "succeeded": 0, "failed": 0, "deferred": False, "remaining": 0}
+
+    def test_no_providers_configured_aborts_without_processing(self):
+        from worker.jobs.retry_failed_episodes import retry_failed_episodes
+        storage = self._make_storage(pairs=[(_make_episode(), _make_source())])
+        with patch("worker.jobs.retry_failed_episodes.get_storage_provider", return_value=storage), \
+             patch("worker.jobs.retry_failed_episodes.get_llm_provider", side_effect=ValueError("no providers enabled")):
+            result = retry_failed_episodes()
+        assert result["error"]
+        storage.get_episodes_for_retry.assert_not_called()
+
+    def test_retries_each_episode_and_reports_counts(self):
+        from worker.jobs.retry_failed_episodes import retry_failed_episodes
+        pairs = [(_make_episode(id="ep1"), _make_source()), (_make_episode(id="ep2"), _make_source())]
+        storage = self._make_storage(pairs=pairs)
+        llm = MagicMock(all_providers_dead=False)
+        llm.extract_insights.return_value = _make_insight()
+        fake_provider = MagicMock()
+
+        with patch("worker.jobs.retry_failed_episodes.get_storage_provider", return_value=storage), \
+             patch("worker.jobs.retry_failed_episodes.get_llm_provider", return_value=llm), \
+             patch("worker.jobs.retry_failed_episodes._get_source_provider", return_value=fake_provider):
+            result = retry_failed_episodes(limit=10)
+
+        assert result == {"attempted": 2, "succeeded": 2, "failed": 0, "deferred": False, "remaining": 0}
+        assert storage.mark_episode_queue_resolved.call_count == 2
+
+    def test_stops_early_and_reports_deferred_when_exhausted_again(self):
+        from worker.jobs.retry_failed_episodes import retry_failed_episodes
+        pairs = [(_make_episode(id="ep1"), _make_source()), (_make_episode(id="ep2"), _make_source())]
+        storage = self._make_storage(pairs=pairs)
+        # Fresh instance starts alive, but is already fully exhausted by the
+        # time the first episode is attempted (simulating "still out of quota").
+        llm = MagicMock(all_providers_dead=True)
+
+        with patch("worker.jobs.retry_failed_episodes.get_storage_provider", return_value=storage), \
+             patch("worker.jobs.retry_failed_episodes.get_llm_provider", return_value=llm), \
+             patch("worker.jobs.retry_failed_episodes._get_source_provider", return_value=MagicMock()):
+            result = retry_failed_episodes(limit=10)
+
+        assert result["deferred"] is True
+        assert result["attempted"] == 0
+        assert result["remaining"] == 2
+        llm.extract_insights.assert_not_called()
+
+    def test_respects_limit(self):
+        from worker.jobs.retry_failed_episodes import retry_failed_episodes
+        pairs = [(_make_episode(id=f"ep{i}"), _make_source()) for i in range(5)]
+        storage = self._make_storage(pairs=pairs)
+        llm = MagicMock(all_providers_dead=False)
+        llm.extract_insights.return_value = _make_insight()
+
+        with patch("worker.jobs.retry_failed_episodes.get_storage_provider", return_value=storage), \
+             patch("worker.jobs.retry_failed_episodes.get_llm_provider", return_value=llm), \
+             patch("worker.jobs.retry_failed_episodes._get_source_provider", return_value=MagicMock()):
+            result = retry_failed_episodes(limit=2)
+
+        assert result["attempted"] == 2
+        assert result["remaining"] == 3
 
 
 # ── Plug-in/plug-out provider registry ─────────────────────────────────────

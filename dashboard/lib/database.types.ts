@@ -404,6 +404,20 @@ export interface Database {
         Update: never;
         Relationships: [];
       };
+      episode_queue: {
+        Row: {
+          episode_id: string;
+          source_id: string;
+          status: string;
+          error_msg: string | null;
+          retry_count: number;
+          retry_after: string | null;
+          updated_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
