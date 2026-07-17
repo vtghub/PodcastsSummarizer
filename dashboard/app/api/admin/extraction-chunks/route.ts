@@ -64,8 +64,8 @@ export async function GET() {
 
   const [{ data: episodesData }, { data: sourcesData }] = await Promise.all([
     episodeIds.length > 0
-      ? sb.from("episodes").select("id, title, title_en").in("id", episodeIds)
-      : Promise.resolve({ data: [] as { id: string; title: string; title_en: string | null }[] }),
+      ? sb.from("episodes").select("id, title, title_en, status").in("id", episodeIds)
+      : Promise.resolve({ data: [] as { id: string; title: string; title_en: string | null; status: string }[] }),
     sourceIds.length > 0
       ? sb.from("sources").select("id, name").in("id", sourceIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
@@ -73,6 +73,11 @@ export async function GET() {
 
   const episodeTitleById = new Map((episodesData ?? []).map((e) => [e.id, e.title_en || e.title]));
   const sourceNameById = new Map((sourcesData ?? []).map((s) => [s.id, s.name]));
+  // episodes.status flips to 'done' once an insight is actually saved
+  // (storage.mark_episode_done) — used below to tell "failed a chunk along
+  // the way but a later retry succeeded" apart from "still stuck failing",
+  // since extraction_chunk_log is a full history, not just the latest attempt.
+  const episodeDoneById = new Map((episodesData ?? []).map((e) => [e.id, e.status === "done"]));
 
   const episodes = episodeOrder.map((episodeId) => {
     const chunks = (byEpisode.get(episodeId) ?? []).sort((a, b) => {
@@ -81,6 +86,7 @@ export async function GET() {
     });
     const totalChunks = chunks[0]?.total_chunks ?? 0;
     const hasFailure = chunks.some((c) => c.status === "failed");
+    const resolved = episodeDoneById.get(episodeId) ?? false;
     const latestEventAt = chunks.reduce((max, c) => (c.created_at > max ? c.created_at : max), chunks[0]?.created_at ?? "");
     return {
       episodeId,
@@ -89,6 +95,7 @@ export async function GET() {
       sourceName: sourceNameById.get(chunks[0]?.source_id ?? "") ?? "Unknown source",
       totalChunks,
       hasFailure,
+      resolved,
       latestEventAt,
       chunks: chunks.map((c) => ({
         chunkIndex: c.chunk_index,
