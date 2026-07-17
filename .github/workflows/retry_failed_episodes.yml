@@ -10,7 +10,16 @@ name: Retry Failed Episodes
 
 on:
   schedule:
-    - cron: "0 2,8,14,20 * * *"   # 4x/day, offset 2h from daily_pipeline.yml's 0 */4
+    # 4x/day, fully offset from daily_pipeline.yml's 0,4,8,12,16,20 UTC —
+    # "0 2,8,14,20" looked offset but actually collided at 8:00 and 20:00
+    # (2 and 14 are +2h from a daily_pipeline slot, but 8 and 20 both ARE
+    # daily_pipeline slots), letting both workflows run concurrently and
+    # independently save a duplicate insight for the same episode (each
+    # extraction generates its own timestamp-based insight id, so they
+    # never collide on save — they just both succeed as separate rows).
+    # get_episodes_for_retry() now claims rows atomically as a second line
+    # of defense, but these times shouldn't overlap regardless.
+    - cron: "0 3,9,15,21 * * *"
   workflow_dispatch:
     inputs:
       limit:

@@ -284,30 +284,55 @@ class SupabaseStorageProvider(StorageProvider):
     # Pipeline resilience helpers
     # ------------------------------------------------------------------
     def get_episodes_for_retry(self, max_retries: int = 3) -> list[tuple]:
+        """
+        Atomically CLAIMS due-for-retry episodes instead of a plain read —
+        the UPDATE bumps retry_after forward as part of the same statement
+        that selects the rows, so a second caller running around the same
+        time (daily_pipeline.yml's own in-band retry and the dedicated
+        retry_failed_episodes.yml job can fire within the same window if
+        their schedules ever overlap again) sees those rows as already
+        claimed instead of independently re-extracting and saving a SECOND
+        insight for the same episode. Postgres locks the rows being
+        updated, so a concurrent UPDATE naturally can't match them until
+        this transaction commits — and by then retry_after has moved, so
+        it won't match anyway. This is exactly the bug that produced
+        duplicate insight rows in production (confirmed via duplicate
+        search results) before this fix.
+        """
         with self._conn() as conn:
             with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE episode_queue eq
+                    SET retry_after = NOW() + INTERVAL '60 minutes'
+                    FROM episodes e
+                    WHERE eq.episode_id = e.id
+                      AND eq.status = 'failed'
+                      AND eq.retry_count < %s
+                      AND (eq.retry_after IS NULL OR eq.retry_after <= NOW())
+                      AND e.status != 'done'
+                    RETURNING eq.episode_id
+                """, (max_retries,))
+                claimed_ids = [r["episode_id"] for r in cur.fetchall()]
+
+                if not claimed_ids:
+                    return []
+
                 # episodes and sources both have `id` and `url` columns —
                 # selecting e.*, s.* together silently collides on those
                 # (whichever comes last in the row wins), which previously
                 # made every episode built from this query use the SOURCE's
                 # id/url instead of its own, and left "episode_id" undefined
                 # entirely (neither table actually has a column by that
-                # name — only episode_queue does, and it's never selected).
-                # Alias the episode-side columns explicitly to avoid this.
+                # name). Alias the episode-side columns explicitly to avoid this.
                 cur.execute("""
                     SELECT e.id AS episode_id, e.source_id AS episode_source_id,
                            e.title, e.url AS episode_url, e.published_at,
                            e.duration_seconds, e.description,
-                           s.*,
-                           eq.retry_count, eq.error_msg AS eq_error_msg
-                    FROM episode_queue eq
-                    JOIN episodes e ON e.id = eq.episode_id
-                    JOIN sources  s ON s.id = eq.source_id
-                    WHERE eq.status = 'failed'
-                      AND eq.retry_count < %s
-                      AND (eq.retry_after IS NULL OR eq.retry_after <= NOW())
-                      AND e.status != 'done'
-                """, (max_retries,))
+                           s.*
+                    FROM episodes e
+                    JOIN sources s ON s.id = e.source_id
+                    WHERE e.id = ANY(%s)
+                """, (claimed_ids,))
                 rows = cur.fetchall()
         result = []
         for r in rows:
