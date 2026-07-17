@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ListChecks, RefreshCw, Loader2, PlayCircle, CheckCircle2, XCircle, AlertTriangle,
-  Workflow, StopCircle, ExternalLink, MinusCircle, ChevronDown, ChevronRight, Layers,
+  Workflow, StopCircle, ExternalLink, MinusCircle, ChevronDown, ChevronRight, Layers, RotateCw,
 } from "lucide-react";
 
 interface RunInfo {
@@ -41,8 +41,20 @@ interface EpisodeChunks {
   sourceName: string;
   totalChunks: number;
   hasFailure: boolean;
+  resolved: boolean;
   latestEventAt: string;
   chunks: ChunkDetail[];
+}
+
+// hasFailure covers the episode's whole chunk-log history, not just its
+// latest attempt — an episode that failed a chunk on try 1 but succeeded
+// on a later retry still has hasFailure=true forever. `resolved` (from
+// episodes.status='done') is what distinguishes "recovered after a retry"
+// from "still stuck failing" so they don't both render as a plain red X.
+function episodeOutcome(ep: EpisodeChunks): { icon: typeof CheckCircle2; color: string; label: string } {
+  if (!ep.hasFailure) return { icon: CheckCircle2, color: "#34D399", label: "Succeeded" };
+  if (ep.resolved) return { icon: RotateCw, color: "#FBBF24", label: "Recovered after retry" };
+  return { icon: XCircle, color: "#F87171", label: "Failed" };
 }
 
 interface FailedEpisode {
@@ -394,6 +406,9 @@ export default function TaskStatusManager() {
         <p className="text-sm mb-3" style={{ color: "var(--txt-3)" }}>
           The 15 most recently processed long episodes — how many chunks each transcript was split into,
           which LLM model handled each chunk, and whether it succeeded.
+          {" "}<CheckCircle2 className="inline w-3.5 h-3.5 align-text-bottom" style={{ color: "#34D399" }} /> succeeded first try ·{" "}
+          <RotateCw className="inline w-3.5 h-3.5 align-text-bottom" style={{ color: "#FBBF24" }} /> a chunk failed along the way but a retry recovered it ·{" "}
+          <XCircle className="inline w-3.5 h-3.5 align-text-bottom" style={{ color: "#F87171" }} /> still failing.
         </p>
 
         {extractionError && <p className="text-sm mb-4" style={{ color: "#EF4444" }}>{extractionError}</p>}
@@ -415,6 +430,7 @@ export default function TaskStatusManager() {
           <div className="rounded-2xl border overflow-hidden divide-y" style={{ borderColor: "var(--bdr)", background: "var(--bg-surface)" }}>
             {extractionEpisodes.map((ep) => {
               const isExpanded = expandedEpisodeId === ep.episodeId;
+              const outcome = episodeOutcome(ep);
               return (
                 <div key={ep.episodeId}>
                   <button
@@ -426,13 +442,23 @@ export default function TaskStatusManager() {
                     ) : (
                       <ChevronRight className="w-4 h-4 flex-shrink-0" style={{ color: "var(--txt-4)" }} />
                     )}
-                    {ep.hasFailure ? (
-                      <XCircle className="w-4 h-4 flex-shrink-0" style={{ color: "#F87171" }} />
-                    ) : (
-                      <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: "#34D399" }} />
-                    )}
+                    <outcome.icon
+                      className="w-4 h-4 flex-shrink-0"
+                      style={{ color: outcome.color }}
+                      aria-label={outcome.label}
+                    />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>{ep.episodeTitle}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-medium truncate" style={{ color: "var(--txt-1)" }}>{ep.episodeTitle}</p>
+                        {outcome.label === "Recovered after retry" && (
+                          <span
+                            className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                            style={{ background: "rgba(251,191,36,0.15)", color: "#FBBF24" }}
+                          >
+                            Recovered after retry
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-xs" style={{ color: "var(--txt-4)" }}>{ep.sourceName}</span>
                         <span className="text-xs" style={{ color: "var(--txt-4)" }}>·</span>
