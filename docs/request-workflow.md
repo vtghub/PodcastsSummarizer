@@ -64,7 +64,7 @@ sequenceDiagram
             PY->>LLM: extract_insights(episode, transcript)
             alt current provider quota exceeded or fails
                 PY->>PY: mark provider "sticky dead" for this run
-                PY->>LLM: retry with next enabled provider in priority order<br/>(Gemini → Groq 8B/70B → Mistral → Cohere → Cerebras → OpenRouter x4)
+                PY->>LLM: retry with next enabled provider in priority order<br/>(Gemini → Groq 8B/70B → Mistral → Together → Cohere → Cerebras → OpenRouter x4)
             end
             alt success
                 LLM-->>PY: Insight (summary, key_points, quotes, actions, tags)

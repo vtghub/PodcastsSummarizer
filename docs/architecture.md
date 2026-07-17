@@ -16,7 +16,7 @@ graph TB
         TXT["Text Transcript\n(captions / subtitles)"]
         AUDIO["Download Audio"]
         WHISPER["Whisper STT\n(tiny model, local)\ndomain-aware initial_prompt"]
-        LLM["LLM Insight Extraction\nWaterfall: Gemini → Groq 8B/70B →\nMistral → Cohere → Cerebras → 4× OpenRouter\nchunked map-reduce for long transcripts\nserialized per-episode (_LLM_LOCK);\nsticky dead-provider fallback;\ndefers (no retry penalty) once all dead"]
+        LLM["LLM Insight Extraction\nWaterfall: Gemini → Groq 8B/70B → Mistral →\nTogether → Cohere → Cerebras → 4× OpenRouter\nchunked map-reduce for long transcripts\nserialized per-episode (_LLM_LOCK);\nsticky dead-provider fallback;\ndefers (no retry penalty) once all dead"]
         FANOUT["Per-User Digest Fan-out\nuser_profiles × user_subscriptions"]
         EMAIL["Gmail SMTP\nPersonalized HTML email"]
         RECJOB["Weekly Recommendations Job\nLLM-ranked (scope=recommendations,\nheuristic fallback) + get_trending_sources"]
@@ -415,13 +415,13 @@ Providers are resolved from environment variables at runtime — no code changes
 | Env var | Options |
 |---|---|
 | `STORAGE_PROVIDER` | `sqlite` (dev) · `supabase` (prod) — controls content storage only; Supabase is always required for auth and engagement |
-| `LLM_PROVIDER` | `gemini` · `groq` · `mistral` · `cohere` · `cerebras` · `ollama` · `waterfall` (chains every configured provider — see below) |
+| `LLM_PROVIDER` | `gemini` · `groq` · `mistral` · `together` · `cohere` · `cerebras` · `ollama` · `waterfall` (chains every configured provider — see below) |
 | `TRANSCRIPTION_PROVIDER` | `local_whisper` |
 | `EMAIL_PROVIDER` | `console` (dev) · `gmail_smtp` (prod) |
 
 ### LLM Waterfall (`LLM_PROVIDER=waterfall`)
 
-`worker/providers/llm/provider_registry.py` declares every provider *adapter* that exists in code (`PROVIDER_SLOTS`) — currently Gemini, Groq 8B, Groq 70B, Mistral, Cohere, Cerebras, and 4 OpenRouter free models (10 total). `build_enabled_slots(config)` resolves that list against:
+`worker/providers/llm/provider_registry.py` declares every provider *adapter* that exists in code (`PROVIDER_SLOTS`) — currently Gemini, Groq 8B, Groq 70B, Mistral, Together, Cohere, Cerebras, and 4 OpenRouter free models (11 total — the same set `ask_ai`/`recommendations` use on the dashboard side, see below). `build_enabled_slots(config)` resolves that list against:
 
 1. Whether the slot's env var (e.g. `OPENROUTER_API_KEY`) is actually set
 2. Admin-configured `enabled`/`priority` overrides in `llm_provider_config` (scope `pipeline`), editable at `/admin/llm-providers` without a deploy
@@ -432,4 +432,4 @@ The daily ingestion pipeline (`worker/jobs/pipeline.py`) serializes LLM extracti
 
 The dashboard's Ask AI chat (`/api/ask`) has its own independent 6-slot waterfall (adds Together AI, omits the 4 OpenRouter models), configured the same way but under scope `ask_ai` — see [request-workflow.md](request-workflow.md) for its sequence diagram. `/api/ask/episode` (answering a question from one episode's saved transcript directly, rather than FTS-retrieved insight content) reuses this exact same `ask_ai`-scoped waterfall via `lib/llm-waterfall.ts`.
 
-A third scope, `recommendations`, ranks the best insights from the past week (replacing a pure "sort by richness" heuristic with an actual LLM call). It has two call sites reading the *same* config rows: the worker's weekly job (`WaterfallLLMProvider(scope="recommendations")`, all 10 pipeline-style adapters incl. OpenRouter and Cerebras) and the dashboard's on-demand `/api/recommendations` refresh (`lib/llm-waterfall.ts`'s `runWaterfall("recommendations", prompt)` — the exact same function `ask_ai` uses, just a different scope name for config lookup, so it now has the same 11-provider reach: Gemini, Groq 8B/70B, Mistral, Together, Cohere, Cerebras, and 4× OpenRouter). Both fall back to the heuristic ranking if no provider is configured/available.
+A third scope, `recommendations`, ranks the best insights from the past week (replacing a pure "sort by richness" heuristic with an actual LLM call). It has two call sites reading the *same* config rows: the worker's weekly job (`WaterfallLLMProvider(scope="recommendations")`, all 11 pipeline-style adapters) and the dashboard's on-demand `/api/recommendations` refresh (`lib/llm-waterfall.ts`'s `runWaterfall("recommendations", prompt)` — the exact same function `ask_ai` uses, just a different scope name for config lookup). Both sides now have the identical 11-provider reach: Gemini, Groq 8B/70B, Mistral, Together, Cohere, Cerebras, and 4× OpenRouter. Both fall back to the heuristic ranking if no provider is configured/available.

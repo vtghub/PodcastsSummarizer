@@ -47,6 +47,11 @@ def _mistral():
     return MistralLLMProvider()
 
 
+def _together():
+    from worker.providers.llm.together_llm import TogetherLLMProvider
+    return TogetherLLMProvider()
+
+
 def _cohere():
     from worker.providers.llm.cohere_llm import CohereLLMProvider
     return CohereLLMProvider()
@@ -85,6 +90,7 @@ PROVIDER_SLOTS: list[ProviderSlot] = [
     ProviderSlot("groq_8b", "Groq — Llama 3.1 8B", "GROQ_API_KEY", _groq_8b),
     ProviderSlot("groq_70b", "Groq — Llama 3.3 70B", "GROQ_API_KEY", _groq_70b),
     ProviderSlot("mistral", "Mistral Small", "MISTRAL_API_KEY", _mistral),
+    ProviderSlot("together", "Together — Llama 3.1 8B", "TOGETHER_API_KEY", _together),
     ProviderSlot("cohere", "Cohere Command R", "COHERE_API_KEY", _cohere),
     ProviderSlot("cerebras", "Cerebras Llama 3.3 70B", "CEREBRAS_API_KEY", _cerebras),
     *[

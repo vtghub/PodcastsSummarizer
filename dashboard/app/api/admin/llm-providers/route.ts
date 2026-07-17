@@ -35,6 +35,7 @@ const PIPELINE_SLOTS = [
   { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: false },
   { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: false },
   { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: false },
+  { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY", runs_here: false },
   { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: false },
   { key: "cerebras", display_name: "Cerebras Llama 3.3 70B", env_var: "CEREBRAS_API_KEY", runs_here: false },
   { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
