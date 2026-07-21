@@ -1153,6 +1153,13 @@ sequenceDiagram
         DETAIL->>DB: UPDATE user_profiles SET is_admin=? WHERE user_id=?
         DETAIL-->>MGR: { ok: true }
         MGR->>MGR: update row locally, show success toast
+    else Enable/Disable email digest
+        B->>MGR: click Mail icon
+        MGR->>DETAIL: PATCH /api/admin/users/[id] { digest_enabled: !current }
+        DETAIL->>DB: UPDATE user_profiles SET digest_enabled=? WHERE user_id=?
+        Note over DETAIL,DB: read by worker/jobs/pipeline.py's get_users_with_digest_enabled()<br/>(daily or weekly cadence per the user's own digest_frequency) — independent<br/>of weekly_recommendations_enabled below
+        DETAIL-->>MGR: { ok: true }
+        MGR->>MGR: update row locally, show success toast
     else Subscribe/Unsubscribe Weekly Recommendations
         B->>MGR: click Calendar icon
         MGR->>DETAIL: PATCH /api/admin/users/[id] { weekly_recommendations_enabled: !current }
