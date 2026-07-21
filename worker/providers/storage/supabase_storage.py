@@ -472,7 +472,7 @@ class SupabaseStorageProvider(StorageProvider):
                     LEFT JOIN episodes e ON e.id = i.episode_id
                     LEFT JOIN sources s ON s.id = i.source_id
                     WHERE i.source_id = ANY(%s)
-                      AND i.date >= (NOW() - make_interval(days => %s))::date
+                      AND i.date::date >= (NOW() - make_interval(days => %s))::date
                     ORDER BY i.date DESC, i.created_at DESC
                     """,
                     (source_ids, days),
@@ -498,7 +498,7 @@ class SupabaseStorageProvider(StorageProvider):
                       AND s.id != ALL(%s)
                       AND s.deleted = FALSE
                       AND s.enabled = TRUE
-                      AND i.date >= (NOW() - make_interval(days => %s))::date
+                      AND i.date::date >= (NOW() - make_interval(days => %s))::date
                     GROUP BY s.id, s.name, s.domain
                     ORDER BY insight_count DESC
                     LIMIT %s
