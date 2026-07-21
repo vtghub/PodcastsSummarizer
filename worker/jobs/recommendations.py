@@ -36,7 +36,7 @@ def run_weekly_recommendations(date_str: str | None = None) -> None:
         print(f"[Weekly] no ranking LLM configured ({e}) — using heuristic ranking")
         ranker = None
 
-    users = storage.get_users_with_digest_enabled()
+    users = storage.get_users_for_weekly_recommendations()
     print(f"[Weekly] Running for {date_str} — {len(users)} user(s)")
 
     for user in users:

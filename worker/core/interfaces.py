@@ -219,6 +219,10 @@ class StorageProvider(ABC):
         """Return users who want a digest today. Default: empty list (local dev)."""
         return []
 
+    def get_users_for_weekly_recommendations(self) -> list["UserDigestProfile"]:
+        """Return users opted into the Weekly Recommendations email. Default: empty list (local dev)."""
+        return []
+
     def get_user_subscribed_source_ids(self, user_id: str) -> list[str]:
         """Return source IDs the user is subscribed to. Default: empty list."""
         return []
