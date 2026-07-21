@@ -201,6 +201,35 @@ sequenceDiagram
 
 ---
 
+## 5b. Forgot / Reset Password
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant SB as Supabase Auth
+
+    Note over B: /forgot-password
+    B->>SB: supabase.auth.resetPasswordForEmail(email, { redirectTo: /reset-password })
+    SB-->>B: 200 OK (same response whether or not the email is registered)
+    SB->>B: (async) recovery email sent, if account exists
+
+    Note over B: user clicks the emailed link → lands on /reset-password#access_token=...&type=recovery
+    B->>B: Supabase client auto-detects tokens in URL hash (detectSessionInUrl)
+    B->>B: onAuthStateChange fires PASSWORD_RECOVERY → transient client session established
+    alt no valid recovery token
+        B->>B: show "link invalid or expired" + link back to /forgot-password
+    else valid
+        B->>SB: supabase.auth.updateUser({ password })
+        SB-->>B: 200 OK
+        B->>SB: supabase.auth.signOut() (clears the transient client-only session)
+        B->>B: redirect to /login?reset=success
+    end
+```
+
+Entirely client-side against Supabase Auth — no new API routes. The transient recovery session lives only in the browser client's local storage and is distinct from the app's real session, which is the HttpOnly SSR cookie set by `/api/auth/login` (Login / Logout, above).
+
+---
+
 ## 6. Subscribe / Unsubscribe (optimistic)
 
 ```mermaid
@@ -921,8 +950,8 @@ sequenceDiagram
     else none available
         JOB->>JOB: ranker = None (heuristic fallback for every user this run)
     end
-    JOB->>DB: get_users_with_digest_enabled()
-    DB-->>JOB: [user1, user2, ...] (digest_enabled=TRUE)
+    JOB->>DB: get_users_for_weekly_recommendations()
+    DB-->>JOB: [user1, user2, ...] (weekly_recommendations_enabled=TRUE — independent of digest_enabled, admin-togglable per user on /admin/users)
 
     loop per user
         JOB->>DB: get_user_subscribed_source_ids(user_id)
@@ -1077,7 +1106,7 @@ sequenceDiagram
     LIST->>LIST: isAdmin() check (403 if false)
     LIST->>AUTH: auth.admin.listUsers({ perPage: 1000 })
     AUTH-->>LIST: auth.users rows (id, email, created_at, email_confirmed_at)
-    LIST->>DB: SELECT user_id, display_name, is_admin, digest_enabled, created_at FROM user_profiles
+    LIST->>DB: SELECT user_id, display_name, is_admin, digest_enabled, weekly_recommendations_enabled, created_at FROM user_profiles
     LIST->>DB: SELECT user_id, sources(name, domain) FROM user_subscriptions WHERE enabled=true
     DB-->>LIST: profiles + subscription rows joined with source name/domain
     LIST->>LIST: merge by user_id; group channels by domain;<br/>has_profile=false if no matching profile row<br/>(surfaces orphaned auth.users left behind by manual DB deletes)
@@ -1122,6 +1151,13 @@ sequenceDiagram
         MGR->>DETAIL: PATCH /api/admin/users/[id] { is_admin: !current }
         DETAIL->>DETAIL: isAdmin() check · block self-revoke (id===callerId && is_admin=false)
         DETAIL->>DB: UPDATE user_profiles SET is_admin=? WHERE user_id=?
+        DETAIL-->>MGR: { ok: true }
+        MGR->>MGR: update row locally, show success toast
+    else Subscribe/Unsubscribe Weekly Recommendations
+        B->>MGR: click Calendar icon
+        MGR->>DETAIL: PATCH /api/admin/users/[id] { weekly_recommendations_enabled: !current }
+        DETAIL->>DB: UPDATE user_profiles SET weekly_recommendations_enabled=? WHERE user_id=?
+        Note over DETAIL,DB: independent of digest_enabled — read by worker/jobs/recommendations.py's<br/>get_users_for_weekly_recommendations() (Weekly Recommendations Email, above)
         DETAIL-->>MGR: { ok: true }
         MGR->>MGR: update row locally, show success toast
     else Reset onboarding
