@@ -10,6 +10,7 @@ function LoginForm() {
   // Default to /dashboard (not /podcasts) — it's the only page that checks
   // for zero subscriptions and redirects first-time users to /onboarding.
   const from = searchParams.get("from") ?? "/dashboard";
+  const justReset = searchParams.get("reset") === "success";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -69,6 +70,19 @@ function LoginForm() {
           style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)", boxShadow: "var(--shadow-card)" }}
         >
           <form onSubmit={handleSubmit} className="space-y-4">
+            {justReset && (
+              <p
+                className="text-sm px-3 py-2 rounded-lg"
+                style={{
+                  color: "#4ADE80",
+                  background: "rgba(20,83,45,0.25)",
+                  border: "1px solid rgba(21,128,61,0.3)",
+                }}
+              >
+                Password updated. Sign in with your new password.
+              </p>
+            )}
+
             {/* Email */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
@@ -91,9 +105,18 @@ function LoginForm() {
 
             {/* Password */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
-                Password
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium" style={{ color: "var(--txt-3)" }}>
+                  Password
+                </label>
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-medium hover:underline"
+                  style={{ color: "var(--acc)" }}
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <div className="input flex items-center gap-2.5" style={{ padding: "0 0.75rem" }}>
                 <Lock className="w-4 h-4 shrink-0" style={{ color: "var(--txt-4)" }} />
                 <input

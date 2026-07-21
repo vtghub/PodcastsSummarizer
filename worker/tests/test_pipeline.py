@@ -149,6 +149,9 @@ class TestStorageProviderDefaults:
     def test_get_users_default_empty(self):
         assert self.storage.get_users_with_digest_enabled() == []
 
+    def test_get_users_for_weekly_recommendations_default_empty(self):
+        assert self.storage.get_users_for_weekly_recommendations() == []
+
     def test_get_subscriptions_default_empty(self):
         assert self.storage.get_user_subscribed_source_ids("uid") == []
 
