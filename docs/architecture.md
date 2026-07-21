@@ -35,7 +35,7 @@ graph TB
         BOOKMARKS[("insight_bookmarks\ninsight_id, user_id")]
         COMMENTS[("insight_comments\ninsight_id, user_id, body")]
         CREACTIONS[("comment_reactions\ncomment_id, user_id, type")]
-        PROFILES[("user_profiles\nis_admin, digest_enabled\ndigest_hour, digest_domains[]\ndigest_frequency, digest_day_of_week\nlast_visited_at")]
+        PROFILES[("user_profiles\nis_admin, digest_enabled\nweekly_recommendations_enabled\ndigest_hour, digest_domains[]\ndigest_frequency, digest_day_of_week\nlast_visited_at")]
         SUBS[("user_subscriptions\nuser_id → source_id")]
         AUTHUSERS[("auth.users\nSupabase Auth")]
         LLMCONFIG[("llm_provider_config\nscope, provider_key,\nenabled, priority")]
@@ -254,6 +254,7 @@ erDiagram
         text display_name
         bool is_admin
         bool digest_enabled
+        bool weekly_recommendations_enabled
         int  digest_hour
         text[] digest_domains
         text digest_frequency
