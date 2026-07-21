@@ -152,6 +152,7 @@ export interface Database {
           display_name: string | null;
           is_admin: boolean;
           digest_enabled: boolean;
+          weekly_recommendations_enabled: boolean;
           digest_hour: number;
           digest_domains: string[] | null;
           digest_frequency: string;
@@ -165,6 +166,7 @@ export interface Database {
           display_name?: string | null;
           is_admin?: boolean;
           digest_enabled?: boolean;
+          weekly_recommendations_enabled?: boolean;
           digest_hour?: number;
           digest_domains?: string[] | null;
           digest_frequency?: string;
@@ -178,6 +180,7 @@ export interface Database {
           display_name?: string | null;
           is_admin?: boolean;
           digest_enabled?: boolean;
+          weekly_recommendations_enabled?: boolean;
           digest_hour?: number;
           digest_domains?: string[] | null;
           digest_frequency?: string;

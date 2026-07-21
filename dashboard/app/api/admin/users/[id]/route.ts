@@ -53,6 +53,18 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
+  if ("weekly_recommendations_enabled" in body) {
+    if (typeof body.weekly_recommendations_enabled !== "boolean") {
+      return NextResponse.json({ error: "weekly_recommendations_enabled must be a boolean" }, { status: 400 });
+    }
+    const { error } = await sb
+      .from("user_profiles")
+      .update({ weekly_recommendations_enabled: body.weekly_recommendations_enabled })
+      .eq("user_id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   if (body.reset_onboarding === true) {
     // Clearing subscriptions sends the user back through /onboarding on
     // their next dashboard visit (dashboard/page.tsx redirects when
@@ -62,5 +74,8 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
-  return NextResponse.json({ error: "is_admin or reset_onboarding is required" }, { status: 400 });
+  return NextResponse.json(
+    { error: "is_admin, weekly_recommendations_enabled, or reset_onboarding is required" },
+    { status: 400 }
+  );
 }

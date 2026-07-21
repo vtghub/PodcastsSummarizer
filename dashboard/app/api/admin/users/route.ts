@@ -12,7 +12,7 @@ export async function GET() {
   const [{ data: authUsers, error: authError }, { data: profiles, error: profileError }, { data: subs }] =
     await Promise.all([
       sb.auth.admin.listUsers({ perPage: 1000 }),
-      sb.from("user_profiles").select("user_id, display_name, is_admin, digest_enabled, created_at"),
+      sb.from("user_profiles").select("user_id, display_name, is_admin, digest_enabled, weekly_recommendations_enabled, created_at"),
       sb
         .from("user_subscriptions")
         .select("user_id, sources(name, domain)")
@@ -44,6 +44,7 @@ export async function GET() {
       display_name: profile?.display_name ?? null,
       is_admin: Boolean(profile?.is_admin),
       digest_enabled: profile?.digest_enabled ?? false,
+      weekly_recommendations_enabled: profile?.weekly_recommendations_enabled ?? true,
       subscription_count: channels.length,
       domains,
       channels,

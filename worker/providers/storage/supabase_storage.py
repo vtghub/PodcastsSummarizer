@@ -448,6 +448,45 @@ class SupabaseStorageProvider(StorageProvider):
             for r in rows
         ]
 
+    def get_users_for_weekly_recommendations(self) -> list[UserDigestProfile]:
+        """
+        Returns all users who have weekly_recommendations_enabled=TRUE in user_profiles —
+        an independent admin-controlled toggle from digest_enabled (which gates the
+        separate daily/hourly digest).
+        """
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        p.user_id,
+                        p.display_name,
+                        p.digest_hour,
+                        p.digest_domains,
+                        p.digest_frequency,
+                        p.digest_day_of_week,
+                        p.digest_timezone,
+                        u.email
+                    FROM user_profiles p
+                    JOIN auth.users u ON u.id = p.user_id
+                    WHERE p.weekly_recommendations_enabled = TRUE
+                      AND u.email IS NOT NULL
+                      AND u.email_confirmed_at IS NOT NULL
+                """)
+                rows = cur.fetchall()
+        return [
+            UserDigestProfile(
+                user_id=str(r["user_id"]),
+                email=r["email"],
+                display_name=r["display_name"] or r["email"].split("@")[0],
+                digest_hour=r["digest_hour"],
+                digest_domains=list(r["digest_domains"]) if r["digest_domains"] else None,
+                digest_frequency=r["digest_frequency"] or "daily",
+                digest_day_of_week=r["digest_day_of_week"] if r["digest_day_of_week"] is not None else 0,
+                digest_timezone=r["digest_timezone"] or "America/New_York",
+            )
+            for r in rows
+        ]
+
     def get_user_subscribed_source_ids(self, user_id: str) -> list[str]:
         with self._conn() as conn:
             with conn.cursor() as cur:
