@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Shield, ShieldOff, RotateCcw, Trash2, Loader2, Search, Mail, MailX, Users, ChevronDown, ChevronUp, RefreshCw, Bell, BellOff, CalendarCheck, CalendarX } from "lucide-react";
+import { Shield, ShieldOff, RotateCcw, Trash2, Loader2, Search, Mail, MailX, Users, ChevronDown, ChevronUp, RefreshCw, Bell, BellOff, CalendarCheck, CalendarX, MailCheck, MailMinus } from "lucide-react";
 import { getDomainColor, DOMAINS as DOMAIN_ORDER } from "@/lib/domain-colors";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -122,6 +122,32 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
       if (!res.ok) throw new Error(data.error ?? "Failed to update");
       setUsers((prev) => prev?.map((x) => (x.id === u.id ? { ...x, is_admin: !u.is_admin } : x)) ?? null);
       showToast(!u.is_admin ? `${u.email} is now an admin` : `${u.email} is no longer an admin`, "success");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Failed to update", "error");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function toggleDigestEnabled(u: AdminUser) {
+    setActionId(u.id);
+    try {
+      const res = await fetch(`/api/admin/users/${u.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ digest_enabled: !u.digest_enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to update");
+      setUsers((prev) =>
+        prev?.map((x) => (x.id === u.id ? { ...x, digest_enabled: !u.digest_enabled } : x)) ?? null
+      );
+      showToast(
+        !u.digest_enabled
+          ? `Email digest enabled for ${u.email}`
+          : `Email digest disabled for ${u.email}`,
+        "success"
+      );
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Failed to update", "error");
     } finally {
@@ -467,6 +493,18 @@ export default function AdminUsersManager({ currentUserId }: { currentUserId: st
                         style={{ borderColor: "var(--bdr)", color: "var(--txt-3)" }}
                       >
                         {u.is_admin ? <ShieldOff className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        onClick={() => toggleDigestEnabled(u)}
+                        disabled={busy}
+                        title={u.digest_enabled ? "Disable email digest" : "Enable email digest"}
+                        className="p-2 rounded-lg border transition-colors disabled:opacity-40"
+                        style={u.digest_enabled
+                          ? { background: "var(--acc-bg)", borderColor: "var(--acc)", color: "var(--acc)" }
+                          : { borderColor: "var(--bdr)", color: "var(--txt-3)" }
+                        }
+                      >
+                        {u.digest_enabled ? <MailCheck className="w-3.5 h-3.5" /> : <MailMinus className="w-3.5 h-3.5" />}
                       </button>
                       <button
                         onClick={() => toggleWeeklyRecommendations(u)}
