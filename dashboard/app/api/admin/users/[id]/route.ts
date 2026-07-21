@@ -53,6 +53,18 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
+  if ("digest_enabled" in body) {
+    if (typeof body.digest_enabled !== "boolean") {
+      return NextResponse.json({ error: "digest_enabled must be a boolean" }, { status: 400 });
+    }
+    const { error } = await sb
+      .from("user_profiles")
+      .update({ digest_enabled: body.digest_enabled })
+      .eq("user_id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   if ("weekly_recommendations_enabled" in body) {
     if (typeof body.weekly_recommendations_enabled !== "boolean") {
       return NextResponse.json({ error: "weekly_recommendations_enabled must be a boolean" }, { status: 400 });
@@ -75,7 +87,7 @@ export async function PATCH(
   }
 
   return NextResponse.json(
-    { error: "is_admin, weekly_recommendations_enabled, or reset_onboarding is required" },
+    { error: "is_admin, digest_enabled, weekly_recommendations_enabled, or reset_onboarding is required" },
     { status: 400 }
   );
 }
