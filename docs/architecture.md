@@ -63,7 +63,7 @@ graph TB
         SPAGE["saved/page.tsx\nBookmarked insights list"]
         ASKPAGE["ask/page.tsx + AskChat.tsx\nLLM Q&A chat UI — two modes:\nMy Podcasts (FTS, personalized suggestions)\nAsk About an Episode (podcast→episode picker,\nreads ?episode=<id> deep link)"]
         ONBOARD["onboarding/page.tsx\nDomain picker + subscribe wizard"]
-        ADMINUSERS["admin/users/page.tsx\nAdmin-only — list/search users,\ngrant/revoke admin, reset onboarding,\ncascade-delete user"]
+        ADMINUSERS["admin/users/page.tsx\nAdmin-only — list/search users,\ngrant/revoke admin, toggle email digest\n& Weekly Recommendations, reset onboarding,\ncascade-delete user"]
         ADMINLLM["admin/llm-providers/page.tsx\nAdmin-only — toggle/reorder waterfall\nper feature (Pipeline, Ask AI, Recommendations)"]
         ADMINTASK["admin/task-status/page.tsx\nAdmin-only — GitHub Actions runners\n(run now/cancel, polled) +\nFailed Episodes list (retry now)"]
         RECPAGE["recommendations/page.tsx\nOn-demand best-of-week insights\n+ trending podcasts, Refresh button"]
