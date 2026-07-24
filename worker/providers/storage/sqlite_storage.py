@@ -165,6 +165,22 @@ class SQLiteStorage(StorageProvider):
         with self._conn() as conn:
             conn.execute("UPDATE episodes SET title_en = ? WHERE id = ?", (title_en, episode_id))
 
+    def get_recent_episode_titles(
+        self, source_id: str, published_at, window_days: int = 14
+    ) -> list[str]:
+        from datetime import timedelta
+        lo = (published_at - timedelta(days=window_days)).isoformat()
+        hi = (published_at + timedelta(days=window_days)).isoformat()
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT title FROM episodes
+                WHERE source_id = ? AND published_at BETWEEN ? AND ?
+                """,
+                (source_id, lo, hi),
+            ).fetchall()
+        return [r[0] for r in rows]
+
     # ------------------------------------------------------------------
     # Transcripts
     # ------------------------------------------------------------------

@@ -26,6 +26,7 @@ from worker.core.registry import (
 from worker.config.settings import DIGEST_RECIPIENT, AUDIO_CACHE_DIR, GROQ_API_KEY
 from worker.providers.source.rss_source import RSSSourceProvider
 from worker.providers.source.youtube_source import YouTubeSourceProvider
+from worker.jobs.episode_filters import is_likely_non_english_title, is_recap_or_highlight_title
 
 _FETCH_WORKERS = 8    # parallel RSS / YouTube metadata fetches
 _EPISODE_WORKERS = 4  # concurrent LLM + transcript workers
@@ -369,6 +370,21 @@ def _process_episode(
     if dup_id:
         print(f"  {tag} duplicate of already-processed episode {dup_id[:8]} (URL changed) — skip")
         return "skipped", None
+
+    # Some podcasts re-publish the same underlying episode more than once —
+    # a short "HIGHLIGHTS:"/"Recap:" re-clip, or a dubbed re-release with a
+    # foreign-language title. Both are cheap to catch from the title alone,
+    # before any transcript/audio/LLM work, so we always keep just the
+    # original full-length English episode rather than generating a second,
+    # near-duplicate insight card for the same content.
+    if is_recap_or_highlight_title(episode.title):
+        print(f"  {tag} recap/highlights re-clip — skip")
+        return "skipped", None
+    if is_likely_non_english_title(episode.title):
+        sibling_titles = storage.get_recent_episode_titles(source.id, episode.published_at)
+        if any(not is_likely_non_english_title(t) for t in sibling_titles):
+            print(f"  {tag} foreign-language variant of an existing English episode — skip")
+            return "skipped", None
 
     # Once every provider in this run has already failed once, every remaining
     # episode is guaranteed to fail the same way — bail before doing any work

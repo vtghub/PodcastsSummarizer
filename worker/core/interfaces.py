@@ -197,6 +197,18 @@ class StorageProvider(ABC):
     def update_episode_title_en(self, episode_id: str, title_en: str) -> None:
         """Persist the English translation of an episode's title. Default: no-op."""
 
+    def get_recent_episode_titles(
+        self, source_id: str, published_at: "datetime", window_days: int = 14
+    ) -> list[str]:
+        """
+        Returns titles of other episodes from the same source published within
+        `window_days` of `published_at` (any status). Used to detect whether a
+        newly-fetched, foreign-language-titled episode is a dubbed re-release of
+        an episode we already have in English, so it can be skipped rather than
+        processed into a redundant insight. Default: empty list (local dev).
+        """
+        return []
+
     @abstractmethod
     def mark_episode_done(self, episode_id: str) -> None: ...
 

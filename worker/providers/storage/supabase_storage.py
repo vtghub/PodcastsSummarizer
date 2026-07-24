@@ -178,6 +178,22 @@ class SupabaseStorageProvider(StorageProvider):
                     (title_en, episode_id),
                 )
 
+    def get_recent_episode_titles(
+        self, source_id: str, published_at, window_days: int = 14
+    ) -> list[str]:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT title FROM episodes
+                    WHERE source_id = %s
+                      AND published_at BETWEEN %s::timestamptz - (%s || ' days')::interval
+                                            AND %s::timestamptz + (%s || ' days')::interval
+                    """,
+                    (source_id, published_at, window_days, published_at, window_days),
+                )
+                return [r["title"] for r in cur.fetchall()]
+
     def get_llm_provider_config(self, scope: str = "pipeline") -> dict[str, dict]:
         try:
             with self._conn() as conn:
