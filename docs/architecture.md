@@ -13,6 +13,7 @@ graph TB
     subgraph PIPELINE["🐍 Python Worker Pipeline"]
         SRC["Source Providers\nRSS · YouTube"]
         FETCH["Fetch Episodes\n(parallel, 8 workers)"]
+        DEDUPE["Episode Variant Skip\nepisode_filters.py — highlights/recap\nre-clips + foreign-language re-releases\nof an already-processed episode"]
         TXT["Text Transcript\n(captions / subtitles)"]
         AUDIO["Download Audio"]
         WHISPER["Whisper STT\n(tiny model, local)\ndomain-aware initial_prompt"]
@@ -118,7 +119,8 @@ graph TB
     RETRYJOB --> EPQUEUE
     CRON --> SRC
     SRC --> FETCH
-    FETCH --> TXT
+    FETCH --> DEDUPE
+    DEDUPE --> TXT
     TXT -->|no captions| AUDIO
     AUDIO --> WHISPER
     WHISPER --> LLM

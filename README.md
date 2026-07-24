@@ -66,11 +66,12 @@ PodcastsSummarizer/
 │   │   │   └── waterfall_llm.py     # WaterfallLLMProvider — builds the pipeline's waterfall from provider_registry + Supabase-stored admin config (scope='pipeline')
 │   │   ├── storage/
 │   │   │   ├── sqlite_storage.py    # Local SQLite (dev, single-user)
-│   │   │   └── supabase_storage.py  # Cloud Postgres — per-user digest helpers; find_duplicate_episode_id() catches episodes re-fetched under a new id when a feed rotates its audio URL; update_episode_title_en() persists English title translations; get_llm_provider_config() reads admin-configured waterfall overrides (scope='pipeline')
+│   │   │   └── supabase_storage.py  # Cloud Postgres — per-user digest helpers; find_duplicate_episode_id() catches episodes re-fetched under a new id when a feed rotates its audio URL; get_recent_episode_titles() supports foreign-language re-release detection (episode_filters.py); update_episode_title_en() persists English title translations; get_llm_provider_config() reads admin-configured waterfall overrides (scope='pipeline')
 │   │   └── email/
 │   │       └── gmail_smtp.py        # Gmail App Password SMTP + HTML renderer
 │   └── jobs/
-│       ├── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → async email fan-out; episode retry; RSS backoff; run_single_episode() for on-demand. LLM extraction is serialized across the 4 episode workers (_LLM_LOCK) and short-circuits to a no-penalty "deferred" status once every provider is exhausted for the run; retries reuse an already-saved transcript instead of re-fetching/re-transcribing
+│       ├── pipeline.py              # Orchestration: fetch → transcribe → LLM → store → async email fan-out; episode retry; RSS backoff; run_single_episode() for on-demand. LLM extraction is serialized across the 4 episode workers (_LLM_LOCK) and short-circuits to a no-penalty "deferred" status once every provider is exhausted for the run; retries reuse an already-saved transcript instead of re-fetching/re-transcribing; skips highlights/recap re-clips and same-source foreign-language re-releases of an episode (episode_filters.py) before any transcript/audio/LLM work
+│       ├── episode_filters.py       # Cheap title-only heuristics run before transcript/audio/LLM work: is_recap_or_highlight_title() (regex for "HIGHLIGHTS:"/"Recap:"/etc.), is_likely_non_english_title() (majority-non-Latin-script titles, skipped only if the source already has an English-titled episode within a 14-day window) — prevents duplicate insight cards when a podcast republishes the same interview as a dub or short clip
 │       ├── recommendations.py       # Weekly recommendations job: LLM-ranked (scope='recommendations' waterfall, heuristic fallback) best insights + trending podcast discovery per user
 │       ├── backfill_platform_links.py  # One-time job: discover platform URLs for all existing sources
 │       ├── backfill_published_at.py    # One-time job: backfill episode published dates from RSS feeds
@@ -78,7 +79,7 @@ PodcastsSummarizer/
 │       ├── retry_failed_episodes.py    # Dedicated recovery job: re-attempts episode_queue rows with status='failed' using a fresh waterfall instance (reuses pipeline.py's _process_episode, so it gets the transcript-cache skip + exhaustion short-circuit too); bounded batch per invocation via --limit
 │       └── seed_dictionary.py          # One-time (idempotent) job: loads Princeton WordNet (~130k word-sense entries) into dictionary_entries via NLTK — powers the insight card word-lookup feature
 │   └── tests/
-│       └── test_pipeline.py         # Pytest suite (85 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience, _process_episode (exhaustion short-circuit + transcript-cache reuse), chunked extraction (incl. per-chunk logging), waterfall (incl. sticky dead-provider fallback + all_dead), LLM-backed ranking, insight backfill job, retry-failed-episodes job, provider registry, live Cerebras model discovery
+│       └── test_pipeline.py         # Pytest suite (93 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience, _process_episode (exhaustion short-circuit + transcript-cache reuse + episode-variant skip), chunked extraction (incl. per-chunk logging), waterfall (incl. sticky dead-provider fallback + all_dead), LLM-backed ranking, insight backfill job, retry-failed-episodes job, provider registry, live Cerebras model discovery, episode-title-variant heuristics
 │
 ├── supabase/
 │   └── migrations/

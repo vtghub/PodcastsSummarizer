@@ -41,6 +41,14 @@ sequenceDiagram
     end
 
     loop per episode (4 workers) — new + retry queue
+        alt title matches "HIGHLIGHTS:"/"Recap:"/etc. (is_recap_or_highlight_title)
+            PY->>PY: return "skipped" — short-form re-clip of an episode already covered
+        else title is majority non-Latin script (is_likely_non_english_title)
+            PY->>DB: get_recent_episode_titles(source_id, published_at, window_days=14)
+            alt an English-titled sibling exists in that window
+                PY->>PY: return "skipped" — foreign-language dub of an already-processed episode
+            end
+        end
         alt every provider already dead this run (all_providers_dead)
             PY->>PY: return "deferred" immediately — no transcript fetch,<br/>no audio download, no LLM call, no retry-count penalty
         else at least one provider still alive
