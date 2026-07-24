@@ -152,6 +152,9 @@ class TestStorageProviderDefaults:
     def test_get_users_for_weekly_recommendations_default_empty(self):
         assert self.storage.get_users_for_weekly_recommendations() == []
 
+    def test_get_recent_episode_titles_default_empty(self):
+        assert self.storage.get_recent_episode_titles("src1", datetime.now(timezone.utc)) == []
+
     def test_get_subscriptions_default_empty(self):
         assert self.storage.get_user_subscribed_source_ids("uid") == []
 
@@ -347,6 +350,7 @@ class TestProcessEpisode:
         storage = MagicMock()
         storage.episode_exists.return_value = False
         storage.find_duplicate_episode_id.return_value = None
+        storage.get_recent_episode_titles.return_value = []
         storage.get_transcript.return_value = None
         llm = MagicMock()
         llm.all_providers_dead = False
@@ -406,6 +410,77 @@ class TestProcessEpisode:
         storage.save_transcript.assert_called_once()
         used_transcript = llm.extract_insights.call_args.args[1]
         assert used_transcript.text == "fresh transcript text"
+
+    def test_skips_recap_or_highlights_title_without_any_work(self):
+        from worker.jobs.pipeline import _process_episode
+
+        storage, llm, provider = self._base_mocks()
+        source = _make_source()
+        episode = _make_episode(title="HIGHLIGHTS: Venki Ramakrishnan")
+
+        status, error_msg = _process_episode(storage, llm, source, provider, episode, "2026-07-16")
+
+        assert (status, error_msg) == ("skipped", None)
+        storage.save_episode.assert_not_called()
+        provider.fetch_transcript_text.assert_not_called()
+        llm.extract_insights.assert_not_called()
+
+    def test_skips_foreign_language_title_when_english_sibling_exists(self):
+        from worker.jobs.pipeline import _process_episode
+
+        storage, llm, provider = self._base_mocks()
+        storage.get_recent_episode_titles.return_value = [
+            "Venki Ramakrishnan: The Science and Hype of Living Longer"
+        ]
+        source = _make_source()
+        episode = _make_episode(
+            title="वेंकी रामाकृष्णन: लंबी उम्र जीने का विज्ञान और उसका हाइप (Hindi version)"
+        )
+
+        status, error_msg = _process_episode(storage, llm, source, provider, episode, "2026-07-16")
+
+        assert (status, error_msg) == ("skipped", None)
+        storage.save_episode.assert_not_called()
+        llm.extract_insights.assert_not_called()
+
+    def test_processes_foreign_language_title_when_no_english_sibling_yet(self):
+        from worker.jobs.pipeline import _process_episode
+
+        storage, llm, provider = self._base_mocks()
+        storage.get_recent_episode_titles.return_value = []  # source is genuinely non-English
+        source = _make_source()
+        episode = _make_episode(title="वेंकी रामाकृष्णन: लंबी उम्र जीने का विज्ञान")
+
+        status, error_msg = _process_episode(storage, llm, source, provider, episode, "2026-07-16")
+
+        assert status == "insights"
+        llm.extract_insights.assert_called_once()
+
+
+# ── Episode-title variant heuristics ─────────────────────────────────────────
+
+class TestEpisodeFilters:
+    def test_highlights_prefix_detected(self):
+        from worker.jobs.episode_filters import is_recap_or_highlight_title
+        assert is_recap_or_highlight_title("HIGHLIGHTS: Venki Ramakrishnan")
+        assert is_recap_or_highlight_title("Recap: last week's show")
+        assert is_recap_or_highlight_title("Best of: 2026 so far")
+
+    def test_normal_title_not_flagged_as_highlight(self):
+        from worker.jobs.episode_filters import is_recap_or_highlight_title
+        assert not is_recap_or_highlight_title("Venki Ramakrishnan: The Science and Hype of Living Longer")
+        assert not is_recap_or_highlight_title("")
+
+    def test_non_english_script_detected(self):
+        from worker.jobs.episode_filters import is_likely_non_english_title
+        assert is_likely_non_english_title(
+            "वेंकी रामाकृष्णन: लंबी उम्र जीने का विज्ञान और उसका हाइप (Hindi version)"
+        )
+
+    def test_english_title_not_flagged_as_foreign(self):
+        from worker.jobs.episode_filters import is_likely_non_english_title
+        assert not is_likely_non_english_title("The Science and Hype of Living Longer")
+        assert not is_likely_non_english_title("")
 
 
 # ── Lenient JSON parsing of LLM responses ────────────────────────────────────
