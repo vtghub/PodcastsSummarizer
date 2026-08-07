@@ -18,6 +18,9 @@ data/
 *.db-wal
 *.db-shm
 
+# Supabase migrations — applied manually, not tracked in git
+supabase/migrations/*.sql
+
 # Whisper model cache
 ~/.cache/whisper/
 
