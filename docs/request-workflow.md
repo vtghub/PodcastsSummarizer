@@ -1478,3 +1478,59 @@ sequenceDiagram
 ```
 
 `dictionary_entries` is seeded once (idempotently) by `worker/jobs/seed_dictionary.py`, loading the Princeton WordNet corpus (~130k word-sense entries) via NLTK — triggered manually through the `Seed Dictionary` GitHub Actions workflow, not run automatically. The lookup itself is pure retrieval (no LLM call) and is public — no auth check, works for guests on the public insight preview too.
+
+---
+
+## 32. Episode Notes (Add / Edit / Delete, Debounced Autosave)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (signed in)
+    participant CARD as InsightCard.tsx
+    participant NP as NotesPanel.tsx
+    participant NR as NoteRow.tsx
+    participant LAPI as /api/episodes/[id]/notes
+    participant IAPI as /api/episode-notes/[id]
+    participant DB as Supabase (episode_notes)
+
+    Note over B,CARD: My Notes toggle only rendered when signed in (like Ask AI)
+    B->>CARD: click StickyNote toggle
+    CARD->>CARD: setShowNotes(true) — mounts NotesPanel
+    NP->>LAPI: GET /api/episodes/{episode_id}/notes (on mount)
+    LAPI->>LAPI: getUserId() — 401 if signed out
+    LAPI->>DB: SELECT id, body, created_at, updated_at<br/>WHERE episode_id=? AND user_id=? ORDER BY created_at ASC
+    DB-->>LAPI: caller's notes for this episode only
+    LAPI-->>NP: { notes: [...] }
+    NP->>B: render one NoteRow per note + "Add a note…" textarea
+
+    Note over B,NP: Add a note — debounced auto-create, no Save button
+    B->>NP: type in "Add a note…"
+    NP->>NP: clearTimeout + setTimeout(600ms) on every keystroke
+    NP->>LAPI: POST { body } (fires only after 600ms of no typing)
+    LAPI->>DB: INSERT INTO episode_notes (episode_id, user_id, body)
+    DB-->>LAPI: new note row
+    LAPI-->>NP: { note }
+    NP->>NP: append to local list, clear the input
+
+    Note over B,NR: Edit an existing note — debounced autosave per row
+    B->>NR: type in a note's textarea
+    NR->>NR: clearTimeout + setTimeout(600ms), local state updates immediately
+    NR->>IAPI: PATCH { body } (fires only after 600ms of no typing)
+    IAPI->>IAPI: getUserId() — 401 if signed out
+    IAPI->>DB: UPDATE episode_notes SET body=?, updated_at=NOW()<br/>WHERE id=? AND user_id=? (ownership guard — service-role client bypasses RLS)
+    DB-->>IAPI: updated row
+    IAPI-->>NR: { note }
+    NR->>B: show "Saved" indicator (~1.5s), then fade to idle
+
+    Note over B,NR: Delete a note — confirm-then-delete, same pattern as Comments
+    B->>NR: click trash icon → "Delete?" → Yes
+    NR->>IAPI: DELETE /api/episode-notes/{id}
+    IAPI->>DB: DELETE FROM episode_notes WHERE id=? AND user_id=?
+    DB-->>IAPI: ok
+    IAPI-->>NR: { ok: true }
+    NR->>NP: onDelete(id) — remove from local list (optimistic, no rollback needed since server already confirmed)
+```
+
+`episode_notes` is keyed on `episode_id`, not `insight_id` like every other engagement table (Bookmarks, Reactions, Comments) — episodes can exist with zero insight rows, and notes stay valid regardless. Ownership is enforced explicitly in every API route (`getUserId()` + `.eq("user_id", userId)`) since routes use the service-role Supabase client, which bypasses RLS; the RLS policies on `episode_notes` (migration 024) are defense-in-depth for any future direct client-side access, matching the same pattern used by every other engagement table.
+
+The `/notes` page (`app/notes/page.tsx` → `MyNotesList.tsx`) mirrors `/saved`'s auth guard (`getUserId()` → `redirect("/login?from=/notes")` if signed out) and server-side data-fetch pattern, but groups notes by episode (most-recently-updated note first) instead of listing individual rows — each group is collapsible and reuses the same `NoteRow` component for inline edit/delete, so autosave behavior is identical whether the note is edited from an insight card or from the notes page.
