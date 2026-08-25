@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X, MessageCircle, Shield, Cpu, Sparkles, ChevronDown, BarChart3, Bookmark, Info, ListChecks } from "lucide-react";
+import { Volume2, VolumeX, Palette, UserCircle, LogOut, User, Search, X, MessageCircle, Shield, Cpu, Sparkles, ChevronDown, BarChart3, Bookmark, Info, ListChecks, StickyNote } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useTheme, THEMES } from "@/contexts/ThemeContext";
@@ -223,7 +223,7 @@ export default function NavBar({
               <button
                 onClick={() => setMoreOpen((v) => !v)}
                 className={`transition-colors text-sm flex items-center gap-0.5 ${moreOpen ? "font-medium" : "hover:opacity-80"}`}
-                style={{ color: moreOpen || ["/analytics", "/saved", "/about"].includes(pathname) ? "var(--acc)" : "var(--txt-3)" }}
+                style={{ color: moreOpen || ["/analytics", "/saved", "/notes", "/about"].includes(pathname) ? "var(--acc)" : "var(--txt-3)" }}
               >
                 More
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
@@ -254,6 +254,17 @@ export default function NavBar({
                   >
                     <Bookmark className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
                     Saved
+                  </Link>
+                  <Link
+                    href="/notes"
+                    onClick={() => setMoreOpen(false)}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                    style={{ color: pathname === "/notes" ? "var(--acc)" : "var(--txt-2)" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >
+                    <StickyNote className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                    My Notes
                   </Link>
                   <Link
                     href="/about"
@@ -347,6 +358,19 @@ export default function NavBar({
                     >
                       <Bookmark className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
                       Saved
+                    </Link>
+                  )}
+                  {userEmail && (
+                    <Link
+                      href="/notes"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="sm:hidden flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm transition-colors"
+                      style={{ color: "var(--txt-2)" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-elevated)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    >
+                      <StickyNote className="w-3.5 h-3.5" style={{ color: "var(--txt-4)" }} />
+                      My Notes
                     </Link>
                   )}
                   <Link
