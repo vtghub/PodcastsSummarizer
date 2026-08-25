@@ -6,11 +6,12 @@ import type { Insight, PlatformLinks } from "@/lib/db";
 import {
   ChevronDown, ChevronUp, Quote, Zap, Tag, Volume2, VolumeX, Globe,
   CalendarDays, ThumbsUp, ThumbsDown, Share2, Eye, EyeOff, MessageCircle,
-  Link2, Check, Send, Trash2, X, Copy, Bookmark, Sparkles, BookOpen,
+  Link2, Check, Send, Trash2, X, Copy, Bookmark, Sparkles, BookOpen, StickyNote,
 } from "lucide-react";
 import { useTTS } from "@/contexts/TTSContext";
 import { useSpeech } from "@/hooks/useSpeech";
 import { useWordLookup, DictionaryPopover, LookupableText } from "@/components/WordLookup";
+import NotesPanel from "@/components/NotesPanel";
 
 interface Props {
   insight: Insight;
@@ -178,6 +179,8 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentBody, setCommentBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const [showNotes, setShowNotes] = useState(false);
 
   // ── Load engagement data on mount (single call) ───────────────────────────
   useEffect(() => {
@@ -607,6 +610,18 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
           <Bookmark className={`w-3.5 h-3.5 ${bookmarked ? "fill-current" : ""}`} />
         </EngagementButton>
 
+        {/* My Notes — private per-user notes on this episode */}
+        {isAuthed && (
+          <EngagementButton
+            onClick={() => setShowNotes((v) => !v)}
+            active={showNotes}
+            title="My notes"
+            activeColor="#14B8A6"
+          >
+            <StickyNote className="w-3.5 h-3.5" />
+          </EngagementButton>
+        )}
+
         {/* Ask AI about this episode */}
         {isAuthed && (
           <EngagementButton
@@ -746,6 +761,9 @@ export default function InsightCard({ insight, domainColor, isAuthed }: Props) {
           )}
         </div>
       )}
+
+      {/* ── My Notes panel ─────────────────────────────────────────────────── */}
+      {showNotes && isAuthed && <NotesPanel episodeId={insight.episode_id} />}
     </article>
     <DictionaryPopover popover={popover} onClose={closeLookup} />
     </>

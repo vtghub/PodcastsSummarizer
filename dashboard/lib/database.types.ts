@@ -272,6 +272,31 @@ export interface Database {
         };
         Relationships: [];
       };
+      episode_notes: {
+        Row: {
+          id: number;
+          episode_id: string;
+          user_id: string;
+          body: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          episode_id: string;
+          user_id: string;
+          body: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          episode_id?: string;
+          user_id?: string;
+          body?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       insight_comments: {
         Row: {
           id: number;
