@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   Mic2, Search, Bookmark, CalendarDays, Bell, Mail, Volume2, Download,
-  MessageCircle, Sparkles, BookOpen, BarChart3, Compass,
+  MessageCircle, Sparkles, BookOpen, BarChart3, Compass, StickyNote,
 } from "lucide-react";
 
 function LinkedInIcon({ className = "w-4 h-4" }: { className?: string }) {
@@ -58,6 +58,11 @@ const features = [
     icon: Bookmark,
     title: "Bookmark & Revisit",
     body: "Star any insight to save it to a dedicated page, ready whenever you need it.",
+  },
+  {
+    icon: StickyNote,
+    title: "Private Episode Notes",
+    body: "Jot down multiple notes on any episode — autosaves as you type, visible only to you.",
   },
   {
     icon: CalendarDays,
