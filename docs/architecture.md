@@ -43,6 +43,7 @@ graph TB
         BACKFILLJOBS[("backfill_jobs\nstatus, total/processed/\nsucceeded/failed_items,\ncursor_created_at, cursor_insight_id")]
         BACKFILLFAILS[("backfill_failures\njob_id, insight_id,\nepisode_id, error_msg")]
         DICT[("dictionary_entries\nword, pos, definition,\nexamples[], synonyms[]\nseeded from WordNet")]
+        EPNOTES[("episode_notes\nepisode_id, user_id, body,\ncreated_at, updated_at")]
     end
 
     subgraph AUTH["🔐 Supabase Auth"]
@@ -62,6 +63,7 @@ graph TB
         PROF["profile/page.tsx\nDisplay name · digest prefs"]
         APAGE["analytics/page.tsx\nKPI cards · chart · top insights"]
         SPAGE["saved/page.tsx\nBookmarked insights list"]
+        NPAGE["notes/page.tsx\nEpisode notes grouped by episode,\nmost-recently-active first"]
         ASKPAGE["ask/page.tsx + AskChat.tsx\nLLM Q&A chat UI — two modes:\nMy Podcasts (FTS, personalized suggestions)\nAsk About an Episode (podcast→episode picker,\nreads ?episode=<id> deep link)"]
         ONBOARD["onboarding/page.tsx\nDomain picker + subscribe wizard"]
         ADMINUSERS["admin/users/page.tsx\nAdmin-only — list/search users,\ngrant/revoke admin, toggle email digest\n& Weekly Recommendations, reset onboarding,\ncascade-delete user"]
@@ -85,6 +87,7 @@ graph TB
         ARSEARCH["/api/podcasts/search\nproxies iTunes Search API"]
         ARREC["/api/recommendations/podcasts\nGET ?domains= → catalog + iTunes suggestions"]
         ARENG["/api/insights/[id]/engagement\nGET ?view=1 · /unread DELETE\n/react · /bookmark · /comments\n/api/comments/[id]\n/react · DELETE"]
+        ARNOTES["/api/episodes/[id]/notes\nGET list · POST add note\n/api/episode-notes/[id]\nPATCH edit (debounced) · DELETE"]
         AREXP["/api/insights/export\nGET ?format=excel|word&date=\nauthed — download insights\n(PDF generated client-side via jsPDF)"]
         ARFTS["/api/insights/search\nGET ?q= ?domain= ?from= ?to=\nwebsearch FTS + filters"]
         ARASK["/api/ask\nPOST — LLM Q&A\nnamed-podcast lookup + FTS context\n11-model waterfall: Gemini→Groq 8B→Groq 70B→Mistral→Together→\nCohere→Cerebras→4× OpenRouter\norder/enabled from llm_provider_config"]
@@ -148,6 +151,7 @@ graph TB
     LAYOUT --> PROF
     LAYOUT --> APAGE
     LAYOUT --> SPAGE
+    LAYOUT --> NPAGE
     LAYOUT --> ONBOARD
     LAYOUT --> ADMINUSERS
     LAYOUT --> ADMINLLM
@@ -184,6 +188,8 @@ graph TB
     ARENG --> COMMENTS
     ARENG --> CREACTIONS
     SPAGE --> BOOKMARKS
+    ARNOTES --> EPNOTES
+    NPAGE --> EPNOTES
     ARFTS --> INSIGHTS
     ARASK --> INSIGHTS
     ARASK --> SUBS
@@ -339,6 +345,14 @@ erDiagram
         uuid user_id FK
         timestamptz created_at
     }
+    episode_notes {
+        bigint id PK
+        text episode_id FK
+        uuid user_id FK
+        text body
+        timestamptz created_at
+        timestamptz updated_at
+    }
     insight_comments {
         bigint id PK
         text insight_id FK
@@ -401,6 +415,7 @@ erDiagram
     episodes ||--o| transcripts : "has"
     episodes ||--o| insights : "has"
     episodes ||--o| episode_queue : "queued in"
+    episodes ||--o{ episode_notes : "noted by"
     insights ||--o{ insight_views : "tracked by"
     insights ||--o{ insight_reactions : "reacted to"
     insights ||--o{ insight_bookmarks : "bookmarked by"
