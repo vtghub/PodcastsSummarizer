@@ -118,7 +118,7 @@ PodcastsSummarizer/
 │   │   ├── saved/page.tsx           # Saved Insights — lists all bookmarked insights for signed-in user, sorted by bookmark date
 │   │   ├── notes/page.tsx           # My Notes — lists every episode the signed-in user has private notes on, grouped and collapsible, most-recently-active episode first
 │   │   ├── podcasts/page.tsx        # Podcast catalog — public read-only for guests, full subscribe/unsubscribe for signed-in users; admin controls
-│   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, digest frequency (daily/weekly), episode digest picker
+│   │   ├── profile/page.tsx         # User profile — display name, digest toggle, digest hour, digest frequency (daily/weekly), Weekly Recommendations toggle, episode digest picker
 │   │   ├── onboarding/page.tsx      # New-user onboarding wizard (auth-required; redirects to /dashboard if already subscribed)
 │   │   ├── admin/users/page.tsx     # Admin-only user management — list/search users, grant/revoke admin, enable/disable email digest, subscribe/unsubscribe from Weekly Recommendations, reset onboarding, cascade-delete user (redirects non-admins to /dashboard)
 │   │   ├── admin/llm-providers/page.tsx # Admin-only LLM waterfall control — toggle/reorder providers per feature (Pipeline Extraction, Ask AI, Recommendations), no deploy needed
@@ -178,7 +178,7 @@ PodcastsSummarizer/
 │   │   ├── MyNotesList.tsx          # Client wrapper for /notes — episodes grouped by most-recent note activity, each collapsible to reveal its NoteRow list
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client) + Supabase Realtime subscription (auto-refresh on new insights)
 │   │   ├── PodcastManager.tsx       # Catalog — domain tab layout; optimistic subscribe toggles; admin reclassify with toast on failure
-│   │   ├── ProfileForm.tsx          # Display name, digest toggle, Daily/Weekly frequency toggle, day-of-week picker, UTC hour picker, per-domain digest filter chips
+│   │   ├── ProfileForm.tsx          # Display name, digest toggle, Daily/Weekly frequency toggle, day-of-week picker, UTC hour picker, per-domain digest filter chips, independent Weekly Recommendations toggle (weekly_recommendations_enabled)
 │   │   ├── OnboardingWizard.tsx     # 3-step onboarding: domain picker → catalog + iTunes recommendations → subscribe & finish
 │   │   ├── WelcomeOnboarding.tsx    # Fallback first-run card shown on dashboard if user skips onboarding — 3-step guide + CTA to /onboarding
 │   │   ├── AdminUsersManager.tsx    # Client component for /admin/users — search, grant/revoke admin, enable/disable email digest (digest_enabled toggle), subscribe/unsubscribe from Weekly Recommendations (weekly_recommendations_enabled toggle), reset onboarding, cascade-delete (self-delete and self-demote blocked); each row collapsible (default collapsed) showing domain badges + per-domain channel names; expanding lazy-loads a "Manage subscriptions" panel to subscribe/unsubscribe the user to/from any catalog podcast; live updates via Supabase Realtime on user_profiles INSERT/DELETE (no polling) + manual Refresh button
@@ -413,7 +413,7 @@ npm run dev      # http://localhost:3000
   - `date` input: override date (YYYY-MM-DD); defaults to today (UTC).
   - `force` input: skip the hour check and send to all eligible users immediately (`true`/`false`; default: `false`).
   - `target_email` input: restrict send to a single email address (leave blank for all users; useful for testing).
-- **Weekly Recommendations** (`weekly_recommendations.yml`): runs **Sundays at 10 AM UTC (~6 AM EST)** — sends every user with `weekly_recommendations_enabled=TRUE` (independent of their daily/hourly `digest_enabled` setting; admin-togglable per user on `/admin/users`) a two-section email: LLM-ranked best insights from their subscriptions + trending podcasts they aren't subscribed to in their domains.
+- **Weekly Recommendations** (`weekly_recommendations.yml`): runs **Sundays at 10 AM UTC (~6 AM EST)** — sends every user with `weekly_recommendations_enabled=TRUE` (independent of their daily/hourly `digest_enabled` setting; self-service toggle on `/profile`, also admin-togglable per user on `/admin/users`) a two-section email: LLM-ranked best insights from their subscriptions + trending podcasts they aren't subscribed to in their domains.
   - `date` input: override date (YYYY-MM-DD); defaults to today.
 - **Backfill platform links**: `backfill_platform_links.yml` — manual `workflow_dispatch`; optional `source_id` input to run for a single source (leave blank to backfill all).
 - **Backfill published dates**: `backfill_published_at.yml` — manual `workflow_dispatch`; optional `source_id` input to run per-source and stay within the 30-minute job timeout (leave blank to process all sources).
