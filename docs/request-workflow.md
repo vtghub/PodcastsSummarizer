@@ -271,9 +271,9 @@ sequenceDiagram
     participant FORM as ProfileForm.tsx
     participant API as /api/profile
 
-    B->>FORM: edit display_name / digest_enabled / digest_hour / digest_domains / digest_frequency / digest_day_of_week
-    FORM->>API: PUT {display_name, digest_enabled, digest_hour, digest_domains, digest_frequency, digest_day_of_week}
-    Note right of API: digest_domains: string[] or null; digest_frequency: 'daily'|'weekly'; digest_day_of_week: 0–6
+    B->>FORM: edit display_name / digest_enabled / weekly_recommendations_enabled / digest_hour / digest_domains / digest_frequency / digest_day_of_week
+    FORM->>API: PUT {display_name, digest_enabled, weekly_recommendations_enabled, digest_hour, digest_domains, digest_frequency, digest_day_of_week}
+    Note right of API: digest_domains: string[] or null; digest_frequency: 'daily'|'weekly'; digest_day_of_week: 0–6;<br/>weekly_recommendations_enabled is independent of digest_enabled — separate card in ProfileForm, same toggle also settable by an admin on /admin/users
     API->>API: validate: user authed, digest_hour 0-23, digest_frequency in ['daily','weekly'], digest_day_of_week 0-6
     API->>DB: UPDATE user_profiles SET ... WHERE user_id=?
     DB-->>API: ok
@@ -959,7 +959,7 @@ sequenceDiagram
         JOB->>JOB: ranker = None (heuristic fallback for every user this run)
     end
     JOB->>DB: get_users_for_weekly_recommendations()
-    DB-->>JOB: [user1, user2, ...] (weekly_recommendations_enabled=TRUE — independent of digest_enabled, admin-togglable per user on /admin/users)
+    DB-->>JOB: [user1, user2, ...] (weekly_recommendations_enabled=TRUE — independent of digest_enabled; self-service toggle on /profile, also admin-togglable per user on /admin/users)
 
     loop per user
         JOB->>DB: get_user_subscribed_source_ids(user_id)
