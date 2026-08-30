@@ -45,6 +45,7 @@ function hourLabel(h: number, tz: string) {
 export default function ProfileForm({
   initialDisplayName,
   initialDigestEnabled,
+  initialWeeklyRecommendationsEnabled,
   initialDigestHour,
   initialDigestDomains,
   initialDigestFrequency,
@@ -53,6 +54,7 @@ export default function ProfileForm({
 }: {
   initialDisplayName: string;
   initialDigestEnabled: boolean;
+  initialWeeklyRecommendationsEnabled: boolean;
   initialDigestHour: number;
   initialDigestDomains: string[] | null;
   initialDigestFrequency: "daily" | "weekly";
@@ -62,6 +64,7 @@ export default function ProfileForm({
   const router = useRouter();
   const [displayName, setDisplayName]           = useState(initialDisplayName);
   const [digestEnabled, setDigestEnabled]       = useState(initialDigestEnabled);
+  const [weeklyRecommendationsEnabled, setWeeklyRecommendationsEnabled] = useState(initialWeeklyRecommendationsEnabled);
   const [digestHour, setDigestHour]             = useState(initialDigestHour);
   const [digestDomains, setDigestDomains]       = useState<string[] | null>(initialDigestDomains);
   const [digestFrequency, setDigestFrequency]   = useState<"daily" | "weekly">(initialDigestFrequency);
@@ -110,6 +113,7 @@ export default function ProfileForm({
         body: JSON.stringify({
           display_name: displayName,
           digest_enabled: digestEnabled,
+          weekly_recommendations_enabled: weeklyRecommendationsEnabled,
           digest_hour: digestHour,
           digest_domains: digestDomains,
           digest_frequency: digestFrequency,
@@ -323,6 +327,38 @@ export default function ProfileForm({
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Weekly Recommendations card */}
+      <div
+        className="rounded-2xl border overflow-hidden"
+        style={{ background: "var(--bg-surface)", borderColor: "var(--bdr)", boxShadow: "var(--shadow-card)" }}
+      >
+        <div className="px-5 py-4 border-b" style={{ borderColor: "var(--bdr)", background: "var(--bg-elevated)" }}>
+          <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--txt-4)" }}>Weekly Recommendations</h2>
+        </div>
+        <div className="p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium" style={{ color: "var(--txt-1)" }}>Weekly recommendations email</p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--txt-4)" }}>
+                A Sunday email with your best insights from the past week and trending podcasts you&apos;re not subscribed to yet. Independent of your Email Digest setting above.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWeeklyRecommendationsEnabled((v) => !v)}
+              className="relative flex-shrink-0 w-11 h-6 rounded-full transition-colors"
+              style={{ background: weeklyRecommendationsEnabled ? "var(--acc)" : "var(--bdr-hov)" }}
+              aria-pressed={weeklyRecommendationsEnabled}
+            >
+              <span
+                className="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                style={{ left: weeklyRecommendationsEnabled ? "calc(100% - 1.25rem)" : "0.25rem" }}
+              />
+            </button>
+          </div>
         </div>
       </div>
 
