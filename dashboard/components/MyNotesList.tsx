@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { StickyNote, ChevronDown, ChevronUp, CalendarDays } from "lucide-react";
 import { getDomainColor } from "@/lib/domain-colors";
 import NoteRow, { type EpisodeNote } from "@/components/NoteRow";
 
 export interface EpisodeNoteGroup {
   episode_id: string;
+  insight_id: string | null;
   episode_title: string;
   episode_published_at: string | null;
   source_name: string | null;
@@ -20,6 +22,33 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function GroupHeaderContent({ group }: { group: EpisodeNoteGroup }) {
+  const c = getDomainColor(group.domain);
+  return (
+    <>
+      <div className="flex items-center gap-2 flex-wrap">
+        {group.source_name && (
+          <span className={`text-xs font-bold uppercase tracking-widest ${c.text}`}>{group.source_name}</span>
+        )}
+        <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+          {group.domain}
+        </span>
+      </div>
+      <p className="text-sm font-semibold mt-0.5" style={{ color: "var(--txt-1)" }}>{group.episode_title}</p>
+      <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: "var(--txt-4)" }}>
+        {group.episode_published_at && (
+          <span className="flex items-center gap-1">
+            <CalendarDays className="w-3 h-3" />
+            {formatDate(group.episode_published_at)}
+          </span>
+        )}
+        <span>{group.notes.length} note{group.notes.length !== 1 ? "s" : ""}</span>
+      </div>
+    </>
+  );
 }
 
 export default function MyNotesList({ groups }: { groups: EpisodeNoteGroup[] }) {
@@ -54,40 +83,34 @@ export default function MyNotesList({ groups }: { groups: EpisodeNoteGroup[] }) 
       <div className="divide-y" style={{ borderColor: "var(--bdr)" }}>
         {localGroups.map((g) => {
           const expanded = expandedId === g.episode_id;
-          const c = getDomainColor(g.domain);
           return (
             <div key={g.episode_id}>
-              <button
-                onClick={() => setExpandedId(expanded ? null : g.episode_id)}
-                className="w-full flex items-start gap-3 px-4 py-3 text-left"
-              >
-                {expanded ? (
-                  <ChevronUp className="w-4 h-4 flex-shrink-0 mt-1" style={{ color: "var(--txt-4)" }} />
+              <div className="flex items-start gap-1 px-2 py-1.5">
+                <button
+                  onClick={() => setExpandedId(expanded ? null : g.episode_id)}
+                  title={expanded ? "Collapse" : "Expand"}
+                  className="flex-shrink-0 p-2 mt-0.5 rounded-lg"
+                >
+                  {expanded ? (
+                    <ChevronUp className="w-4 h-4" style={{ color: "var(--txt-4)" }} />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" style={{ color: "var(--txt-4)" }} />
+                  )}
+                </button>
+                {g.insight_id ? (
+                  <Link
+                    href={`/insight/${g.insight_id}`}
+                    title="Open this episode's insight card"
+                    className="min-w-0 flex-1 px-2 py-1.5 rounded-lg transition-colors hover:opacity-80"
+                  >
+                    <GroupHeaderContent group={g} />
+                  </Link>
                 ) : (
-                  <ChevronDown className="w-4 h-4 flex-shrink-0 mt-1" style={{ color: "var(--txt-4)" }} />
+                  <div className="min-w-0 flex-1 px-2 py-1.5" title="No insight generated for this episode yet">
+                    <GroupHeaderContent group={g} />
+                  </div>
                 )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {g.source_name && (
-                      <span className={`text-xs font-bold uppercase tracking-widest ${c.text}`}>{g.source_name}</span>
-                    )}
-                    <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-                      {g.domain}
-                    </span>
-                  </div>
-                  <p className="text-sm font-semibold mt-0.5" style={{ color: "var(--txt-1)" }}>{g.episode_title}</p>
-                  <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: "var(--txt-4)" }}>
-                    {g.episode_published_at && (
-                      <span className="flex items-center gap-1">
-                        <CalendarDays className="w-3 h-3" />
-                        {formatDate(g.episode_published_at)}
-                      </span>
-                    )}
-                    <span>{g.notes.length} note{g.notes.length !== 1 ? "s" : ""}</span>
-                  </div>
-                </div>
-              </button>
+              </div>
               {expanded && (
                 <div className="border-t divide-y" style={{ borderColor: "var(--bdr)" }}>
                   {g.notes.map((n) => (
