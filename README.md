@@ -175,7 +175,7 @@ PodcastsSummarizer/
 │   │   ├── SavedInsightsList.tsx    # Client wrapper for /saved — renders bookmarked InsightCards with empty state
 │   │   ├── NotesPanel.tsx           # Expandable "My Notes" panel on InsightCard — lazy-loads on first expand; debounced auto-create (~600ms after typing stops) for new notes, renders each existing note as a NoteRow
 │   │   ├── NoteRow.tsx              # One editable private note — debounced autosave on edit (PATCH), confirm-then-delete (DELETE); shared by InsightCard's NotesPanel and MyNotesList
-│   │   ├── MyNotesList.tsx          # Client wrapper for /notes — episodes grouped by most-recent note activity, each collapsible to reveal its NoteRow list
+│   │   ├── MyNotesList.tsx          # Client wrapper for /notes — episodes grouped by most-recent note activity; chevron toggles the collapsible NoteRow list, title/domain area links to /insight/[id] when that episode has a generated insight (plain text otherwise)
 │   │   ├── DomainInsightView.tsx    # Domain tab filter (client) + Supabase Realtime subscription (auto-refresh on new insights)
 │   │   ├── PodcastManager.tsx       # Catalog — domain tab layout; optimistic subscribe toggles; admin reclassify with toast on failure
 │   │   ├── ProfileForm.tsx          # Display name, digest toggle, Daily/Weekly frequency toggle, day-of-week picker, UTC hour picker, per-domain digest filter chips, independent Weekly Recommendations toggle (weekly_recommendations_enabled)
