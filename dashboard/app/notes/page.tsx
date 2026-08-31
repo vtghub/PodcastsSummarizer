@@ -24,6 +24,15 @@ async function getEpisodeNoteGroups(userId: string): Promise<EpisodeNoteGroup[]>
 
   const episodeById = new Map((episodeRows ?? []).map((e: { id: string }) => [e.id, e]));
 
+  // Not every episode has a generated insight yet — look up whichever do, so
+  // the note header can link straight to /insight/[id] when one exists.
+  const { data: insightRows } = await supabase
+    .from("insights")
+    .select("id, episode_id")
+    .in("episode_id", episodeIds);
+
+  const insightIdByEpisode = new Map((insightRows ?? []).map((i) => [i.episode_id, i.id]));
+
   // Preserve most-recently-updated-note-first order across episodes
   const order: string[] = [];
   const notesByEpisode = new Map<string, typeof notes>();
@@ -41,6 +50,7 @@ async function getEpisodeNoteGroups(userId: string): Promise<EpisodeNoteGroup[]>
     const src = ep?.sources as { name?: string; domain?: string } | null;
     return {
       episode_id: episodeId,
+      insight_id: insightIdByEpisode.get(episodeId) ?? null,
       episode_title: (ep?.title_en || ep?.title) ?? "Untitled episode",
       episode_published_at: ep?.published_at ?? null,
       source_name: src?.name ?? null,
