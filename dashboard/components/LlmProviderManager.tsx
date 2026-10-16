@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, ChevronRight, CheckCircle2, XCircle, Workflow, MessageCircleQuestion, Sparkles, HelpCircle } from "lucide-react";
+import { Cpu, RefreshCw, Loader2, ChevronUp, ChevronDown, ChevronRight, CheckCircle2, XCircle, Workflow, MessageCircleQuestion, Sparkles, HelpCircle, Activity } from "lucide-react";
 
 interface Provider {
   key: string;
@@ -12,6 +12,31 @@ interface Provider {
   enabled: boolean;
   priority: number;
 }
+
+// Mirrors ProbeResult in lib/llm-waterfall.ts (that module is server-only, so
+// the shape is repeated here rather than imported into a client component).
+type ProbeStatus = "ok" | "rate_limited" | "empty" | "error" | "timeout" | "no_key";
+interface ProbeResult {
+  provider_key: string;
+  name: string;
+  status: ProbeStatus;
+  latency_ms: number | null;
+  detail?: string;
+}
+
+const PROBE_STYLE: Record<ProbeStatus, { label: string; color: string; bg: string }> = {
+  ok:           { label: "Working",      color: "#34D399",     bg: "rgba(6,95,70,0.25)" },
+  rate_limited: { label: "Rate-limited", color: "#FBBF24",     bg: "rgba(120,83,9,0.25)" },
+  empty:        { label: "Empty reply",  color: "#FBBF24",     bg: "rgba(120,83,9,0.25)" },
+  error:        { label: "Failing",      color: "#F87171",     bg: "rgba(127,29,29,0.25)" },
+  timeout:      { label: "Timed out",    color: "#F87171",     bg: "rgba(127,29,29,0.25)" },
+  no_key:       { label: "No key here",  color: "var(--txt-4)", bg: "var(--bg-elevated)" },
+};
+
+// The pipeline scope's Cerebras row uses the worker's slug; the dashboard's
+// own waterfall (which the probe exercises) calls the same model "cerebras".
+// Every other slot key is identical across scopes.
+const probeKeyFor = (providerKey: string) => (providerKey === "cerebras_gpt_oss_120b" ? "cerebras" : providerKey);
 
 type Scope = "pipeline" | "ask_ai" | "recommendations";
 type ProvidersByScope = Record<Scope, Provider[]>;
@@ -41,7 +66,7 @@ const SECTIONS: { scope: Scope; title: string; icon: typeof Workflow; descriptio
     description:
       "Weekly best-of-week insight ranking — used by both the Sunday recommendations email (worker, " +
       "picks up changes on its next run) and the on-demand “Refresh” button on /recommendations " +
-      "(dashboard, immediate). Both call the same 11-provider waterfall as Ask AI.",
+      "(dashboard, immediate). Both call the same 12-slot waterfall as Ask AI.",
   },
 ];
 
@@ -81,6 +106,43 @@ export default function LlmProviderManager() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const [testing, setTesting] = useState(false);
+  const [probe, setProbe] = useState<{ byKey: Record<string, ProbeResult>; testedAt: string } | null>(null);
+
+  // Sends one tiny request to every slot (from this dashboard's environment)
+  // and shows which are actually alive — a retired model otherwise just fails
+  // silently inside the waterfall and gets skipped.
+  async function runProbe() {
+    setTesting(true);
+    try {
+      const res = await fetch("/api/admin/llm-providers/test", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Provider test failed");
+      const byKey: Record<string, ProbeResult> = {};
+      for (const r of data.results as ProbeResult[]) byKey[r.provider_key] = r;
+      setProbe({ byKey, testedAt: data.tested_at });
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Provider test failed", "error");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  // One-line summary across the (single, shared) set of tested slots.
+  const probeSummary = (() => {
+    if (!probe) return null;
+    const all = Object.values(probe.byKey);
+    const tested = all.filter((r) => r.status !== "no_key");
+    const count = (s: ProbeStatus) => tested.filter((r) => r.status === s).length;
+    const failing = count("error") + count("timeout") + count("empty");
+    const parts = [`${count("ok")} of ${tested.length} responding`];
+    if (count("rate_limited")) parts.push(`${count("rate_limited")} rate-limited`);
+    if (failing) parts.push(`${failing} failing`);
+    const skipped = all.length - tested.length;
+    if (skipped) parts.push(`${skipped} skipped (no key here)`);
+    return { text: parts.join(" · "), allGood: failing === 0 && tested.length > 0 };
+  })();
 
   async function patch(scope: Scope, provider_key: string, body: { enabled?: boolean; priority?: number }) {
     const res = await fetch("/api/admin/llm-providers", {
@@ -156,21 +218,56 @@ export default function LlmProviderManager() {
           <Cpu className="w-6 h-6" style={{ color: "var(--acc)" }} />
           <h1 className="text-2xl font-bold" style={{ color: "var(--txt-1)" }}>LLM Providers</h1>
         </div>
-        <button
-          onClick={() => load()}
-          disabled={refreshing}
-          title="Refresh provider list"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60"
-          style={{ background: "var(--bg-elevated)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={runProbe}
+            disabled={testing || !providersByScope}
+            title="Send one tiny request to every provider and show which are actually working"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60"
+            style={{ background: "var(--acc-bg)", color: "var(--acc)", borderColor: "var(--acc)" }}
+          >
+            {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
+            {testing ? "Testing…" : "Test providers"}
+          </button>
+          <button
+            onClick={() => load()}
+            disabled={refreshing}
+            title="Refresh provider list"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-60"
+            style={{ background: "var(--bg-elevated)", color: "var(--txt-3)", borderColor: "var(--bdr)" }}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
       </div>
-      <p className="text-sm mb-6" style={{ color: "var(--txt-3)" }}>
+      <p className="text-sm mb-3" style={{ color: "var(--txt-3)" }}>
         This app calls an LLM in three independent places. Each has its own waterfall below — enabled
         providers are tried top to bottom, falling through to the next on failure or quota exhaustion.
       </p>
+
+      {/* Result of the last "Test providers" run */}
+      {testing && (
+        <p className="text-xs mb-4" style={{ color: "var(--txt-4)" }}>
+          Testing every provider in parallel — slow free models can take up to ~40s…
+        </p>
+      )}
+      {!testing && probe && probeSummary && (
+        <p className="text-xs mb-4" style={{ color: probeSummary.allGood ? "#34D399" : "#FBBF24" }}>
+          {probeSummary.text}
+          <span style={{ color: "var(--txt-4)" }}>
+            {" "}— tested {new Date(probe.testedAt).toLocaleTimeString()} from this dashboard&apos;s environment.
+            Worker (pipeline) rows share the same models, but the worker uses its own GitHub Actions keys.
+          </span>
+        </p>
+      )}
+      {!testing && !probe && (
+        <p className="text-xs mb-4" style={{ color: "var(--txt-4)" }}>
+          Free-tier models get retired every few months and a dead one is skipped silently — use
+          “Test providers” to check which are really working. It sends one tiny request per provider
+          (OpenRouter&apos;s free cap is only ~50/day, pooled across its slots).
+        </p>
+      )}
 
       {loadError && (
         <p className="text-sm mb-4" style={{ color: "#EF4444" }}>{loadError}</p>
@@ -269,6 +366,30 @@ export default function LlmProviderManager() {
                             )}
                           </div>
                         </div>
+
+                        {/* Live health from the last "Test providers" run */}
+                        {(() => {
+                          const r = probe?.byKey[probeKeyFor(p.key)];
+                          if (!r) return null;
+                          const s = PROBE_STYLE[r.status];
+                          const secs = r.latency_ms != null ? ` · ${(r.latency_ms / 1000).toFixed(1)}s` : "";
+                          const tooltip =
+                            (r.detail ? `${r.detail}\n\n` : "") +
+                            (r.status === "no_key"
+                              ? "This dashboard has no key for this provider, so it wasn't tested."
+                              : scope === "pipeline"
+                              ? "Tested from the dashboard's environment — the worker uses its own keys."
+                              : `Model: ${r.name}`);
+                          return (
+                            <span
+                              className="flex-shrink-0 text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap"
+                              style={{ color: s.color, background: s.bg }}
+                              title={tooltip}
+                            >
+                              {s.label}{r.status === "ok" ? secs : ""}
+                            </span>
+                          );
+                        })()}
 
                         {/* Enabled toggle */}
                         <button
