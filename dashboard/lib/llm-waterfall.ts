@@ -2,15 +2,30 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 export type LLMResult = { text: string; quotaExceeded?: boolean };
 
-export async function callGemini(apiKey: string, prompt: string): Promise<LLMResult> {
+// Output-token cap per call. Several models on the free ladder (Gemini 3.x,
+// Groq's gpt-oss/Qwen, Nemotron) are "thinking" models whose hidden reasoning
+// counts against this budget — at the old 512, gemini-3.5-flash and nemotron
+// hit the cap mid-thought and returned truncated/empty text (verified live
+// 2026-10-16), silently failing the rung. This is only a ceiling, not a
+// target: answers stay as short as the prompt asks for.
+const MAX_OUTPUT_TOKENS = 2048;
+
+// Model ids below were verified against each provider's live catalog and a
+// real request on 2026-10-16. Free-tier lineups churn every few months
+// (Gemini 2.0/2.5, Groq's Llama 3.x and Cohere's `command-r` alias were all
+// retired within a year of being added here); a retired model just errors
+// inside the waterfall and is skipped, so re-verify periodically. Keep in
+// sync with worker/providers/llm/provider_registry.py.
+
+export async function callGemini(apiKey: string, model: string, prompt: string): Promise<LLMResult> {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 512, temperature: 0.3 },
+        generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0.3 },
       }),
     }
   );
@@ -19,10 +34,12 @@ export async function callGemini(apiKey: string, prompt: string): Promise<LLMRes
     if (res.status === 429 || body.includes("RESOURCE_EXHAUSTED") || body.includes("quota")) {
       return { text: "", quotaExceeded: true };
     }
-    throw new Error(`Gemini ${res.status}: ${body}`);
+    throw new Error(`Gemini (${model}) ${res.status}: ${body}`);
   }
   const data = JSON.parse(body);
-  return { text: data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "" };
+  // Thinking models can return thought parts alongside the answer — keep only the answer.
+  const parts: { text?: string; thought?: boolean }[] = data?.candidates?.[0]?.content?.parts ?? [];
+  return { text: parts.filter((p) => !p.thought).map((p) => p.text ?? "").join("") };
 }
 
 export async function callGroqModel(apiKey: string, model: string, prompt: string): Promise<LLMResult> {
@@ -32,7 +49,7 @@ export async function callGroqModel(apiKey: string, model: string, prompt: strin
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 512,
+      max_tokens: MAX_OUTPUT_TOKENS,
       temperature: 0.3,
     }),
   });
@@ -47,14 +64,14 @@ export async function callGroqModel(apiKey: string, model: string, prompt: strin
   return { text: data?.choices?.[0]?.message?.content ?? "" };
 }
 
-export async function callMistral(apiKey: string, prompt: string): Promise<LLMResult> {
+export async function callMistral(apiKey: string, model: string, prompt: string): Promise<LLMResult> {
   const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: "mistral-small-latest",
+      model,
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 512,
+      max_tokens: MAX_OUTPUT_TOKENS,
       temperature: 0.3,
     }),
   });
@@ -63,41 +80,20 @@ export async function callMistral(apiKey: string, prompt: string): Promise<LLMRe
     if (res.status === 429 || body.includes("quota")) {
       return { text: "", quotaExceeded: true };
     }
-    throw new Error(`Mistral ${res.status}: ${body}`);
+    throw new Error(`Mistral (${model}) ${res.status}: ${body}`);
   }
   const data = JSON.parse(body);
   return { text: data?.choices?.[0]?.message?.content ?? "" };
 }
 
-export async function callTogether(apiKey: string, prompt: string): Promise<LLMResult> {
-  const res = await fetch("https://api.together.xyz/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 512,
-      temperature: 0.3,
-    }),
-  });
-  const body = await res.text();
-  if (!res.ok) {
-    if (res.status === 429 || body.includes("quota")) {
-      return { text: "", quotaExceeded: true };
-    }
-    throw new Error(`Together ${res.status}: ${body}`);
-  }
-  const data = JSON.parse(body);
-  return { text: data?.choices?.[0]?.message?.content ?? "" };
-}
-
-// Cerebras's free-tier catalog changes over time (unlike the other fixed
-// model strings here) — the Python worker discovers it live at request time
-// (provider_registry.py's _discover_cerebras_slots), but doing the same for
-// every /api/ask request here would add real latency/cost to each question,
-// so this stays a fixed model instead. gpt-oss-120b is Cerebras's
-// "Production" tier as of when this was last checked — if Cerebras retires
-// it, update this string (matches the worker's _CEREBRAS_FALLBACK_MODELS).
+// Cerebras is no longer a free tier — since July 2026 it's a one-time $5 promo
+// credit (card required, expires after 30 days, never auto-bills; calls simply
+// fail once it's spent). It stays as the LAST rung of the ladder so trial
+// credit is only used after every genuinely-free provider is exhausted. The
+// Python worker live-discovers Cerebras's catalog (provider_registry.py's
+// _discover_cerebras_slots); doing that on every /api/ask request would add
+// real latency, so this stays one fixed model. gpt-oss-120b is its
+// "Production" tier — if Cerebras retires it, update this string.
 export async function callCerebras(apiKey: string, prompt: string): Promise<LLMResult> {
   const res = await fetch("https://api.cerebras.ai/v1/chat/completions", {
     method: "POST",
@@ -105,7 +101,7 @@ export async function callCerebras(apiKey: string, prompt: string): Promise<LLMR
     body: JSON.stringify({
       model: "gpt-oss-120b",
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 512,
+      max_tokens: MAX_OUTPUT_TOKENS,
       temperature: 0.3,
     }),
   });
@@ -127,7 +123,7 @@ export async function callOpenRouterModel(apiKey: string, model: string, prompt:
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 512,
+      max_tokens: MAX_OUTPUT_TOKENS,
       temperature: 0.3,
     }),
   });
@@ -142,14 +138,14 @@ export async function callOpenRouterModel(apiKey: string, model: string, prompt:
   return { text: data?.choices?.[0]?.message?.content ?? "" };
 }
 
-export async function callCohere(apiKey: string, prompt: string): Promise<LLMResult> {
+export async function callCohere(apiKey: string, model: string, prompt: string): Promise<LLMResult> {
   const res = await fetch("https://api.cohere.com/v2/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: "command-r",
+      model,
       messages: [{ role: "user", content: prompt }],
-      max_tokens: 512,
+      max_tokens: MAX_OUTPUT_TOKENS,
       temperature: 0.3,
     }),
   });
@@ -158,10 +154,13 @@ export async function callCohere(apiKey: string, prompt: string): Promise<LLMRes
     if (res.status === 429 || body.includes("quota")) {
       return { text: "", quotaExceeded: true };
     }
-    throw new Error(`Cohere ${res.status}: ${body}`);
+    throw new Error(`Cohere (${model}) ${res.status}: ${body}`);
   }
   const data = JSON.parse(body);
-  return { text: data?.message?.content?.[0]?.text ?? "" };
+  // Newer Cohere models (e.g. command-a-plus) return a "thinking" block BEFORE
+  // the "text" block, so content[0] isn't the answer — join just the text blocks.
+  const blocks: { type?: string; text?: string }[] = data?.message?.content ?? [];
+  return { text: blocks.filter((b) => (b.type ?? "text") === "text").map((b) => b.text ?? "").join("") };
 }
 
 // ── Waterfall ─────────────────────────────────────────────────────────────────
@@ -190,20 +189,22 @@ async function loadScopeConfig(scope: string): Promise<Map<string, { enabled: bo
   }
 }
 
-// OpenRouter's free (":free"-suffixed) catalog — kept in sync with the same
-// models declared in worker/providers/llm/provider_registry.py's
-// _OPENROUTER_MODELS. If one stops existing or stops being free, its calls
-// just fail and the waterfall skips past it same as any other dead provider.
+// OpenRouter's free (":free"-suffixed) catalog — kept in sync with
+// worker/providers/llm/provider_registry.py's _OPENROUTER_MODELS. Every model
+// here must be ":free" (or the free router): tencent/hy3:free was withdrawn
+// and now redirects to its PAID slug, which would bill credits. The free-model
+// daily cap (50/day, 1,000 with $10 of purchased credit) looks pooled across
+// all :free models, so these slots add availability, not extra quota.
 const OPENROUTER_MODELS: { key: string; name: string; model: string }[] = [
-  { key: "openrouter_nemotron_ultra", name: "openrouter/nemotron-3-ultra", model: "nvidia/nemotron-3-ultra-550b-a55b:free" },
-  { key: "openrouter_nemotron_nano",  name: "openrouter/nemotron-3-nano",  model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" },
-  { key: "openrouter_laguna_m",       name: "openrouter/laguna-m.1",       model: "poolside/laguna-m.1:free" },
-  { key: "openrouter_hy3",            name: "openrouter/hy3",              model: "tencent/hy3:free" },
+  { key: "openrouter_laguna_s",       name: "openrouter/laguna-s-2.1",       model: "poolside/laguna-s-2.1:free" },
+  { key: "openrouter_nemotron_super", name: "openrouter/nemotron-3-super",   model: "nvidia/nemotron-3-super-120b-a12b:free" },
+  { key: "openrouter_free",           name: "openrouter/free-router",        model: "openrouter/free" },
 ];
 
 /**
- * Runs `prompt` through the 11 JS-callable providers (Gemini, Groq 8B/70B,
- * Mistral, Together, Cohere, Cerebras, 4× OpenRouter free models), in the
+ * Runs `prompt` through the 12 JS-callable providers (Gemini 3.5 Flash/Flash-Lite,
+ * Groq GPT-OSS 120B/20B + Qwen3.8 27B, Cohere Command A+, Mistral Small/Ministral,
+ * 3 OpenRouter free slots, and Cerebras trial credit last), in the
  * order/enabled-state configured for `scope` in llm_provider_config (falling
  * back to this default order if unconfigured), stopping at the first
  * non-quota-exceeded success.
@@ -212,25 +213,27 @@ export async function runWaterfall(scope: string, prompt: string): Promise<{ tex
   const geminiKey  = process.env.GEMINI_API_KEY ?? "";
   const groqKey    = process.env.GROQ_API_KEY ?? "";
   const mistralKey = process.env.MISTRAL_API_KEY ?? "";
-  const togetherKey = process.env.TOGETHER_API_KEY ?? "";
   const cohereKey  = process.env.COHERE_API_KEY ?? "";
   const cerebrasKey = process.env.CEREBRAS_API_KEY ?? "";
   const openrouterKey = process.env.OPENROUTER_API_KEY ?? "";
 
+  // Same order as the worker's PROVIDER_SLOTS (provider_registry.py).
   const defaultOrder: WaterfallStep[] = [
-    { provider_key: "gemini",   name: "gemini-2.0-flash",          hasKey: !!geminiKey,   fn: () => callGemini(geminiKey, prompt) },
-    { provider_key: "groq_8b",  name: "groq/llama-3.1-8b-instant", hasKey: !!groqKey,     fn: () => callGroqModel(groqKey, "llama-3.1-8b-instant", prompt) },
-    { provider_key: "groq_70b", name: "groq/llama-3.3-70b",        hasKey: !!groqKey,     fn: () => callGroqModel(groqKey, "llama-3.3-70b-versatile", prompt) },
-    { provider_key: "mistral",  name: "mistral-small",             hasKey: !!mistralKey,  fn: () => callMistral(mistralKey, prompt) },
-    { provider_key: "together", name: "together/llama-3.1-8b",     hasKey: !!togetherKey, fn: () => callTogether(togetherKey, prompt) },
-    { provider_key: "cohere",   name: "cohere/command-r",          hasKey: !!cohereKey,   fn: () => callCohere(cohereKey, prompt) },
-    { provider_key: "cerebras", name: "cerebras/gpt-oss-120b",     hasKey: !!cerebrasKey, fn: () => callCerebras(cerebrasKey, prompt) },
+    { provider_key: "gemini",            name: "gemini-3.5-flash",           hasKey: !!geminiKey,  fn: () => callGemini(geminiKey, "gemini-3.5-flash", prompt) },
+    { provider_key: "groq_gpt_oss_120b", name: "groq/gpt-oss-120b",          hasKey: !!groqKey,    fn: () => callGroqModel(groqKey, "openai/gpt-oss-120b", prompt) },
+    { provider_key: "groq_qwen_27b",     name: "groq/qwen3.8-27b",           hasKey: !!groqKey,    fn: () => callGroqModel(groqKey, "qwen/qwen3.8-27b", prompt) },
+    { provider_key: "cohere",            name: "cohere/command-a-plus",      hasKey: !!cohereKey,  fn: () => callCohere(cohereKey, "command-a-plus-05-2026", prompt) },
+    { provider_key: "mistral",           name: "mistral-small",              hasKey: !!mistralKey, fn: () => callMistral(mistralKey, "mistral-small-latest", prompt) },
+    { provider_key: "mistral_ministral", name: "mistral/ministral-14b",      hasKey: !!mistralKey, fn: () => callMistral(mistralKey, "ministral-14b-latest", prompt) },
+    { provider_key: "gemini_flash_lite", name: "gemini-3.5-flash-lite",      hasKey: !!geminiKey,  fn: () => callGemini(geminiKey, "gemini-3.5-flash-lite", prompt) },
+    { provider_key: "groq_gpt_oss_20b",  name: "groq/gpt-oss-20b",           hasKey: !!groqKey,    fn: () => callGroqModel(groqKey, "openai/gpt-oss-20b", prompt) },
     ...OPENROUTER_MODELS.map((m) => ({
       provider_key: m.key,
       name: m.name,
       hasKey: !!openrouterKey,
       fn: () => callOpenRouterModel(openrouterKey, m.model, prompt),
     })),
+    { provider_key: "cerebras",          name: "cerebras/gpt-oss-120b",      hasKey: !!cerebrasKey, fn: () => callCerebras(cerebrasKey, prompt) },
   ];
 
   const config = await loadScopeConfig(scope);

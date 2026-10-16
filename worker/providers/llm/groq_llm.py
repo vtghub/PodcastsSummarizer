@@ -1,4 +1,4 @@
-"""Groq LLM provider — free tier, fast inference via Llama 3.3 70B."""
+"""Groq LLM provider — free tier, fast inference. Model is configurable (see GROQ_MODEL*)."""
 
 import hashlib
 import textwrap

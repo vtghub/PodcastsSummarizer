@@ -65,20 +65,23 @@ async function translateTitle(title) {
   if (GEMINI_API_KEY) {
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        // gemini-2.0-flash was retired; Flash-Lite is plenty for a title translation.
+        // 512 (not 128) leaves headroom for the model's hidden thinking tokens.
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: 128, temperature: 0.1 },
+            generationConfig: { maxOutputTokens: 512, temperature: 0.1 },
           }),
         }
       );
       const body = await res.text();
       if (res.ok) {
         const data = JSON.parse(body);
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        const parts = data?.candidates?.[0]?.content?.parts ?? [];
+        const text = parts.filter((p) => !p.thought).map((p) => p.text ?? "").join("").trim();
         if (text) return text;
       } else if (!(res.status === 429 || body.includes("RESOURCE_EXHAUSTED") || body.includes("quota"))) {
         throw new Error(`Gemini ${res.status}: ${body}`);
@@ -94,9 +97,9 @@ async function translateTitle(title) {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
       body: JSON.stringify({
-        model: "llama-3.1-8b-instant",
+        model: "openai/gpt-oss-20b", // llama-3.1-8b-instant was retired 2026-08-16
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 128,
+        max_tokens: 512, // reasoning model — leave room beyond the short answer
         temperature: 0.1,
       }),
     });

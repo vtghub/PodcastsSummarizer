@@ -94,16 +94,17 @@ const features = [
 // Deduplicated pool across all three waterfalls (Insight Extraction, Recommendations, Ask AI) —
 // see README's Provider Registry section for exactly which subset each feature draws from.
 const aiModels = [
-  "Gemini 2.0 Flash",
-  "Groq — Llama 3.1 8B",
-  "Groq — Llama 3.3 70B",
+  "Gemini 3.5 Flash",
+  "Gemini 3.5 Flash-Lite",
+  "Groq — GPT-OSS 120B",
+  "Groq — GPT-OSS 20B",
+  "Groq — Qwen3.8 27B",
+  "Cohere Command A+",
   "Mistral Small",
-  "Cohere Command R",
-  "Together — Llama 3.1 8B",
-  "NVIDIA Nemotron 3 Ultra (OpenRouter)",
-  "NVIDIA Nemotron 3 Nano (OpenRouter)",
-  "Poolside Laguna M.1 (OpenRouter)",
-  "Tencent Hy3 (OpenRouter)",
+  "Mistral — Ministral 14B",
+  "NVIDIA Nemotron 3 Super (OpenRouter)",
+  "Poolside Laguna S 2.1 (OpenRouter)",
+  "OpenRouter Free Router",
 ];
 
 export default function AboutPage() {
