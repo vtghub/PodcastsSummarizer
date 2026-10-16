@@ -30,46 +30,45 @@ const SCOPES: Scope[] = ["pipeline", "ask_ai", "recommendations"];
 // the one calling this provider directly — if false, checking
 // process.env[env_var] here would just check an environment this slot never
 // actually runs in, so the UI shouldn't claim to know its status.
+// Order matches worker/providers/llm/provider_registry.py's PROVIDER_SLOTS
+// (and lib/llm-waterfall.ts's defaultOrder). Model lineup verified 2026-10-16.
 const PIPELINE_SLOTS = [
-  { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY", runs_here: false },
-  { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: false },
-  { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: false },
+  { key: "gemini", display_name: "Gemini 3.5 Flash", env_var: "GEMINI_API_KEY", runs_here: false },
+  { key: "groq_gpt_oss_120b", display_name: "Groq — GPT-OSS 120B", env_var: "GROQ_API_KEY", runs_here: false },
+  { key: "groq_qwen_27b", display_name: "Groq — Qwen3.8 27B", env_var: "GROQ_API_KEY", runs_here: false },
+  { key: "cohere", display_name: "Cohere Command A+", env_var: "COHERE_API_KEY", runs_here: false },
   { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: false },
-  { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY", runs_here: false },
-  { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: false },
-  // Cerebras's free-tier catalog is live-discovered by the worker at
-  // waterfall-build time (provider_registry.py's _discover_cerebras_slots),
-  // not hardcoded like the others — these 3 are the fallback list used
-  // when discovery can't run, shown here for admin visibility/toggling.
-  // The actual live set for a given run may differ if Cerebras has added
-  // or removed models since this was last updated; new models still work
-  // automatically, they just won't have a row here to toggle individually
-  // until this list is updated to match.
-  { key: "cerebras_gpt_oss_120b", display_name: "Gpt Oss 120B (Cerebras)", env_var: "CEREBRAS_API_KEY", runs_here: false },
-  { key: "cerebras_gemma_3_31b", display_name: "Gemma 3 31B (Cerebras)", env_var: "CEREBRAS_API_KEY", runs_here: false },
-  { key: "cerebras_zai_glm_4_7", display_name: "Zai Glm 4.7 (Cerebras)", env_var: "CEREBRAS_API_KEY", runs_here: false },
-  { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
-  { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
-  { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
-  { key: "openrouter_hy3", display_name: "Tencent Hy3 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  { key: "mistral_ministral", display_name: "Mistral — Ministral 14B", env_var: "MISTRAL_API_KEY", runs_here: false },
+  { key: "gemini_flash_lite", display_name: "Gemini 3.5 Flash-Lite", env_var: "GEMINI_API_KEY", runs_here: false },
+  { key: "groq_gpt_oss_20b", display_name: "Groq — GPT-OSS 20B", env_var: "GROQ_API_KEY", runs_here: false },
+  { key: "openrouter_laguna_s", display_name: "Poolside Laguna S 2.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  { key: "openrouter_nemotron_super", display_name: "NVIDIA Nemotron 3 Super (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  { key: "openrouter_free", display_name: "OpenRouter Free Router", env_var: "OPENROUTER_API_KEY", runs_here: false },
+  // Cerebras is trial-credit only now (one-time $5, expires after 30 days —
+  // not a free tier), so it's the LAST rung. Its catalog is live-discovered
+  // by the worker at waterfall-build time (provider_registry.py's
+  // _discover_cerebras_slots); this one row is the fallback used when
+  // discovery can't run. Any other model Cerebras adds still works
+  // automatically, it just won't have a row here to toggle individually.
+  { key: "cerebras_gpt_oss_120b", display_name: "GPT-OSS 120B (Cerebras trial credit)", env_var: "CEREBRAS_API_KEY", runs_here: false },
 ];
 
 // ask_ai and recommendations both run through the exact same runWaterfall()
 // in lib/llm-waterfall.ts (just a different scope name for config lookup),
-// so they share one provider list — including OpenRouter and Cerebras, both
-// of which now have JS implementations there (callOpenRouterModel, callCerebras).
+// so they share one provider list.
 const ASK_AI_SLOTS = [
-  { key: "gemini", display_name: "Gemini 2.0 Flash", env_var: "GEMINI_API_KEY", runs_here: true },
-  { key: "groq_8b", display_name: "Groq — Llama 3.1 8B", env_var: "GROQ_API_KEY", runs_here: true },
-  { key: "groq_70b", display_name: "Groq — Llama 3.3 70B", env_var: "GROQ_API_KEY", runs_here: true },
+  { key: "gemini", display_name: "Gemini 3.5 Flash", env_var: "GEMINI_API_KEY", runs_here: true },
+  { key: "groq_gpt_oss_120b", display_name: "Groq — GPT-OSS 120B", env_var: "GROQ_API_KEY", runs_here: true },
+  { key: "groq_qwen_27b", display_name: "Groq — Qwen3.8 27B", env_var: "GROQ_API_KEY", runs_here: true },
+  { key: "cohere", display_name: "Cohere Command A+", env_var: "COHERE_API_KEY", runs_here: true },
   { key: "mistral", display_name: "Mistral Small", env_var: "MISTRAL_API_KEY", runs_here: true },
-  { key: "together", display_name: "Together — Llama 3.1 8B", env_var: "TOGETHER_API_KEY", runs_here: true },
-  { key: "cohere", display_name: "Cohere Command R", env_var: "COHERE_API_KEY", runs_here: true },
-  { key: "cerebras", display_name: "Cerebras Llama 3.3 70B", env_var: "CEREBRAS_API_KEY", runs_here: true },
-  { key: "openrouter_nemotron_ultra", display_name: "NVIDIA Nemotron 3 Ultra (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
-  { key: "openrouter_nemotron_nano", display_name: "NVIDIA Nemotron 3 Nano (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
-  { key: "openrouter_laguna_m", display_name: "Poolside Laguna M.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
-  { key: "openrouter_hy3", display_name: "Tencent Hy3 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
+  { key: "mistral_ministral", display_name: "Mistral — Ministral 14B", env_var: "MISTRAL_API_KEY", runs_here: true },
+  { key: "gemini_flash_lite", display_name: "Gemini 3.5 Flash-Lite", env_var: "GEMINI_API_KEY", runs_here: true },
+  { key: "groq_gpt_oss_20b", display_name: "Groq — GPT-OSS 20B", env_var: "GROQ_API_KEY", runs_here: true },
+  { key: "openrouter_laguna_s", display_name: "Poolside Laguna S 2.1 (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
+  { key: "openrouter_nemotron_super", display_name: "NVIDIA Nemotron 3 Super (OpenRouter)", env_var: "OPENROUTER_API_KEY", runs_here: true },
+  { key: "openrouter_free", display_name: "OpenRouter Free Router", env_var: "OPENROUTER_API_KEY", runs_here: true },
+  { key: "cerebras", display_name: "GPT-OSS 120B (Cerebras trial credit)", env_var: "CEREBRAS_API_KEY", runs_here: true },
 ];
 
 const PROVIDER_SLOTS: Record<Scope, { key: string; display_name: string; env_var: string; runs_here: boolean }[]> = {
