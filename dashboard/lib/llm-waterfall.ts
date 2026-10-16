@@ -202,14 +202,12 @@ const OPENROUTER_MODELS: { key: string; name: string; model: string }[] = [
 ];
 
 /**
- * Runs `prompt` through the 12 JS-callable providers (Gemini 3.5 Flash/Flash-Lite,
- * Groq GPT-OSS 120B/20B + Qwen3.8 27B, Cohere Command A+, Mistral Small/Ministral,
- * 3 OpenRouter free slots, and Cerebras trial credit last), in the
- * order/enabled-state configured for `scope` in llm_provider_config (falling
- * back to this default order if unconfigured), stopping at the first
- * non-quota-exceeded success.
+ * The full default ladder for `prompt`, in the same order as the worker's
+ * PROVIDER_SLOTS (provider_registry.py). Shared by runWaterfall() and
+ * probeLadder() so the "Test providers" button always exercises exactly the
+ * calls the real waterfall makes — they can't drift apart.
  */
-export async function runWaterfall(scope: string, prompt: string): Promise<{ text: string; model: string }> {
+function buildLadder(prompt: string): WaterfallStep[] {
   const geminiKey  = process.env.GEMINI_API_KEY ?? "";
   const groqKey    = process.env.GROQ_API_KEY ?? "";
   const mistralKey = process.env.MISTRAL_API_KEY ?? "";
@@ -217,8 +215,7 @@ export async function runWaterfall(scope: string, prompt: string): Promise<{ tex
   const cerebrasKey = process.env.CEREBRAS_API_KEY ?? "";
   const openrouterKey = process.env.OPENROUTER_API_KEY ?? "";
 
-  // Same order as the worker's PROVIDER_SLOTS (provider_registry.py).
-  const defaultOrder: WaterfallStep[] = [
+  return [
     { provider_key: "gemini",            name: "gemini-3.5-flash",           hasKey: !!geminiKey,  fn: () => callGemini(geminiKey, "gemini-3.5-flash", prompt) },
     { provider_key: "groq_gpt_oss_120b", name: "groq/gpt-oss-120b",          hasKey: !!groqKey,    fn: () => callGroqModel(groqKey, "openai/gpt-oss-120b", prompt) },
     { provider_key: "groq_qwen_27b",     name: "groq/qwen3.8-27b",           hasKey: !!groqKey,    fn: () => callGroqModel(groqKey, "qwen/qwen3.8-27b", prompt) },
@@ -235,6 +232,18 @@ export async function runWaterfall(scope: string, prompt: string): Promise<{ tex
     })),
     { provider_key: "cerebras",          name: "cerebras/gpt-oss-120b",      hasKey: !!cerebrasKey, fn: () => callCerebras(cerebrasKey, prompt) },
   ];
+}
+
+/**
+ * Runs `prompt` through the 12 JS-callable providers (Gemini 3.5 Flash/Flash-Lite,
+ * Groq GPT-OSS 120B/20B + Qwen3.8 27B, Cohere Command A+, Mistral Small/Ministral,
+ * 3 OpenRouter free slots, and Cerebras trial credit last), in the
+ * order/enabled-state configured for `scope` in llm_provider_config (falling
+ * back to this default order if unconfigured), stopping at the first
+ * non-quota-exceeded success.
+ */
+export async function runWaterfall(scope: string, prompt: string): Promise<{ text: string; model: string }> {
+  const defaultOrder = buildLadder(prompt);
 
   const config = await loadScopeConfig(scope);
 
@@ -267,4 +276,70 @@ export async function runWaterfall(scope: string, prompt: string): Promise<{ tex
   }
 
   throw new Error("All LLM providers exhausted");
+}
+
+// ── Provider health probe ("Test providers" on /admin/llm-providers) ──────────
+
+export type ProbeStatus = "ok" | "rate_limited" | "empty" | "error" | "timeout" | "no_key";
+
+export interface ProbeResult {
+  provider_key: string;
+  name: string;
+  status: ProbeStatus;
+  latency_ms: number | null;
+  detail?: string;
+}
+
+const PROBE_PROMPT = "Reply with exactly one word: OK";
+
+class ProbeTimeout extends Error {}
+
+async function probeStep(step: WaterfallStep, timeoutMs: number): Promise<ProbeResult> {
+  const base = { provider_key: step.provider_key, name: step.name };
+  // No key in THIS environment → don't call out, just say so.
+  if (!step.hasKey) return { ...base, status: "no_key", latency_ms: null };
+
+  const started = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      step.fn(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new ProbeTimeout()), timeoutMs);
+      }),
+    ]);
+    const latency_ms = Date.now() - started;
+    if (result.quotaExceeded) {
+      return { ...base, status: "rate_limited", latency_ms, detail: "Quota / rate limit hit right now — the model exists and the key works" };
+    }
+    if (!result.text.trim()) {
+      return { ...base, status: "empty", latency_ms, detail: "Responded but returned no visible text (reasoning models can spend the whole output budget thinking)" };
+    }
+    return { ...base, status: "ok", latency_ms };
+  } catch (err) {
+    const latency_ms = Date.now() - started;
+    if (err instanceof ProbeTimeout) {
+      return { ...base, status: "timeout", latency_ms, detail: `No response within ${Math.round(timeoutMs / 1000)}s` };
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return { ...base, status: "error", latency_ms, detail: message.slice(0, 240) };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Sends one tiny request to every slot of the default ladder, in parallel, and
+ * reports which are actually working. A retired model just fails inside
+ * runWaterfall() and is silently skipped — this makes that visible.
+ *
+ * Tests THIS environment's keys (Vercel/local), so for the worker-only
+ * "pipeline" scope it confirms the model is alive, but the worker's own
+ * GitHub Actions secrets could still differ.
+ *
+ * Spends ~1 request per slot of free quota (OpenRouter's ~50/day free cap is
+ * pooled across its 3 slots).
+ */
+export async function probeLadder(timeoutMs = 40_000): Promise<ProbeResult[]> {
+  return Promise.all(buildLadder(PROBE_PROMPT).map((step) => probeStep(step, timeoutMs)));
 }
