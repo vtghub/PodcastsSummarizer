@@ -1,4 +1,4 @@
-"""Gemini 2.0 Flash LLM provider — free tier, structured JSON output."""
+"""Gemini LLM provider — free tier, structured JSON output. Model is configurable (see GEMINI_MODEL / GEMINI_MODEL_LITE)."""
 
 import hashlib
 import textwrap
@@ -26,18 +26,21 @@ _RETRY_DELAYS = [4, 16, 64]  # seconds; only for transient 429/503 errors
 
 class GeminiLLMProvider(LLMProvider):
 
-    def __init__(self):
+    def __init__(self, model: str = GEMINI_MODEL):
         if not GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is not set. Add it to your .env file.")
         genai.configure(api_key=GEMINI_API_KEY)
-        self._model = genai.GenerativeModel(GEMINI_MODEL)
+        # Gemini models have independent free-tier quota buckets under one key —
+        # passing a different model gives the waterfall a distinct slot.
+        self._model_name = model
+        self._model = genai.GenerativeModel(model)
 
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
         if len(transcript.text) > _MAX_TRANSCRIPT_CHARS:
             data = chunked_extract(
                 self._generate_text, parse_json_response, episode, domain,
                 transcript.text, _CHUNK_TARGET_CHARS, log_prefix="    [Gemini]",
-                provider_name=GEMINI_MODEL,
+                provider_name=self._model_name,
             )
         else:
             prompt = textwrap.dedent(EXTRACTION_PROMPT).format(

@@ -83,7 +83,13 @@ class CohereLLMProvider(LLMProvider):
                         continue
                     raise RuntimeError(f"Cohere {response.status_code}: {body[:300]}")
                 data = response.json()
-                return data["message"]["content"][0]["text"].strip()
+                # Newer Cohere models (e.g. command-a-plus) return a "thinking"
+                # block BEFORE the "text" block, so content[0] isn't the answer
+                # — join just the text blocks.
+                return "".join(
+                    block.get("text", "") for block in data["message"]["content"]
+                    if block.get("type", "text") == "text"
+                ).strip()
             except requests.RequestException as e:
                 last_exc = e
                 continue

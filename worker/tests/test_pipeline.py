@@ -1291,6 +1291,92 @@ class TestProviderRegistry:
             slots = build_enabled_slots(config)
         assert "gemini" not in [s.key for s in slots]
 
+    def test_slot_keys_are_unique(self):
+        # llm_provider_config rows are keyed by slot key — a duplicate would
+        # make one admin toggle silently control two different models.
+        from worker.providers.llm.provider_registry import PROVIDER_SLOTS
+        keys = [s.key for s in PROVIDER_SLOTS]
+        assert len(keys) == len(set(keys))
+
+    def test_cerebras_is_the_last_rung(self, monkeypatch):
+        # Cerebras is trial-credit only now (not a free tier), so it must only
+        # be reached after every genuinely-free provider is exhausted.
+        from worker.providers.llm.provider_registry import build_enabled_slots, PROVIDER_SLOTS
+        for slot in PROVIDER_SLOTS:
+            monkeypatch.setenv(slot.env_var, "fake-key")
+        with self._no_cerebras_discovery:
+            keys = [s.key for s in build_enabled_slots({})]
+        first_cerebras = next(i for i, k in enumerate(keys) if k.startswith("cerebras_"))
+        assert all(k.startswith("cerebras_") for k in keys[first_cerebras:])
+        assert first_cerebras > 0
+
+    def test_together_is_not_in_the_default_ladder(self):
+        # Together has no free tier any more; the adapter still exists for
+        # LLM_PROVIDER=together but must not be a default waterfall rung.
+        from worker.providers.llm.provider_registry import PROVIDER_SLOTS
+        assert "together" not in [s.key for s in PROVIDER_SLOTS]
+        assert "TOGETHER_API_KEY" not in [s.env_var for s in PROVIDER_SLOTS]
+
+    def test_openrouter_models_are_all_free(self):
+        # tencent/hy3:free was withdrawn and now redirects to its PAID slug —
+        # calling that would bill OpenRouter credits. Guard the "free ladder".
+        from worker.providers.llm import provider_registry
+        for key, _name, model in provider_registry._OPENROUTER_MODELS:
+            assert model.endswith(":free") or model == "openrouter/free", f"{key} -> {model} is not a free model"
+
+    def test_multi_model_slots_bind_distinct_models(self, monkeypatch):
+        # Gemini / Groq / Mistral each fill several slots from one API key —
+        # every slot must be bound to its own model, not all to one default.
+        from worker.providers.llm import provider_registry
+        from worker.config import settings
+
+        monkeypatch.setattr("worker.providers.llm.gemini_llm.GEMINI_API_KEY", "fake-key")
+        monkeypatch.setattr("worker.providers.llm.groq_llm.GROQ_API_KEY", "fake-key")
+        monkeypatch.setattr("worker.providers.llm.mistral_llm.MISTRAL_API_KEY", "fake-key")
+        by_key = {s.key: s for s in provider_registry.PROVIDER_SLOTS}
+
+        assert by_key["gemini"].build()._model_name == settings.GEMINI_MODEL
+        assert by_key["gemini_flash_lite"].build()._model_name == settings.GEMINI_MODEL_LITE
+        assert settings.GEMINI_MODEL != settings.GEMINI_MODEL_LITE
+
+        groq_models = [by_key[k].build()._model for k in ("groq_gpt_oss_120b", "groq_qwen_27b", "groq_gpt_oss_20b")]
+        assert groq_models == [settings.GROQ_MODEL, settings.GROQ_MODEL_QWEN, settings.GROQ_MODEL_SMALL]
+        assert len(set(groq_models)) == 3
+
+        mistral_models = [by_key[k].build()._model for k in ("mistral", "mistral_ministral")]
+        assert mistral_models == [settings.MISTRAL_MODEL, settings.MISTRAL_MODEL_2]
+        assert len(set(mistral_models)) == 2
+
+
+class TestCohereResponseParsing:
+    """Newer Cohere models (command-a-plus) return a 'thinking' content block
+    BEFORE the 'text' block — the adapter used to read content[0]['text'] and
+    raised KeyError: 'text', silently killing the Cohere rung."""
+
+    def _provider(self, monkeypatch):
+        from worker.providers.llm.cohere_llm import CohereLLMProvider
+        monkeypatch.setattr("worker.providers.llm.cohere_llm.COHERE_API_KEY", "fake-key")
+        return CohereLLMProvider()
+
+    def _response(self, content_blocks):
+        resp = MagicMock()
+        resp.ok = True
+        resp.text = "{}"
+        resp.json.return_value = {"message": {"content": content_blocks}}
+        return resp
+
+    def test_skips_leading_thinking_block(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+        blocks = [{"type": "thinking", "thinking": "let me think…"}, {"type": "text", "text": "  the answer  "}]
+        with patch("worker.providers.llm.cohere_llm.requests.post", return_value=self._response(blocks)):
+            assert provider._generate_text("hi") == "the answer"
+
+    def test_plain_text_only_response_still_works(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+        with patch("worker.providers.llm.cohere_llm.requests.post",
+                   return_value=self._response([{"type": "text", "text": "OK"}])):
+            assert provider._generate_text("hi") == "OK"
+
 
 class TestCerebrasModelDiscovery:
     """provider_registry.py's live Cerebras catalog discovery — new models

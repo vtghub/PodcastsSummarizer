@@ -25,9 +25,9 @@ def list_available_models() -> list[str]:
     """
     Queries Cerebras's own /v1/models catalog for whatever's currently
     available to this API key — unlike Groq/OpenRouter's model lists (fixed
-    strings in provider_registry.py), Cerebras's free-tier lineup has
-    changed shape before and there's no guarantee today's 3 models
-    (gpt-oss-120b, gemma-3-31b, zai-glm-4.7) stay the same. Raises on any
+    strings in provider_registry.py), Cerebras's lineup has changed shape
+    before (e.g. zai-glm-4.7 was deprecated 2026-08-17) and there's no
+    guarantee today's models stay the same. Raises on any
     failure — network error, bad key, endpoint shape change — so the caller
     (provider_registry.py's discovery wrapper) can fall back to a small
     hardcoded default list instead of breaking the whole waterfall build.

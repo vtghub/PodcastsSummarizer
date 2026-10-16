@@ -23,9 +23,12 @@ _RETRY_DELAYS = [4, 16, 64]  # seconds; only for transient rate-limit errors
 
 class MistralLLMProvider(LLMProvider):
 
-    def __init__(self):
+    def __init__(self, model: str = MISTRAL_MODEL):
         if not MISTRAL_API_KEY:
             raise ValueError("MISTRAL_API_KEY is not set. Add it to your .env file.")
+        # Different Mistral models are rate-limited independently under the
+        # same key — passing a different model gives the waterfall a distinct slot.
+        self._model = model
 
     def extract_insights(self, episode: Episode, transcript: Transcript, domain: str) -> Insight:
         if len(transcript.text) > _MAX_TRANSCRIPT_CHARS:
@@ -71,7 +74,7 @@ class MistralLLMProvider(LLMProvider):
                     "https://api.mistral.ai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"},
                     json={
-                        "model": MISTRAL_MODEL,
+                        "model": self._model,
                         "messages": [{"role": "user", "content": prompt}],
                         "max_tokens": 2048,
                         "temperature": 0.3,
