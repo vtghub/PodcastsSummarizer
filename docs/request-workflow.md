@@ -1208,6 +1208,8 @@ sequenceDiagram
     participant DB as Supabase (llm_provider_config)
     participant WORKER as Worker (next pipeline run)
     participant ASK as /api/ask (next question)
+    participant TEST as /api/admin/llm-providers/test
+    participant LLMS as LLM providers (Gemini, Groq, Cohere, Mistral, OpenRouter, Cerebras)
 
     B->>PAGE: navigate to /admin/llm-providers
     PAGE->>PAGE: isAdmin() — false? redirect /dashboard
@@ -1217,9 +1219,9 @@ sequenceDiagram
     API->>API: isAdmin() check (403 if false)
     API->>DB: SELECT scope, provider_key, enabled, priority FROM llm_provider_config
     DB-->>API: config rows (or empty if migration not yet applied — degrades to defaults)
-    API->>API: for each of PROVIDER_SLOTS[pipeline] and PROVIDER_SLOTS[ask_ai]:<br/>merge config row (or default enabled=true, priority=index),<br/>check process.env[env_var] presence (dashboard's own env), sort by priority
-    API-->>MGR: { pipeline: Provider[], ask_ai: Provider[] }
-    MGR->>B: render two sections — "Pipeline Extraction" and "Ask AI"<br/>each row: position badge, name, env-var-detected indicator, enable toggle, reorder arrows
+    API->>API: for each of PROVIDER_SLOTS[pipeline], [ask_ai] and [recommendations]:<br/>merge config row (or default enabled=true, priority=index),<br/>check process.env[env_var] presence (dashboard's own env), sort by priority
+    API-->>MGR: { pipeline: Provider[], ask_ai: Provider[], recommendations: Provider[] }
+    MGR->>B: render three sections — "Pipeline Extraction", "Ask AI" and "Recommendations"<br/>each row: position badge, name, env-var-detected indicator, enable toggle, reorder arrows
 
     alt Toggle enabled
         B->>MGR: click toggle on a provider row
@@ -1239,6 +1241,20 @@ sequenceDiagram
         API-->>MGR: confirmed priorities
         Note over MGR: on failure, reverts optimistic reorder + shows toast
     end
+
+    Note over B,LLMS: "Test providers" — find out which free models are really alive (a retired one otherwise fails silently and is skipped)
+    B->>MGR: click "Test providers"
+    MGR->>TEST: POST /api/admin/llm-providers/test
+    TEST->>TEST: isAdmin() check (403 if false)
+    TEST->>TEST: probeLadder() — buildLadder("Reply with exactly one word: OK"), the SAME ladder runWaterfall() uses;<br/>a slot with no key in the dashboard's env is reported no_key without any call
+    loop every slot that has a key, in parallel (40s timeout each)
+        TEST->>LLMS: one tiny request per provider/model
+        LLMS-->>TEST: answer text / 429 / error / nothing
+    end
+    TEST->>TEST: classify each: ok · rate_limited · empty (no visible text) · error · timeout
+    TEST-->>MGR: { results: ProbeResult[], tested_at }
+    MGR->>B: status chip + latency on every row of all three sections (pipeline's cerebras_gpt_oss_120b row maps to the dashboard's "cerebras" slot) + one-line summary
+    Note over MGR,TEST: Tests the DASHBOARD's keys — pipeline rows confirm the model is alive, but the worker uses its own GitHub Actions secrets.<br/>Spends ~1 free request per slot (OpenRouter's ~50/day cap is pooled across its slots). POST, never GET, so a prefetch can't trigger it.
 
     Note over WORKER,DB: Pipeline reads scope='pipeline' config once at the start of each run<br/>(get_llm_provider_config() in supabase_storage.py) — changes here<br/>take effect on the worker's NEXT run, not instantly
     WORKER->>DB: SELECT ... WHERE scope='pipeline' (on next pipeline start)
