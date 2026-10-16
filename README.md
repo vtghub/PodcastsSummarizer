@@ -13,7 +13,7 @@ Automatically extracts daily insights from podcasts and surfaces them via a pers
 | **Scheduler** | GitHub Actions (cron) | Ingestion pipeline every 4 hours; hourly digest fan-out; weekly recommendations Sundays 10 AM UTC |
 | **Source** | Python — RSS / yt-dlp | Fetches episode metadata and audio (8 parallel RSS workers; 4 concurrent transcript/audio workers — LLM extraction itself is serialized one-episode-at-a-time across those workers, see LLM row) |
 | **Transcription** | OpenAI Whisper (local, `tiny` model) | Converts audio to text when no caption available |
-| **LLM** | Free-tier waterfall (Gemini, Groq 8B/70B, Mistral, Together, Cohere, Cerebras, 4× OpenRouter models) | Extracts summary, key points, quotes, action items; chunked map-reduce for long transcripts; falls through to the next provider on quota/failure, sticky per-run so a dead provider isn't retried per chunk; toggle/reorder without a deploy via `/admin/llm-providers`. LLM calls are serialized across episode workers (one episode's full chunk set finishes before the next starts) so a burst of concurrent requests can't trip a shared provider's per-minute rate limit and cascade failures onto unrelated episodes; once every provider is exhausted for the run, remaining episodes are deferred untouched (no wasted retry attempts) rather than each failing individually — see `retry_failed_episodes.yml` below for automatic recovery. |
+| **LLM** | Free-tier waterfall (Gemini 3.5 Flash/Flash-Lite, Groq GPT-OSS 120B/20B + Qwen3.8 27B, Cohere Command A+, Mistral Small + Ministral 14B, 3 OpenRouter free slots; Cerebras trial credit last) | Extracts summary, key points, quotes, action items; chunked map-reduce for long transcripts; falls through to the next provider on quota/failure, sticky per-run so a dead provider isn't retried per chunk; toggle/reorder without a deploy via `/admin/llm-providers`. Model ids were re-verified against each provider's live catalog on 2026-10-16 — free lineups churn every few months and a retired model fails silently inside the waterfall (just skipped), so re-verify periodically (see `provider_registry.py`). LLM calls are serialized across episode workers (one episode's full chunk set finishes before the next starts) so a burst of concurrent requests can't trip a shared provider's per-minute rate limit and cascade failures onto unrelated episodes; once every provider is exhausted for the run, remaining episodes are deferred untouched (no wasted retry attempts) rather than each failing individually — see `retry_failed_episodes.yml` below for automatic recovery. |
 | **Storage** | Supabase PostgreSQL (prod) / SQLite (dev) | Episodes, transcripts, insights, user profiles, subscriptions |
 | **Email** | Gmail SMTP | Per-user personalized daily digest |
 | **Dashboard** | Next.js 15 on Vercel | Insights viewer; podcast subscription management; profile |
@@ -52,13 +52,13 @@ PodcastsSummarizer/
 │   │   ├── transcription/
 │   │   │   └── local_whisper.py     # OpenAI Whisper (runs on Actions runner); domain-aware initial_prompt per source domain; post-processing corrections for known proper-noun mishearings (e.g. "Cloud AI" → "Claude AI", "Claude co-work" → "Claude Cowork")
 │   │   ├── llm/
-│   │   │   ├── gemini_llm.py        # Google Gemini (default)
-│   │   │   ├── groq_llm.py          # Groq — parametrized model (8B fast / 70B quality)
-│   │   │   ├── mistral_llm.py       # Mistral Small (REST)
-│   │   │   ├── together_llm.py      # Together AI — Llama 3.1 8B Instruct Turbo (REST, OpenAI-compatible)
-│   │   │   ├── cohere_llm.py        # Cohere Command R (REST)
-│   │   │   ├── cerebras_llm.py      # Cerebras Llama 3.3 70B (REST, OpenAI-compatible) — fast inference, generous free-tier request budget
-│   │   │   ├── openrouter_llm.py    # OpenRouter — parametrized model (4 free-tier slots)
+│   │   │   ├── gemini_llm.py        # Google Gemini — parametrized model (3.5 Flash + 3.5 Flash-Lite slots; GEMINI_MODEL / GEMINI_MODEL_LITE)
+│   │   │   ├── groq_llm.py          # Groq — parametrized model (GPT-OSS 120B / Qwen3.8 27B / GPT-OSS 20B slots, separate quota buckets; GROQ_MODEL / GROQ_MODEL_QWEN / GROQ_MODEL_SMALL)
+│   │   │   ├── mistral_llm.py       # Mistral — parametrized model (Mistral Small + Ministral 14B slots, rate-limited independently; REST)
+│   │   │   ├── together_llm.py      # Together AI — Llama 3.1 8B Instruct Turbo (REST, OpenAI-compatible); NOT in the default waterfall (no free tier any more) — standalone via LLM_PROVIDER=together
+│   │   │   ├── cohere_llm.py        # Cohere Command A+ (REST); reads only `text` content blocks — newer models return a `thinking` block first
+│   │   │   ├── cerebras_llm.py      # Cerebras GPT-OSS 120B (REST, OpenAI-compatible) — trial credit only since Jul 2026 (one-time $5, 30 days, no auto-billing); the LAST waterfall rung
+│   │   │   ├── openrouter_llm.py    # OpenRouter — parametrized model (3 free-tier slots incl. the `openrouter/free` router; every model must be `:free`)
 │   │   │   ├── chunking.py          # Shared chunked map-reduce extraction for long transcripts (split → per-chunk summarize → synthesize); logs each call's chunk/phase/provider/status to extraction_chunk_log (best-effort, migration 021)
 │   │   │   ├── text_utils.py        # parse_json_response() — lenient fence/prose-stripping JSON parser shared by all providers
 │   │   │   ├── waterfall.py         # WaterfallLLM — chains ordered (name, generate_fn) steps; sticky dead-provider tracking (skips a failed provider for the rest of the run instead of retrying it every chunk)
@@ -79,7 +79,7 @@ PodcastsSummarizer/
 │       ├── retry_failed_episodes.py    # Dedicated recovery job: re-attempts episode_queue rows with status='failed' using a fresh waterfall instance (reuses pipeline.py's _process_episode, so it gets the transcript-cache skip + exhaustion short-circuit too); bounded batch per invocation via --limit
 │       └── seed_dictionary.py          # One-time (idempotent) job: loads Princeton WordNet (~130k word-sense entries) into dictionary_entries via NLTK — powers the insight card word-lookup feature
 │   └── tests/
-│       └── test_pipeline.py         # Pytest suite (93 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience, _process_episode (exhaustion short-circuit + transcript-cache reuse + episode-variant skip), chunked extraction (incl. per-chunk logging), waterfall (incl. sticky dead-provider fallback + all_dead), LLM-backed ranking, insight backfill job, retry-failed-episodes job, provider registry, live Cerebras model discovery, episode-title-variant heuristics
+│       └── test_pipeline.py         # Pytest suite (100 tests) — SQLite storage, fan-out logic, email providers, pipeline resilience, _process_episode (exhaustion short-circuit + transcript-cache reuse + episode-variant skip), chunked extraction (incl. per-chunk logging), waterfall (incl. sticky dead-provider fallback + all_dead), LLM-backed ranking, insight backfill job, retry-failed-episodes job, provider registry (ladder guards: unique keys, Cerebras last, Together excluded, OpenRouter free-only, multi-model slots bind distinct models), Cohere thinking-block parsing, live Cerebras model discovery, episode-title-variant heuristics
 │
 ├── supabase/
 │   └── migrations/
@@ -155,7 +155,7 @@ PodcastsSummarizer/
 │   │       ├── episode-notes/[id]/  # PATCH edit note body (debounced autosave) · DELETE — both ownership-checked (authed)
 │   │       ├── insights/export/     # GET ?format=csv|word|json|pdf&date=YYYY-MM-DD — download insights for a date (authed)
 │   │       ├── insights/search/     # GET ?q= — full-text websearch across summary, key_points, quotes, tags; optional ?domain= ?from= ?to= filters
-│   │       ├── ask/                 # POST — LLM Q&A: FTS context retrieval + 6-model waterfall (Gemini→Groq 8B→Groq 70B→Mistral→Together→Cohere), order/enabled reads llm_provider_config (scope='ask_ai') with hardcoded default fallback
+│   │       ├── ask/                 # POST — LLM Q&A: FTS context retrieval + 12-slot free-tier waterfall (see `lib/llm-waterfall.ts`), order/enabled reads llm_provider_config (scope='ask_ai') with hardcoded default fallback
 │   │       ├── ask/suggestions/     # GET — personalized suggested questions from the user's subscriptions + last-7-days insights, templated (no LLM call); generic static fallback if nothing to personalize from
 │   │       ├── ask/episode/         # GET ?id= — episode title/source/hasTranscript for the picker + deep links · POST { episodeId, question } — answers from the episode's saved transcript directly (works even without a generated insight), scope='ask_ai' waterfall
 │   │       ├── admin/users/         # GET — list all users (auth.users + user_profiles + per-domain subscription channels), admin only
@@ -201,7 +201,7 @@ PodcastsSummarizer/
 │   │   ├── email.ts                 # nodemailer Gmail SMTP sender — HTML + plain text digest renderer
 │   │   ├── supabase.ts              # Service-role Supabase client (server-only)
 │   │   ├── supabase-browser.ts      # Anon-key Supabase client singleton (browser — Realtime)
-│   │   └── llm-waterfall.ts         # Shared JS-callable waterfall (Gemini, Groq 8B/70B, Mistral, Together, Cohere, Cerebras, 4× OpenRouter) + runWaterfall(scope, prompt) reading llm_provider_config — used by both /api/ask and /api/recommendations
+│   │   └── llm-waterfall.ts         # Shared JS-callable waterfall (Gemini 3.5 Flash/Flash-Lite, Groq GPT-OSS 120B/20B + Qwen3.8 27B, Cohere Command A+, Mistral Small + Ministral 14B, 3 OpenRouter free slots, Cerebras (trial credit, last)) + runWaterfall(scope, prompt) reading llm_provider_config — used by both /api/ask and /api/recommendations; 2048-token output cap so reasoning models (Gemini 3.x, GPT-OSS, Nemotron) aren't truncated mid-thought
 │   └── middleware.ts                # Supabase SSR session refresh; guards /api routes (401 if no user); token-bucket rate limiting (20 req/min) on comment/reaction mutations
 │
 ├── docs/
@@ -291,13 +291,14 @@ All providers are swapped via `.env` — no code changes needed:
 
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes | Google AI Studio key (primary LLM) |
-| `GROQ_API_KEY` | No | Groq key — powers both the 8B and 70B waterfall slots |
-| `MISTRAL_API_KEY` | No | Mistral AI key — waterfall slot (`mistral-small-latest`) |
-| `COHERE_API_KEY` | No | Cohere key — waterfall slot (`command-r`) |
-| `CEREBRAS_API_KEY` | No | Cerebras key — waterfall slot (`llama-3.3-70b`) |
-| `TOGETHER_API_KEY` | No | Together AI key — waterfall slot (`Meta-Llama-3.1-8B-Instruct-Turbo`) |
-| `OPENROUTER_API_KEY` | No | OpenRouter key — 4 free-tier model waterfall slots |
+| `GEMINI_API_KEY` | Yes | Google AI Studio key (primary LLM) — powers the 3.5 Flash and 3.5 Flash-Lite waterfall slots |
+| `GROQ_API_KEY` | No | Groq key — powers the GPT-OSS 120B, Qwen3.8 27B and GPT-OSS 20B waterfall slots |
+| `MISTRAL_API_KEY` | No | Mistral AI key — waterfall slots (`mistral-small-latest`, `ministral-14b-latest`) |
+| `COHERE_API_KEY` | No | Cohere key — waterfall slot (`command-a-plus-05-2026`) |
+| `CEREBRAS_API_KEY` | No | Cerebras key — LAST-rung waterfall slot (`gpt-oss-120b`; one-time trial credit only, not a free tier) |
+| `TOGETHER_API_KEY` | No | Together AI key — only for standalone `LLM_PROVIDER=together`; no longer in the default waterfall (no free tier) |
+| `OPENROUTER_API_KEY` | No | OpenRouter key — 3 free-tier model waterfall slots (free-model cap is ~50 req/day, pooled across all `:free` models) |
+| `GEMINI_MODEL`, `GEMINI_MODEL_LITE`, `GROQ_MODEL`, `GROQ_MODEL_QWEN`, `GROQ_MODEL_SMALL`, `MISTRAL_MODEL`, `MISTRAL_MODEL_2`, `COHERE_MODEL` | No | Optional model-id overrides for the waterfall slots (defaults verified 2026-10-16) — swap a retired model without a code change |
 | `SUPABASE_DB_URL` | Cloud mode | Transaction Pooler URL (`aws-0-*.pooler.supabase.com:6543`) — **not** the direct IPv6 URL |
 | `GMAIL_SENDER` | Email digest | Gmail address used as sender |
 | `GMAIL_APP_PASSWORD` | Email digest | Gmail App Password (not your account password) |
@@ -320,13 +321,12 @@ All providers are swapped via `.env` — no code changes needed:
 | `GH_TOKEN` | Phase 2 episode processing | GitHub PAT with `workflow` scope — used by `/api/digest/process` to trigger `workflow_dispatch` |
 | `GH_OWNER` | No | GitHub repo owner (default: `vtghub`) |
 | `GH_REPO` | No | GitHub repo name (default: `PodcastsSummarizer`) |
-| `GEMINI_API_KEY` | Ask AI | Google AI Studio key — primary LLM for `/api/ask` |
-| `GROQ_API_KEY` | Ask AI | Groq key — fallback #2 and #3 (Llama 3.1 8B + Llama 3.3 70B) |
-| `MISTRAL_API_KEY` | Ask AI | Mistral AI key — fallback #4 (mistral-small-latest) |
-| `TOGETHER_API_KEY` | Ask AI | Together AI key — fallback #5 (Llama 3.1 8B Instruct Turbo) |
-| `COHERE_API_KEY` | Ask AI | Cohere key — fallback #6 (Command R) |
-| `CEREBRAS_API_KEY` | Ask AI | Cerebras key — fallback #7 (Llama 3.3 70B) |
-| `OPENROUTER_API_KEY` | Ask AI | OpenRouter key — fallbacks #8-11 (4 free-tier model slots) |
+| `GEMINI_API_KEY` | Ask AI | Google AI Studio key — primary LLM for `/api/ask` (3.5 Flash #1, 3.5 Flash-Lite #7) |
+| `GROQ_API_KEY` | Ask AI | Groq key — fallbacks #2, #3 and #8 (GPT-OSS 120B, Qwen3.8 27B, GPT-OSS 20B) |
+| `MISTRAL_API_KEY` | Ask AI | Mistral AI key — fallbacks #5 and #6 (mistral-small-latest, ministral-14b-latest) |
+| `COHERE_API_KEY` | Ask AI | Cohere key — fallback #4 (Command A+) |
+| `CEREBRAS_API_KEY` | Ask AI | Cerebras key — fallback #12, last (GPT-OSS 120B, trial credit) |
+| `OPENROUTER_API_KEY` | Ask AI | OpenRouter key — fallbacks #9-11 (3 free-tier model slots) |
 
 ### GitHub Actions Secrets
 
@@ -334,12 +334,12 @@ All providers are swapped via `.env` — no code changes needed:
 |---|---|
 | `SUPABASE_DB_URL` | Transaction Pooler connection string |
 | `GEMINI_API_KEY` | Gemini API key |
-| `GROQ_API_KEY` | Groq API key (8B + 70B waterfall slots) |
+| `GROQ_API_KEY` | Groq API key (GPT-OSS 120B/20B + Qwen3.8 waterfall slots) |
 | `MISTRAL_API_KEY` | Mistral API key (waterfall slot, optional) |
 | `COHERE_API_KEY` | Cohere API key (waterfall slot, optional) |
-| `CEREBRAS_API_KEY` | Cerebras API key (waterfall slot, optional) |
-| `TOGETHER_API_KEY` | Together AI API key (waterfall slot, optional) |
-| `OPENROUTER_API_KEY` | OpenRouter API key (4 free-tier waterfall slots, optional) |
+| `CEREBRAS_API_KEY` | Cerebras API key (last-rung trial-credit slot, optional) |
+| `TOGETHER_API_KEY` | Together AI API key (standalone use only — not in the default waterfall) |
+| `OPENROUTER_API_KEY` | OpenRouter API key (3 free-tier waterfall slots, optional) |
 | `GMAIL_SENDER` | Gmail sender address |
 | `GMAIL_APP_PASSWORD` | Gmail App Password |
 | `NEXT_APP_URL` | Vercel deployment URL — used to call `/api/revalidate` after pipeline runs |
@@ -392,13 +392,13 @@ npm run dev      # http://localhost:3000
 | **Bookmarks** | Signed-in users can bookmark any insight with the ☆/★ button on the engagement bar (amber when saved); toggle-style — click once to save, click again to remove; optimistic UI with server reconciliation; saved insights appear on `/saved` page sorted by bookmark date; **Saved** link in the navbar (signed-in users only) |
 | **Episode Notes** | Signed-in users can keep multiple private notes per episode via the teal StickyNote toggle on the engagement bar, opening a lazily-loaded panel (`NotesPanel`). Fully auto-save, no Save button: typing in "Add a note" creates a new note ~600ms after the user stops typing; editing an existing note (`NoteRow`) autosaves the same way with a small Saving…/Saved indicator; delete uses a confirm-then-delete inline control, same pattern as Comments. Keyed on `episode_id` (not `insight_id` like other engagement tables), so notes work even for episodes with no insight row yet. `/notes` page (mirrors `/saved`) lists every episode with notes, grouped and collapsible, most-recently-active first; **My Notes** link in the navbar "More" dropdown (signed-in users only) |
 | **Analytics** | `/analytics` page (signed-in only) — four KPI cards (total insights, views, subscribed sources, days with insights); SVG bar chart of insights per day (last 30 days); domain breakdown with proportional horizontal bars; top-10 most-viewed insights ranked list with deep links back to the insight card |
-| **Ask AI (Q&A)** | Signed-in users can ask any question in plain language on the `/ask` page. Retrieval first checks whether the question names a specific subscribed podcast (e.g. "latest episode from Signals & Threads") and fetches that source's own recent insights directly — since Postgres FTS only searches insight content and never matches a bare podcast name; falls back to FTS over subscribed episode insights, then to most-recent-across-subscriptions if both come up empty. Builds a context block (entries marked newest-first per podcast) and calls an LLM to answer with inline citations (e.g. [1], [2]); each citation card links directly to the exact insight on the dashboard. **11-model free-tier waterfall** — Gemini 2.0 Flash → Groq Llama 3.1 8B → Groq Llama 3.3 70B → Mistral Small → Together AI Llama 3.1 8B → Cohere Command R → Cerebras Llama 3.3 70B → 4× OpenRouter free models (NVIDIA Nemotron Ultra/Nano, Poolside Laguna M.1, Tencent Hy3); providers are tried in order and skipped on 429/quota without surfacing errors to the user; enabled/order is admin-editable on `/admin/llm-providers` (falls back to this default order if unconfigured). **Suggested questions** on the empty-chat state are personalized from the user's actual subscriptions and last-7-days insights (`GET /api/ask/suggestions` — podcast names + domains templated into questions, no LLM call; falls back to a generic static list with no subscriptions/recent insights). **"Ask About an Episode" mode** (toggle at the top of `/ask`) answers free-form questions about one specific episode using its saved transcript directly (`POST /api/ask/episode`, same `ask_ai`-scope waterfall) — works even when insight extraction hasn't run or failed for that episode, since it only needs a transcript, not a generated insight; reachable via the mode toggle's own podcast→episode picker (any subscribed episode with a saved transcript, "✓"/"○" processed indicator), a "Ask AI about this episode" button on the Episode Digest picker (Profile page), or a Sparkles icon in every Insight Card's engagement bar — both deep-link to `/ask?episode=<id>`. "Ask" link in desktop navbar; **Ask** tab in mobile bottom bar. |
-| **LLM Providers (admin)** | Admin-only `/admin/llm-providers` page — three independently toggle/reorder-able, collapsible sections, each editing its own `llm_provider_config` scope: **Pipeline Extraction** (worker's insight-extraction waterfall) and **Ask AI** / **Recommendations** (the dashboard's own `lib/llm-waterfall.ts`, since both scopes call the exact same `runWaterfall()` function) — all three now share the identical 11-provider set: Gemini, Groq 8B/70B, Mistral, Together, Cohere, Cerebras, 4× OpenRouter. The pipeline picks up changes on its next run; Ask AI/Recommendations pick them up on the next question/refresh. Each row shows whether its API key is detected in the current environment. |
+| **Ask AI (Q&A)** | Signed-in users can ask any question in plain language on the `/ask` page. Retrieval first checks whether the question names a specific subscribed podcast (e.g. "latest episode from Signals & Threads") and fetches that source's own recent insights directly — since Postgres FTS only searches insight content and never matches a bare podcast name; falls back to FTS over subscribed episode insights, then to most-recent-across-subscriptions if both come up empty. Builds a context block (entries marked newest-first per podcast) and calls an LLM to answer with inline citations (e.g. [1], [2]); each citation card links directly to the exact insight on the dashboard. **12-slot free-tier waterfall** — Gemini 3.5 Flash → Groq GPT-OSS 120B → Groq Qwen3.8 27B → Cohere Command A+ → Mistral Small → Mistral Ministral 14B → Gemini 3.5 Flash-Lite → Groq GPT-OSS 20B → 3 OpenRouter free slots (Poolside Laguna S 2.1, NVIDIA Nemotron 3 Super, OpenRouter Free Router) → Cerebras (trial credit, last); providers are tried in order and skipped on 429/quota without surfacing errors to the user; enabled/order is admin-editable on `/admin/llm-providers` (falls back to this default order if unconfigured). **Suggested questions** on the empty-chat state are personalized from the user's actual subscriptions and last-7-days insights (`GET /api/ask/suggestions` — podcast names + domains templated into questions, no LLM call; falls back to a generic static list with no subscriptions/recent insights). **"Ask About an Episode" mode** (toggle at the top of `/ask`) answers free-form questions about one specific episode using its saved transcript directly (`POST /api/ask/episode`, same `ask_ai`-scope waterfall) — works even when insight extraction hasn't run or failed for that episode, since it only needs a transcript, not a generated insight; reachable via the mode toggle's own podcast→episode picker (any subscribed episode with a saved transcript, "✓"/"○" processed indicator), a "Ask AI about this episode" button on the Episode Digest picker (Profile page), or a Sparkles icon in every Insight Card's engagement bar — both deep-link to `/ask?episode=<id>`. "Ask" link in desktop navbar; **Ask** tab in mobile bottom bar. |
+| **LLM Providers (admin)** | Admin-only `/admin/llm-providers` page — three independently toggle/reorder-able, collapsible sections, each editing its own `llm_provider_config` scope: **Pipeline Extraction** (worker's insight-extraction waterfall) and **Ask AI** / **Recommendations** (the dashboard's own `lib/llm-waterfall.ts`, since both scopes call the exact same `runWaterfall()` function) — all three share the identical 12-slot set: Gemini 3.5 Flash/Flash-Lite, Groq GPT-OSS 120B/20B + Qwen3.8 27B, Cohere Command A+, Mistral Small + Ministral 14B, 3 OpenRouter free slots, Cerebras (trial credit, last). The pipeline picks up changes on its next run; Ask AI/Recommendations pick them up on the next question/refresh. Each row shows whether its API key is detected in the current environment. |
 | **About Page** | Public `/about` page — no auth required; gradient hero glow, 12 feature cards in a 2-column grid (1-column mobile) with Lucide icons colored via the domain-color palette (cycled per card), a "Powered by Free AI Models" section listing every model in each of the three waterfalls (Insight Extraction, Recommendations, Ask AI) as chip tags — plus a note that Dictionary Lookup is pure retrieval and uses no AI model — and Get Started / Sign in CTA; "About" link visible in the navbar for all visitors |
 | **Auth** | Supabase email + password; SSR JWT cookies; RLS enforced at DB level; "Forgot password?" on `/login` → `/forgot-password` (email entry, `resetPasswordForEmail()`) → emailed link → `/reset-password` (detects the recovery session from the URL, sets a new password via `updateUser()`) — all client-side against Supabase Auth, no new API routes |
 | **New Insights Indicator** | When new episodes have been processed since the user's last visit, a **"N new"** orange pill appears inline next to the Dashboard link on desktop (with a tooltip); on mobile, the Dashboard bottom-tab icon shows a count badge and a **"new"** sublabel beneath the tab text. Count is derived from `last_visited_at` on `user_profiles` vs. `insights.created_at` for the user's subscribed sources. |
 | **Mobile** | Responsive layout — single-column cards, compact NavBar (My Podcasts hidden — accessible via bottom tab bar), fixed 5-tab bottom bar (Dashboard · Podcasts · **Ask** · **For You** · Profile); domain filter strips are horizontally scrollable on mobile across Dashboard and Podcast Catalog. Desktop's "More" dropdown (Analytics/Saved/About) is hidden below `sm`, since there's no bottom-tab room for 3 more entries — those links live in the Account menu dropdown instead on mobile (same avatar button, `sm:hidden` items), so nothing is unreachable. |
-| **Recommendations ("For You")** | Signed-in users can view/refresh their best-of-week insight picks and trending-podcast suggestions on demand at `/recommendations`, in addition to the Sunday email — same LLM ranking (`scope='recommendations'`), computed fresh on request via the same 11-provider `runWaterfall()` used by Ask AI (Gemini, Groq 8B/70B, Mistral, Together, Cohere, Cerebras, 4× OpenRouter). "For You" link in desktop navbar; **For You** tab in mobile bottom bar. |
+| **Recommendations ("For You")** | Signed-in users can view/refresh their best-of-week insight picks and trending-podcast suggestions on demand at `/recommendations`, in addition to the Sunday email — same LLM ranking (`scope='recommendations'`), computed fresh on request via the same 12-slot `runWaterfall()` used by Ask AI (see the Ask AI row for the ladder). "For You" link in desktop navbar; **For You** tab in mobile bottom bar. |
 | **Task Status (admin)** | Admin-only `/admin/task-status` page with three sections: **GitHub Actions Runners** — every workflow in the repo with its most recent run status, a "Run now" button (workflow_dispatch), and a "Cancel" button when a run is queued/in progress, polled every 20s; **Failed Episodes** — episodes stuck in `episode_queue` with `status='failed'` (title, source, retry count, last error, last updated), with a "Retry now" button that dispatches `retry_failed_episodes.yml` immediately instead of waiting for its next scheduled run; and **Episode Transcription Detail** — the 15 most recently chunked episodes, expandable to show every chunk's LLM model, status, timestamp, and error message, with three outcome states per episode (not just success/fail): a clean green check for succeeded-first-try, an amber "Recovered after retry" badge for episodes where a chunk failed but a later retry got it through (`episodes.status='done'` despite `extraction_chunk_log` showing a failure somewhere in its history), and a red X only for episodes still genuinely stuck. |
 
 ---
