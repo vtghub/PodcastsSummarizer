@@ -73,7 +73,7 @@ sequenceDiagram
             PY->>LLM: extract_insights(episode, transcript)
             alt current provider quota exceeded or fails
                 PY->>PY: mark provider "sticky dead" for this run
-                PY->>LLM: retry with next enabled provider in priority order<br/>(Gemini → Groq 8B/70B → Mistral → Together → Cohere → Cerebras → OpenRouter x4)
+                PY->>LLM: retry with next enabled provider in priority order<br/>(Gemini 3.5 Flash → Groq GPT-OSS 120B → Groq Qwen3.8 → Cohere A+ → Mistral → Ministral → Gemini Flash-Lite → Groq GPT-OSS 20B → OpenRouter ×3 → Cerebras last)
             end
             alt success
                 LLM-->>PY: Insight (summary, key_points, quotes, actions, tags)
@@ -1005,9 +1005,9 @@ sequenceDiagram
     participant SUG as /api/ask/suggestions
     participant API as /api/ask
     participant DB as Supabase
-    participant LLM1 as Gemini 2.0 Flash
-    participant LLM2 as Groq (Llama 3.1 8B / 3.3 70B)
-    participant LLM3 as Mistral / Together / Cohere
+    participant LLM1 as Gemini 3.5 Flash / Flash-Lite
+    participant LLM2 as Groq (GPT-OSS 120B / Qwen3.8 27B / GPT-OSS 20B)
+    participant LLM3 as Cohere / Mistral / OpenRouter / Cerebras
 
     B->>PAGE: navigate to /ask ("My Podcasts" mode, default)
     PAGE->>PAGE: render chat UI with 4 static fallback questions immediately
@@ -1066,14 +1066,14 @@ sequenceDiagram
             DB-->>API: config rows (or empty — falls back to hardcoded default order)
             API->>API: filter to steps with an API key present, sort by config priority
 
-            Note over API,LLM1: 11-model waterfall (admin-editable order) — try each until one succeeds
-            API->>LLM1: POST generateContent (Gemini 2.0 Flash)
+            Note over API,LLM1: 12-slot waterfall (admin-editable order) — try each until one succeeds
+            API->>LLM1: POST generateContent (Gemini 3.5 Flash)
             alt Gemini quota exceeded (429 / RESOURCE_EXHAUSTED)
-                API->>LLM2: POST /openai/v1/chat (Groq llama-3.1-8b-instant)
-                alt Groq 8B quota exceeded
-                    API->>LLM2: POST /openai/v1/chat (Groq llama-3.3-70b-versatile)
-                    alt Groq 70B quota exceeded
-                        API->>LLM3: POST Mistral / Together / Cohere / Cerebras /<br/>4× OpenRouter (first key + enabled slot available, in priority order)
+                API->>LLM2: POST /openai/v1/chat (Groq openai/gpt-oss-120b)
+                alt Groq GPT-OSS 120B quota exceeded
+                    API->>LLM2: POST /openai/v1/chat (Groq qwen/qwen3.8-27b)
+                    alt Groq Qwen3.8 quota exceeded
+                        API->>LLM3: POST Cohere / Mistral / Ministral / Gemini Flash-Lite / Groq GPT-OSS 20B /<br/>3× OpenRouter / Cerebras last (first key + enabled slot available, in priority order)
                     end
                 end
             end
@@ -1430,7 +1430,7 @@ sequenceDiagram
         ASK->>ASK: build prompt — episode title + (possibly truncated) transcript + question
         ASK->>WF: runWaterfall("ask_ai", prompt) — same waterfall as general-mode /api/ask
         WF->>DB: SELECT llm_provider_config WHERE scope='ask_ai' (enabled/priority)
-        WF->>WF: try Gemini → Groq 8B → Groq 70B → Mistral → Together → Cohere in order
+        WF->>WF: try the 12-slot ladder in order (Gemini 3.5 Flash → Groq GPT-OSS 120B → … → Cerebras last)
         WF-->>ASK: { text, model }
         ASK-->>PAGE: { answer, model, episodeTitle, truncated }
         PAGE->>PAGE: append assistant bubble (no citations — grounded in one transcript, not FTS-retrieved insights)
